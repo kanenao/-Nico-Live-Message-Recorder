@@ -1,0 +1,55 @@
+{
+  "name": "nicolive-recorder",
+  "productName": "NicoLive Recorder",
+  "version": "0.1.0-beta.1",
+  "description": "ニコニコ生放送の映像・コメント保存ツール",
+  "main": "electron/main.cjs",
+  "author": "kanenao",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis zip",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "nicomget": "github:Segu-g/nicomget"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "jp.kanenao.nicolive.recorder",
+    "productName": "NicoLive Recorder",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "renderer.js",
+      "styles.css",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NicoLive Recorder"
+    }
+  }
+}
