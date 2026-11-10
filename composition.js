@@ -59,6 +59,7 @@
           ? entry.record.mail.join(" ")
           : String(entry.record.mail || "");
         return {
+          relativeMs: entry.absoluteMs - origin,
           timeMs: Math.max(0, entry.absoluteMs - origin),
           text: String(entry.record.content || ""),
           userName: String(entry.record.userName || ""),
@@ -66,12 +67,14 @@
           isHistory: Boolean(entry.record.isHistory)
         };
       })
-      .filter((comment) => comment.timeMs <= maxDuration + 250)
+      .filter((comment) => comment.relativeMs >= -250 && comment.relativeMs <= maxDuration + 250)
+      .map(({ relativeMs, ...comment }) => comment)
       .sort((a, b) => a.timeMs - b.timeMs);
 
     return {
       originMs: origin,
       durationMs: Number.isFinite(maxDuration) ? maxDuration : null,
+      usedFallbackOrigin: !videoStart && !sessionStart,
       comments
     };
   }
