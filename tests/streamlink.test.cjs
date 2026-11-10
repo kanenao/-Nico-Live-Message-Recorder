@@ -20,7 +20,7 @@ test("normalizeLiveId accepts IDs and watch URLs", () => {
 
 test("quality is restricted to supported choices", () => {
   assert.equal(normalizeQuality("worst"), "worst");
-  assert.equal(normalizeQuality("audio_only"), "audio_only");
+  assert.equal(normalizeQuality("audio_only"), "best");
   assert.equal(normalizeQuality("unknown"), "best");
 });
 
