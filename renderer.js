@@ -465,14 +465,8 @@ function compositionCommands(mail) {
   return String(mail || "").toLowerCase().split(/\s+/).filter(Boolean);
 }
 
-function chooseLane(lanes, startMs) {
-  const available = lanes.findIndex((endMs) => endMs <= startMs);
-  if (available >= 0) return available;
-  let earliest = 0;
-  for (let index = 1; index < lanes.length; index += 1) {
-    if (lanes[index] < lanes[earliest]) earliest = index;
-  }
-  return earliest;
+function reserveOverlayLane(lanes, startMs, durationMs, gapMs) {
+  return window.nicoCommentComposition.reserveLane(lanes, startMs, durationMs, gapMs);
 }
 
 function createCommentOverlaySchedule(comments, context, width, height) {
@@ -507,14 +501,14 @@ function createCommentOverlaySchedule(comments, context, width, height) {
 
     if (isTop || isBottom) {
       const lanes = isTop ? topLanes : bottomLanes;
-      const lane = chooseLane(lanes, startMs);
       const durationMs = 5000;
-      lanes[lane] = startMs + durationMs + 150;
+      const reservation = reserveOverlayLane(lanes, startMs, durationMs, 150);
+      const lane = reservation.lane;
       const y = isTop
         ? Math.round(height * 0.06) + lane * Math.round(fontSize * 1.16)
         : height - Math.round(height * 0.07) - lane * Math.round(fontSize * 1.16);
       schedule.push({
-        ...comment, startMs, endMs: startMs + durationMs, fontSize, color,
+        ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
         textWidth, mode: isTop ? "top" : "bottom", y
       });
       continue;
@@ -522,11 +516,11 @@ function createCommentOverlaySchedule(comments, context, width, height) {
 
     const durationMs = Math.max(4000, Math.min(16000,
       ((width + textWidth) / 330) * 1000));
-    const lane = chooseLane(scrollLanes, startMs);
-    scrollLanes[lane] = startMs + durationMs + 180;
+    const reservation = reserveOverlayLane(scrollLanes, startMs, durationMs, 180);
+    const lane = reservation.lane;
     const y = Math.round(height * 0.07) + lane * Math.round(fontSize * 1.18);
     schedule.push({
-      ...comment, startMs, endMs: startMs + durationMs, fontSize, color,
+      ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
       textWidth, mode: "scroll", y
     });
   }
