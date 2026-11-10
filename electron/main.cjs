@@ -1,4 +1,11 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, session, desktopCapturer } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, session } = require("electron");
+const { spawn } = require("node:child_process");
+const {
+  findStreamlinkExecutable,
+  findFfmpegExecutable,
+  createStreamlinkRuntime,
+  buildStreamlinkArgs
+} = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -14,9 +21,12 @@ let provider = null;
 let currentLiveId = "";
 let commentWriter = null;
 let commentFilePath = "";
-let videoWriter = null;
-let videoFilePath = "";
-let pendingCaptureRequest = null;
+let streamlinkProcess = null;
+let streamlinkFinalizePromise = null;
+let streamlinkRuntimeDirectory = "";
+let streamlinkOutputPath = "";
+let streamlinkFfmpegPath = "";
+let streamlinkStopRequested = false;
 let composeWriter = null;
 let composeFilePath = "";
 
@@ -243,89 +253,254 @@ ipcMain.handle("live:disconnect", async () => {
 });
 
 
-ipcMain.handle("video:list-sources", async () => {
-  const sources = await desktopCapturer.getSources({
-    types: ["window", "screen"],
-    thumbnailSize: { width: 240, height: 150 },
-    fetchWindowIcons: true
-  });
-  return sources.map((source) => ({
-    id: source.id,
-    name: source.name,
-    thumbnail: source.thumbnail ? source.thumbnail.toDataURL() : ""
-  }));
-});
-
-ipcMain.handle("video:select-source", async (_event, sourceId) => {
-  if (!pendingCaptureRequest) {
-    throw new Error("録画元の選択要求が終了しています。もう一度録画を開始してください。");
+function readAppSettings() {
+  const settingsPath = path.join(app.getPath("userData"), "settings.json");
+  try {
+    const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
   }
-  const sources = await desktopCapturer.getSources({
-    types: ["window", "screen"],
-    thumbnailSize: { width: 0, height: 0 }
+}
+
+function writeAppSettings(patch) {
+  const settingsPath = path.join(app.getPath("userData"), "settings.json");
+  const current = readAppSettings();
+  const next = { ...current, ...patch };
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2), "utf8");
+  return next;
+}
+
+function getVideoToolStatus() {
+  const settings = readAppSettings();
+  const streamlinkPath = findStreamlinkExecutable({ customPath: settings.streamlinkPath });
+  const ffmpegPath = findFfmpegExecutable({
+    customPath: settings.ffmpegPath,
+    streamlinkPath
   });
-  const selected = sources.find((source) => source.id === sourceId);
-  if (!selected) throw new Error("選択したウィンドウが見つかりません。");
+  return { streamlinkAvailable: Boolean(streamlinkPath), streamlinkPath, ffmpegAvailable: Boolean(ffmpegPath), ffmpegPath };
+}
 
-  const pending = pendingCaptureRequest;
-  pendingCaptureRequest = null;
-  const streams = { video: selected };
-  if (pending.audioRequested) streams.audio = "loopback";
-  pending.callback(streams);
-  return { selected: true, name: selected.name };
-});
+function remuxTransportStreamToMp4(inputPath, outputPath, ffmpegPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath, [
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-i", inputPath,
+      "-map", "0:v?", "-map", "0:a?",
+      "-c", "copy", "-movflags", "+faststart",
+      outputPath
+    ], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
 
-ipcMain.handle("video:cancel-source", async () => {
-  if (pendingCaptureRequest) {
-    const pending = pendingCaptureRequest;
-    pendingCaptureRequest = null;
-    pending.callback(null);
-  }
-  return { cancelled: true };
-});
-
-ipcMain.handle("video:start", async (_event, value) => {
-  if (videoWriter) throw new Error("映像録画はすでに実行中です。");
-  const liveId = safeLiveId(value);
-  const directory = path.join(dataRoot(), "videos");
-  fs.mkdirSync(directory, { recursive: true });
-  videoFilePath = path.join(directory, liveId + "_" + stamp() + ".webm");
-  videoWriter = fs.createWriteStream(videoFilePath, { flags: "wx" });
-  videoWriter.on("error", (error) => {
-    send("app:error", "映像ファイルの保存に失敗しました: " + error.message);
-  });
-  const startedAt = new Date().toISOString();
-  if (currentLiveId === liveId) appendMarker("videoStart", { videoStartedAt: startedAt, videoFile: videoFilePath });
-  send("video:state", { recording: true, path: videoFilePath });
-  return { path: videoFilePath, startedAt };
-});
-
-ipcMain.handle("video:chunk", async (_event, arrayBuffer) => {
-  if (!videoWriter || !arrayBuffer) {
-    throw new Error("録画ファイルが開かれていません。");
-  }
-  await new Promise((resolve, reject) => {
-    videoWriter.write(Buffer.from(arrayBuffer), (error) => {
-      if (error) reject(error);
-      else resolve();
+    let stderr = "";
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => {
+        stderr = (stderr + chunk.toString("utf8")).slice(-1200);
+      });
+    }
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+        resolve(outputPath);
+      } else {
+        reject(new Error(stderr.trim() || "FFmpegによるMP4変換に失敗しました。"));
+      }
     });
   });
-  return { written: true };
+}
+
+async function finalizeStreamlinkRecording(exit) {
+  const stoppedAt = new Date().toISOString();
+  const rawPath = streamlinkOutputPath;
+  const ffmpegPath = streamlinkFfmpegPath;
+  let finalPath = rawPath;
+  let converted = false;
+  const hasOutput = rawPath && fs.existsSync(rawPath) && fs.statSync(rawPath).size > 0;
+
+  if (hasOutput && ffmpegPath) {
+    const mp4Path = rawPath.replace(/\.ts$/i, ".mp4");
+    try {
+      await remuxTransportStreamToMp4(rawPath, mp4Path, ffmpegPath);
+      await fs.promises.unlink(rawPath).catch(() => {});
+      finalPath = mp4Path;
+      converted = true;
+    } catch (_) {
+      send("app:error", "MP4変換に失敗したため、元のTSファイルを保存しました。FFmpegの設定を確認してください。");
+    }
+  }
+
+  if (currentLiveId && commentWriter) {
+    appendMarker("videoStop", {
+      timestamp: stoppedAt,
+      receivedAt: stoppedAt,
+      videoStoppedAt: stoppedAt,
+      videoFile: finalPath || rawPath,
+      sourceVideoFile: rawPath
+    });
+  }
+
+  const runtimeDirectory = streamlinkRuntimeDirectory;
+  streamlinkProcess = null;
+  streamlinkFinalizePromise = null;
+  streamlinkRuntimeDirectory = "";
+  streamlinkOutputPath = "";
+  streamlinkFfmpegPath = "";
+  if (runtimeDirectory) {
+    await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
+  }
+
+  const resultPath = hasOutput ? finalPath : null;
+  const result = {
+    path: resultPath,
+    rawPath: hasOutput ? rawPath : null,
+    converted,
+    exitCode: exit.code,
+    signal: exit.signal || null
+  };
+  send("video:state", { recording: false, ...result });
+
+  if (!streamlinkStopRequested && exit.code !== 0) {
+    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態、視聴権限、Streamlinkのバージョンを確認してください。");
+  } else if (!hasOutput) {
+    send("app:error", "録画データが作成されませんでした。放送IDと視聴権限、Streamlinkの対応状況を確認してください。");
+  }
+  return result;
+}
+
+ipcMain.handle("video:tools-status", async () => getVideoToolStatus());
+
+ipcMain.handle("video:select-streamlink", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Streamlink実行ファイルを選択",
+    properties: ["openFile"],
+    filters: [{ name: "Streamlink実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { cancelled: true, ...getVideoToolStatus() };
+  const selectedPath = result.filePaths[0];
+  if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isFile()) {
+    throw new Error("選択したファイルを確認できませんでした。");
+  }
+  writeAppSettings({ streamlinkPath: selectedPath });
+  return { cancelled: false, ...getVideoToolStatus() };
+});
+
+ipcMain.handle("video:select-ffmpeg", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "FFmpeg実行ファイルを選択",
+    properties: ["openFile"],
+    filters: [{ name: "FFmpeg実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { cancelled: true, ...getVideoToolStatus() };
+  const selectedPath = result.filePaths[0];
+  if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isFile()) {
+    throw new Error("選択したファイルを確認できませんでした。");
+  }
+  writeAppSettings({ ffmpegPath: selectedPath });
+  return { cancelled: false, ...getVideoToolStatus() };
+});
+
+ipcMain.handle("video:open-streamlink-download", async () => {
+  await shell.openExternal("https://github.com/streamlink/windows-builds/releases");
+  return { opened: true };
+});
+
+ipcMain.handle("video:start", async (_event, value, quality) => {
+  if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
+  const liveId = safeLiveId(value);
+  const settings = readAppSettings();
+  const streamlinkPath = findStreamlinkExecutable({ customPath: settings.streamlinkPath });
+  if (!streamlinkPath) {
+    throw new Error("Streamlinkが見つかりません。「Streamlinkを設定」からstreamlink.exeを選択するか、公式配布版をインストールしてください。");
+  }
+
+  const toolStatus = getVideoToolStatus();
+  const ffmpegPath = toolStatus.ffmpegPath;
+  const authSession = session.fromPartition("persist:nico-auth");
+  const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
+  const userSession = cookies.find((cookie) => cookie.name === "user_session")?.value || "";
+  const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
+  const directory = path.join(dataRoot(), "videos");
+  fs.mkdirSync(directory, { recursive: true });
+  const outputPath = path.join(directory, liveId + "_" + stamp() + ".ts");
+  const args = buildStreamlinkArgs({
+    configPath: runtime.configPath,
+    liveId,
+    quality,
+    outputPath,
+    ffmpegPath
+  });
+
+  let child;
+  try {
+    child = spawn(streamlinkPath, args, {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+      env: runtime.env
+    });
+  } catch (error) {
+    await fs.promises.rm(runtime.runtimeDirectory, { recursive: true, force: true }).catch(() => {});
+    throw new Error("Streamlinkを起動できませんでした: " + error.message);
+  }
+
+  streamlinkProcess = child;
+  streamlinkRuntimeDirectory = runtime.runtimeDirectory;
+  streamlinkOutputPath = outputPath;
+  streamlinkFfmpegPath = ffmpegPath || "";
+  streamlinkStopRequested = false;
+  if (child.stderr) child.stderr.on("data", () => {});
+
+  streamlinkFinalizePromise = new Promise((resolve) => {
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  }).then(finalizeStreamlinkRecording);
+
+  await new Promise((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  }).catch(async (error) => {
+    try { child.kill(); } catch (_) {}
+    if (streamlinkFinalizePromise) await streamlinkFinalizePromise.catch(() => {});
+    throw new Error("Streamlinkを起動できませんでした: " + error.message);
+  });
+
+  const startedAt = new Date().toISOString();
+  if (currentLiveId === liveId) {
+    appendMarker("videoStart", {
+      videoStartedAt: startedAt,
+      videoFile: ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath,
+      streamlinkPath
+    });
+  }
+  send("video:state", {
+    recording: true,
+    path: ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath,
+    sourcePath: outputPath,
+    startedAt,
+    ffmpegAvailable: Boolean(ffmpegPath)
+  });
+  return {
+    path: ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath,
+    sourcePath: outputPath,
+    startedAt,
+    ffmpegAvailable: Boolean(ffmpegPath)
+  };
 });
 
 ipcMain.handle("video:stop", async () => {
-  if (!videoWriter) return { path: null };
-  const writer = videoWriter;
-  const savedPath = videoFilePath;
-  appendMarker("videoStop", { videoStoppedAt: new Date().toISOString(), videoFile: savedPath });
-  videoWriter = null;
-  videoFilePath = "";
-  await new Promise((resolve, reject) => {
-    writer.once("error", reject);
-    writer.end(resolve);
-  });
-  send("video:state", { recording: false, path: savedPath });
-  return { path: savedPath };
+  const child = streamlinkProcess;
+  const finalizePromise = streamlinkFinalizePromise;
+  if (!child || !finalizePromise) return { path: null };
+  streamlinkStopRequested = true;
+  try { child.kill("SIGINT"); } catch (_) {}
+  const forcedStop = setTimeout(() => {
+    if (streamlinkProcess === child && child.exitCode === null && child.signalCode === null) {
+      try { child.kill(); } catch (_) {}
+    }
+  }, 8000);
+  try {
+    return await finalizePromise;
+  } finally {
+    clearTimeout(forcedStop);
+  }
 });
 
 ipcMain.handle("compose:start", async () => {
@@ -464,20 +639,6 @@ ipcMain.handle("comments:export-ass", async () => {
 });
 
 app.whenReady().then(() => {
-  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    const frameUrl = request.frame && request.frame.url ? request.frame.url : "";
-    if (!mainWindow || !frameUrl.startsWith("file://") || !request.videoRequested) {
-      callback(null);
-      return;
-    }
-    if (pendingCaptureRequest) pendingCaptureRequest.callback(null);
-    pendingCaptureRequest = {
-      callback,
-      audioRequested: Boolean(request.audioRequested)
-    };
-    send("video:choose-source", {});
-  }, { useSystemPicker: false });
-
   makeWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) makeWindow();
@@ -489,7 +650,7 @@ app.on("before-quit", () => {
     try { provider.disconnect(); } catch (_) {}
   }
   if (commentWriter) commentWriter.end();
-  if (videoWriter) videoWriter.end();
+  if (streamlinkProcess) streamlinkProcess.kill();
   if (composeWriter) composeWriter.end();
 });
 
