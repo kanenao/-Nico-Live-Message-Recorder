@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
   exportCsv: () => ipcRenderer.invoke("comments:export-csv"),
   exportAss: () => ipcRenderer.invoke("comments:export-ass"),
+  startCompose: () => ipcRenderer.invoke("compose:start"),
+  writeComposeChunk: (chunk) => ipcRenderer.invoke("compose:chunk", chunk),
+  finishCompose: () => ipcRenderer.invoke("compose:finish"),
+  cancelCompose: () => ipcRenderer.invoke("compose:cancel"),
   onEvent: (callback) => {
     const handler = (_event, message) => callback(message);
     ipcRenderer.on("app:event", handler);
