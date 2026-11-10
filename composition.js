@@ -77,5 +77,22 @@
     };
   }
 
-  return { timestampMs, prepareCommentTimeline };
+  // Reserve a lane without allowing a new comment to overlap the previous one.
+  // When every lane is occupied, defer the comment to the earliest free lane.
+  function reserveLane(lanes, requestedStartMs, durationMs, gapMs) {
+    if (!Array.isArray(lanes) || lanes.length === 0) {
+      throw new TypeError("コメントレーンがありません。");
+    }
+    let lane = 0;
+    for (let index = 1; index < lanes.length; index += 1) {
+      if (lanes[index] < lanes[lane]) lane = index;
+    }
+    const duration = Math.max(0, Number(durationMs) || 0);
+    const gap = Math.max(0, Number(gapMs) || 0);
+    const startMs = Math.max(Number(requestedStartMs) || 0, lanes[lane] || 0);
+    lanes[lane] = startMs + duration + gap;
+    return { lane, startMs, endMs: startMs + duration };
+  }
+
+  return { timestampMs, prepareCommentTimeline, reserveLane };
 });
