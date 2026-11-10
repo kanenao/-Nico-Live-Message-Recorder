@@ -11,6 +11,8 @@ on:
       - "renderer.js"
       - "styles.css"
       - "package.json"
+      - "README.md"
+      - "tests/**"
       - ".github/workflows/nicolive-recorder-build.yml"
   pull_request:
     paths:
@@ -19,6 +21,8 @@ on:
       - "renderer.js"
       - "styles.css"
       - "package.json"
+      - "README.md"
+      - "tests/**"
       - ".github/workflows/nicolive-recorder-build.yml"
   workflow_dispatch:
 
@@ -31,22 +35,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
+      - name: Run ASS conversion tests
+        run: npm test
       - name: Build installer and portable ZIP
         run: npm run dist:win
-
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: NicoLive-Recorder-beta1-Windows
+          name: NicoLive-Recorder-beta2-Windows
           path: dist/*
           if-no-files-found: error
           retention-days: 14
