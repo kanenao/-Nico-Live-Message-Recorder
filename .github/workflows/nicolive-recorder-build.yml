@@ -48,7 +48,7 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: NicoLive-Recorder-beta2-Windows
+          name: Nico-Live-Message-Recorder-beta2-Windows
           path: dist/*
           if-no-files-found: error
           retention-days: 14
