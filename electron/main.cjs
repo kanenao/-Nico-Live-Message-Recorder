@@ -3,6 +3,9 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
+// This is a local desktop media-processing app; allow the selected local video to play for composition.
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
 app.setName("Nico Live Message Recorder");
 
 let mainWindow = null;
