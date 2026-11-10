@@ -124,3 +124,21 @@ input::placeholder { color: #5f6c88; }
 .capture-source-placeholder { display: grid; place-items: center; color: #8190b3; }
 .capture-source span { display: block; overflow: hidden; margin-top: 8px; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
 .capture-dialog-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+
+/* Comment video composition */
+.compose-panel { margin: 16px 0; padding: 19px 20px; }
+.compose-panel .panel-heading { padding: 0 0 15px; }
+.compose-file-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.compose-file-field { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: rgba(5,10,20,.24); color: #b8c5df; font-size: 10px; }
+.compose-file-field input { display: block; width: 100%; min-width: 0; color: #cbd5e8; font: 10px "Yu Gothic UI", sans-serif; }
+.compose-file-field input::file-selector-button { margin-right: 10px; padding: 7px 11px; border: 1px solid rgba(150,170,210,.24); border-radius: 7px; background: #1c2942; color: #dce6fa; cursor: pointer; }
+.compose-file-field small { overflow: hidden; color: #7383a1; font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
+.compose-actions { margin-top: 13px; }
+.compose-progress-wrap { display: grid; grid-template-columns: minmax(100px,1fr) 150px; align-items: center; gap: 12px; margin: 13px 0 7px; }
+.compose-progress-wrap progress { width: 100%; height: 10px; accent-color: #8f82ff; }
+.compose-progress-wrap span { color: #8d9bb8; font: 10px Consolas, monospace; text-align: right; }
+@media (max-width: 760px) {
+  .compose-file-grid { grid-template-columns: 1fr; }
+  .compose-progress-wrap { grid-template-columns: 1fr; }
+  .compose-progress-wrap span { text-align: left; }
+}
