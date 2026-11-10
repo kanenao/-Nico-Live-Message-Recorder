@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.4</span>
+        <span class="version" id="version">v0.1.0-beta.5</span>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
         <span class="login-state" id="login-state">ログイン状態を確認中</span>
       </div>
@@ -31,8 +31,8 @@
         <button class="nav-item" type="button" id="open-folder-button"><span class="nav-icon">▣</span> 保存フォルダー</button>
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
-          <p>映像は画面キャプチャ方式です。保護された映像の解除や回避は行いません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.4</span></div>
+          <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.5</span></div>
         </div>
       </aside>
 
@@ -41,7 +41,7 @@
           <div>
             <div class="eyebrow">DESKTOP RECORDER / BETA</div>
             <h1>配信を、コメントと一緒に保存。</h1>
-            <p>コメントは受信時に自動保存。映像は視聴画面を選択してローカル録画します。</p>
+            <p>コメントは受信時に自動保存。映像は配信データを直接取得してファイルに保存します。</p>
           </div>
           <div class="live-badge" id="connection-badge"><span class="pulse"></span><span id="connection-label">未接続</span></div>
         </section>
@@ -71,8 +71,8 @@
           <article class="panel video-panel">
             <div class="panel-heading">
               <div>
-                <div class="eyebrow">VIDEO CAPTURE</div>
-                <h2>映像・音声の録画</h2>
+                <div class="eyebrow">DIRECT STREAM RECORDING</div>
+                <h2>配信映像・音声の直接録画</h2>
               </div>
               <span class="step-number">02</span>
             </div>
@@ -87,7 +87,28 @@
               <button class="button button-record" id="record-button">● 録画開始</button>
               <button class="button button-outline" id="stop-record-button" disabled>録画停止</button>
             </div>
-            <div class="hint">録画開始時にアプリ内の画面一覧を表示します。視聴中のブラウザー画面を選んでください。</div>
+            <div class="record-quality-row">
+              <label for="record-quality">録画画質</label>
+              <select id="record-quality">
+                <option value="best" selected>最高画質（推奨）</option>
+                <option value="worst">低画質（通信量を抑える）</option>
+                <option value="audio_only">音声のみ</option>
+              </select>
+            </div>
+            <div class="tool-settings">
+              <div class="tool-row">
+                <span id="streamlink-status">Streamlink：確認中…</span>
+                <div class="tool-buttons">
+                  <button class="button button-quiet button-small" id="configure-streamlink-button">実行ファイルを選択</button>
+                  <button class="button button-quiet button-small" id="download-streamlink-button">公式配布</button>
+                </div>
+              </div>
+              <div class="tool-row">
+                <span id="ffmpeg-status">FFmpeg：確認中…</span>
+                <button class="button button-quiet button-small" id="configure-ffmpeg-button">FFmpegを選択</button>
+              </div>
+            </div>
+            <div class="hint">配信ストリームを直接取得してTS形式で保存します。FFmpegを設定すると、録画停止後にMP4へ無劣化変換します。</div>
             <div class="file-line"><span class="dot dot-blue"></span><span id="video-file">保存先：録画開始後に表示</span></div>
           </article>
         </section>
@@ -166,8 +187,8 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.4</span></span>
-          <span id="notice">録画ファイルはこのPC内に保存されます。</span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.5</span></span>
+          <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
     </div>
