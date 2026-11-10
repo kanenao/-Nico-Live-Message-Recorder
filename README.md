@@ -1,4 +1,4 @@
-# NicoLive Recorder
+# NicoLive Message Recorder
 
 ニコニコ生放送のコメントを自動取得・保存し、視聴画面をローカル録画するWindowsデスクトップアプリです。
 
