@@ -1,8 +1,8 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.1.0-beta.4",
-  "description": "ニコニコ生放送の映像・コメント保存ツール",
+  "version": "0.1.0-beta.5",
+  "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",
   "license": "MIT",
