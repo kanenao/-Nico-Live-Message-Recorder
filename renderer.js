@@ -454,3 +454,414 @@ liveInput.addEventListener("keydown", (event) => {
   await refreshAuthStatus();
   setConnection("disconnected");
 })();
+
+// ---------------------------------------------------------------------------
+// Comment video composition (canvas overlay + browser MediaRecorder)
+// ---------------------------------------------------------------------------
+
+let cancelActiveComposition = null;
+
+function compositionCommands(mail) {
+  return String(mail || "").toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function chooseLane(lanes, startMs) {
+  const available = lanes.findIndex((endMs) => endMs <= startMs);
+  if (available >= 0) return available;
+  let earliest = 0;
+  for (let index = 1; index < lanes.length; index += 1) {
+    if (lanes[index] < lanes[earliest]) earliest = index;
+  }
+  return earliest;
+}
+
+function createCommentOverlaySchedule(comments, context, width, height) {
+  const baseSize = Math.max(24, Math.min(58, Math.round(height * 0.045)));
+  const scrollLanes = Array(18).fill(0);
+  const topLanes = Array(5).fill(0);
+  const bottomLanes = Array(5).fill(0);
+  const schedule = [];
+
+  for (const comment of comments) {
+    const commands = compositionCommands(comment.mail);
+    let fontSize = baseSize;
+    if (commands.includes("big")) fontSize = Math.min(76, baseSize + 12);
+    if (commands.includes("small")) fontSize = Math.max(20, baseSize - 10);
+
+    const colorMap = {
+      red: "#ff5050",
+      blue: "#60aaff",
+      green: "#55e58a",
+      yellow: "#ffe45c",
+      pink: "#ff83d2",
+      cyan: "#64eaff",
+      orange: "#ffad58",
+      white: "#ffffff"
+    };
+    const color = commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
+    context.font = "bold " + fontSize + "px Meiryo, Yu Gothic, sans-serif";
+    const textWidth = Math.ceil(context.measureText(comment.text).width) + 20;
+    const isTop = commands.includes("ue") || commands.includes("top");
+    const isBottom = commands.includes("shita") || commands.includes("bottom");
+    const startMs = comment.timeMs;
+
+    if (isTop || isBottom) {
+      const lanes = isTop ? topLanes : bottomLanes;
+      const lane = chooseLane(lanes, startMs);
+      const durationMs = 5000;
+      lanes[lane] = startMs + durationMs + 150;
+      const y = isTop
+        ? Math.round(height * 0.06) + lane * Math.round(fontSize * 1.16)
+        : height - Math.round(height * 0.07) - lane * Math.round(fontSize * 1.16);
+      schedule.push({
+        ...comment, startMs, endMs: startMs + durationMs, fontSize, color,
+        textWidth, mode: isTop ? "top" : "bottom", y
+      });
+      continue;
+    }
+
+    const durationMs = Math.max(4000, Math.min(16000,
+      ((width + textWidth) / 330) * 1000));
+    const lane = chooseLane(scrollLanes, startMs);
+    scrollLanes[lane] = startMs + durationMs + 180;
+    const y = Math.round(height * 0.07) + lane * Math.round(fontSize * 1.18);
+    schedule.push({
+      ...comment, startMs, endMs: startMs + durationMs, fontSize, color,
+      textWidth, mode: "scroll", y
+    });
+  }
+
+  return schedule.sort((a, b) => a.startMs - b.startMs);
+}
+
+function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, width, height) {
+  context.clearRect(0, 0, width, height);
+  for (const comment of activeComments) {
+    if (videoTimeMs < comment.startMs || videoTimeMs > comment.endMs) continue;
+    const elapsed = videoTimeMs - comment.startMs;
+    context.font = "bold " + comment.fontSize + "px Meiryo, Yu Gothic, sans-serif";
+    context.textBaseline = "middle";
+    context.lineJoin = "round";
+    context.lineWidth = Math.max(3, comment.fontSize * 0.11);
+    context.strokeStyle = "rgba(0, 0, 0, 0.92)";
+    context.fillStyle = comment.color;
+    context.shadowColor = "rgba(0, 0, 0, 0.65)";
+    context.shadowBlur = 3;
+
+    let x;
+    if (comment.mode === "scroll") {
+      const ratio = Math.min(1, Math.max(0, elapsed / (comment.endMs - comment.startMs)));
+      x = width - ratio * (width + comment.textWidth);
+      context.textAlign = "left";
+    } else {
+      x = width / 2;
+      context.textAlign = "center";
+    }
+
+    context.strokeText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
+    context.fillText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
+  }
+  context.shadowBlur = 0;
+}
+
+function setCompositionProgress(value, label) {
+  const progress = byId("compose-progress");
+  if (progress) progress.value = Math.max(0, Math.min(100, Number(value) || 0));
+  const status = byId("compose-progress-label");
+  if (status) status.textContent = label || "";
+}
+
+function parseJsonlFile(text) {
+  const records = [];
+  const lines = String(text || "").split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    try {
+      records.push(JSON.parse(line));
+    } catch (error) {
+      throw new Error("コメントログの" + (index + 1) + "行目を読み取れません: " + error.message);
+    }
+  }
+  return records;
+}
+
+async function composeCommentVideo() {
+  const videoFile = byId("compose-video-input").files[0];
+  const commentsFile = byId("compose-comments-input").files[0];
+  if (!videoFile || !commentsFile) {
+    showToast("録画動画とコメントログの両方を選択してください。", true);
+    return;
+  }
+  if (typeof window.nicoCommentComposition?.prepareCommentTimeline !== "function") {
+    showToast("動画合成モジュールを読み込めませんでした。", true);
+    return;
+  }
+  if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
+    showToast("この環境では動画合成に対応していません。", true);
+    return;
+  }
+
+  const composeButton = byId("compose-button");
+  const cancelButton = byId("compose-cancel-button");
+  composeButton.disabled = true;
+  cancelButton.disabled = true;
+  setCompositionProgress(0, "素材を読み込み中…");
+
+  let videoElement = null;
+  let objectUrl = null;
+  let canvasStream = null;
+  let finalStream = null;
+  let audioContext = null;
+  let recorder = null;
+  let animationFrame = 0;
+  let outputStarted = false;
+  let cancelRequested = false;
+  let writeError = null;
+  let chunkQueue = Promise.resolve();
+
+  const cleanup = async () => {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    if (videoElement) {
+      videoElement.pause();
+      videoElement.removeAttribute("src");
+      videoElement.load();
+      videoElement.remove();
+    }
+    if (finalStream) finalStream.getTracks().forEach((track) => track.stop());
+    if (canvasStream) canvasStream.getTracks().forEach((track) => track.stop());
+    if (audioContext && audioContext.state !== "closed") {
+      await audioContext.close().catch(() => {});
+    }
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    cancelActiveComposition = null;
+    composeButton.disabled = false;
+    cancelButton.disabled = true;
+  };
+
+  cancelActiveComposition = () => {
+    cancelRequested = true;
+    cancelButton.disabled = true;
+    setCompositionProgress(
+      Number(byId("compose-progress").value),
+      "キャンセル処理中…"
+    );
+    if (videoElement) videoElement.pause();
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+  };
+
+  try {
+    const jsonl = await commentsFile.text();
+    const records = parseJsonlFile(jsonl);
+
+    videoElement = document.createElement("video");
+    videoElement.preload = "auto";
+    videoElement.playsInline = true;
+    videoElement.style.position = "fixed";
+    videoElement.style.left = "-10000px";
+    videoElement.style.top = "0";
+    videoElement.style.width = "2px";
+    videoElement.style.height = "2px";
+    videoElement.style.opacity = "0";
+    document.body.appendChild(videoElement);
+
+    objectUrl = URL.createObjectURL(videoFile);
+    videoElement.src = objectUrl;
+
+    await new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error("動画ファイルの読み込みがタイムアウトしました。")), 30000);
+      videoElement.addEventListener("loadedmetadata", () => {
+        window.clearTimeout(timeout);
+        resolve();
+      }, { once: true });
+      videoElement.addEventListener("error", () => {
+        window.clearTimeout(timeout);
+        reject(new Error("動画を読み込めません。WebMまたはMP4を選択してください。"));
+      }, { once: true });
+      videoElement.load();
+    });
+
+    const durationMs = Number.isFinite(videoElement.duration) ? videoElement.duration * 1000 : 0;
+    if (durationMs <= 0) throw new Error("動画の長さを取得できませんでした。");
+
+    const timeline = window.nicoCommentComposition.prepareCommentTimeline(records, durationMs);
+    if (!timeline.comments.length) throw new Error("動画の時間範囲内に表示できるコメントがありません。");
+    if (timeline.usedFallbackOrigin) {
+      showToast("録画開始マーカーがないログです。最初のコメントを動画の0秒として扱います。", true);
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = videoElement.videoWidth || 1920;
+    canvas.height = videoElement.videoHeight || 1080;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("動画合成用キャンバスを作成できません。");
+    const schedule = createCommentOverlaySchedule(
+      timeline.comments, context, canvas.width, canvas.height
+    );
+
+    canvasStream = canvas.captureStream(30);
+    const audioTracks = [];
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      try {
+        audioContext = new AudioContextClass();
+        const source = audioContext.createMediaElementSource(videoElement);
+        const destination = audioContext.createMediaStreamDestination();
+        source.connect(destination);
+        await audioContext.resume();
+        audioTracks.push(...destination.stream.getAudioTracks());
+      } catch (audioError) {
+        console.warn("Audio track composition unavailable:", audioError);
+        if (audioContext && audioContext.state !== "closed") {
+          await audioContext.close().catch(() => {});
+        }
+        audioContext = null;
+        showToast("音声合成を利用できないため、映像のみで生成します。");
+      }
+    }
+
+    finalStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...audioTracks
+    ]);
+    if (!finalStream.getVideoTracks().length) throw new Error("合成動画の映像トラックを作成できません。");
+
+    const mimeTypes = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm;codecs=vp9",
+      "video/webm"
+    ];
+    const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported(type));
+    if (!mimeType) throw new Error("この環境で利用できるWebMエンコーダーがありません。");
+
+    const output = await api.startCompose();
+    if (output.cancelled) {
+      setCompositionProgress(0, "保存先の選択をキャンセルしました");
+      await cleanup();
+      return;
+    }
+    outputStarted = true;
+
+    let nextCommentIndex = 0;
+    let activeComments = [];
+    let lastProgressUpdate = 0;
+
+    const drawFrame = () => {
+      if (!videoElement || videoElement.readyState < 2) {
+        animationFrame = requestAnimationFrame(drawFrame);
+        return;
+      }
+      const currentMs = videoElement.currentTime * 1000;
+      context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+      while (nextCommentIndex < schedule.length && schedule[nextCommentIndex].startMs <= currentMs) {
+        activeComments.push(schedule[nextCommentIndex]);
+        nextCommentIndex += 1;
+      }
+      activeComments = activeComments.filter((comment) => comment.endMs >= currentMs);
+      drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height);
+
+      const now = Date.now();
+      if (now - lastProgressUpdate >= 250) {
+        const percent = Math.min(100, (currentMs / durationMs) * 100);
+        setCompositionProgress(percent, "合成中 " + Math.floor(percent) + "%");
+        lastProgressUpdate = now;
+      }
+      if (!videoElement.paused && !videoElement.ended && !cancelRequested) {
+        animationFrame = requestAnimationFrame(drawFrame);
+      }
+    };
+
+    const recorderOptions = { mimeType, videoBitsPerSecond: 6000000 };
+    if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
+    recorder = new MediaRecorder(finalStream, recorderOptions);
+    recorder.ondataavailable = (event) => {
+      if (!event.data || !event.data.size) return;
+      const chunk = event.data;
+      chunkQueue = chunkQueue.then(async () => {
+        await api.writeComposeChunk(await chunk.arrayBuffer());
+      }).catch((error) => {
+        writeError = error;
+        cancelRequested = true;
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+      });
+    };
+
+    const stopResultPromise = new Promise((resolve) => {
+      recorder.onstop = async () => {
+        if (animationFrame) cancelAnimationFrame(animationFrame);
+        try {
+          await chunkQueue;
+          if (writeError) throw writeError;
+          if (cancelRequested) {
+            await api.cancelCompose();
+            resolve({ cancelled: true });
+          } else {
+            const saved = await api.finishCompose();
+            resolve({ path: saved.path });
+          }
+        } catch (error) {
+          try { await api.cancelCompose(); } catch (_) {}
+          resolve({ error });
+        }
+      };
+    });
+
+    recorder.onerror = (event) => {
+      writeError = event.error || new Error("動画のエンコード中にエラーが発生しました。");
+      cancelRequested = true;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    };
+
+    videoElement.addEventListener("ended", () => {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    }, { once: true });
+
+    recorder.start(1000);
+    cancelButton.disabled = false;
+    await videoElement.play();
+    drawFrame();
+
+    setCompositionProgress(0, "合成を開始しました");
+    const stopResult = await stopResultPromise;
+    outputStarted = false;
+
+    if (stopResult.error) throw stopResult.error;
+    if (stopResult.cancelled) {
+      setCompositionProgress(0, "生成をキャンセルしました");
+      showToast("コメント付き動画の生成をキャンセルしました。");
+    } else {
+      setCompositionProgress(100, "生成完了");
+      showToast("コメント付き動画を保存しました: " + stopResult.path);
+    }
+  } catch (error) {
+    if (recorder && recorder.state !== "inactive") {
+      cancelRequested = true;
+      recorder.stop();
+    }
+    if (outputStarted) {
+      await chunkQueue.catch(() => {});
+      await api.cancelCompose().catch(() => {});
+    }
+    setCompositionProgress(0, "エラー");
+    showToast(error.message || "コメント付き動画を生成できませんでした。", true);
+  } finally {
+    await cleanup();
+  }
+}
+
+byId("compose-video-input").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  byId("compose-video-name").textContent = file ? file.name : "WebM / MP4動画を選択";
+});
+
+byId("compose-comments-input").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  byId("compose-comments-name").textContent = file ? file.name : "JSONLコメントログを選択";
+});
+
+byId("compose-button").addEventListener("click", composeCommentVideo);
+byId("compose-cancel-button").addEventListener("click", () => {
+  if (cancelActiveComposition) cancelActiveComposition();
+});
