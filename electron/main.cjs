@@ -650,7 +650,14 @@ app.on("before-quit", () => {
     try { provider.disconnect(); } catch (_) {}
   }
   if (commentWriter) commentWriter.end();
-  if (streamlinkProcess) streamlinkProcess.kill();
+  if (streamlinkProcess) {
+    try { streamlinkProcess.kill(); } catch (_) {}
+  }
+  // Remove the short-lived config file that contains the session cookie on app exit.
+  if (streamlinkRuntimeDirectory) {
+    try { fs.rmSync(streamlinkRuntimeDirectory, { recursive: true, force: true }); } catch (_) {}
+    streamlinkRuntimeDirectory = "";
+  }
   if (composeWriter) composeWriter.end();
 });
 
