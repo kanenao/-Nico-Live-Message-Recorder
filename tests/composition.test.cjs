@@ -46,6 +46,17 @@ test("supports older logs without recording markers by falling back to first com
   assert.equal(result.comments[1].timeMs, 1000);
 });
 
+test("uses first comment when session marker exists but video marker is absent", () => {
+  const result = prepareCommentTimeline([
+    { type: "sessionStart", sessionStartedAt: "2026-11-11T00:00:00.000Z" },
+    { type: "comment", timestamp: "2026-11-11T00:03:00.000Z", content: "first captured comment" },
+    { type: "comment", timestamp: "2026-11-11T00:03:02.000Z", content: "second" }
+  ], 10000);
+  assert.equal(result.usedFallbackOrigin, true);
+  assert.equal(result.comments[0].timeMs, 0);
+  assert.equal(result.comments[1].timeMs, 2000);
+});
+
 test("parses second and millisecond timestamps", () => {
   assert.equal(timestampMs(1794355200), 1794355200000);
   assert.equal(timestampMs(1794355200000), 1794355200000);
