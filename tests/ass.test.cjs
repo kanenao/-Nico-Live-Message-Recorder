@@ -13,7 +13,7 @@ test("aligns ASS timestamps to videoStart and excludes earlier history", () => {
   ]);
 
   assert.equal(result.commentCount, 1);
-  assert.match(result.content, /Dialogue: 0,0:00:01\.22,/);
+  assert.match(result.content, /Dialogue: 0,0:00:01\.23,/);
   assert.match(result.content, /こんにちは/);
   assert.doesNotMatch(result.content, /old history/);
 });
@@ -40,6 +40,18 @@ test("escapes ASS override braces and newlines", () => {
   ]);
 
   assert.match(result.content, /\\\{\\\\an7\\\}hello\\Nworld/);
+});
+
+test("omits comments received after the video stop marker", () => {
+  const result = generateAssFromRecords([
+    { type: "videoStart", videoStartedAt: "2026-11-11T00:00:00.000Z" },
+    { type: "comment", timestamp: "2026-11-11T00:00:01.000Z", content: "inside" },
+    { type: "videoStop", videoStoppedAt: "2026-11-11T00:00:05.000Z" },
+    { type: "comment", timestamp: "2026-11-11T00:00:08.000Z", content: "after stop" }
+  ]);
+  assert.equal(result.commentCount, 1);
+  assert.match(result.content, /inside/);
+  assert.doesNotMatch(result.content, /after stop/);
 });
 
 test("formats ASS time in centiseconds", () => {
