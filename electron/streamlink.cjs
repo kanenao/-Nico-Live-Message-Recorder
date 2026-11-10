@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const QUALITIES = new Set(["best", "worst", "audio_only"]);
+const QUALITIES = new Set(["best", "worst"]);
 
 function normalizeLiveId(value) {
   const match = String(value || "").trim().match(/(?:lv)?(\d{5,})/i);
