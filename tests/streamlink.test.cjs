@@ -71,7 +71,7 @@ test("session token is written only to the temporary plugin config, not process 
     runtime = createStreamlinkRuntime(root, "session-secret");
     const pluginConfig = fs.readFileSync(runtime.configPath + ".nicolive", "utf8");
     assert.equal(pluginConfig, "niconico-user-session=session-secret\n");
-    assert.throws(() => createStreamlinkRuntime(root, "session-secret\\ninjected=true"));
+    assert.throws(() => createStreamlinkRuntime(root, "session-secret\ninjected=true"));
     const args = buildStreamlinkArgs({
       configPath: runtime.configPath,
       liveId: "lv123456789",
