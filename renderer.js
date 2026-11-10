@@ -9,15 +9,12 @@ const stopRecordButton = byId("stop-record-button");
 const commentList = byId("comment-list");
 
 let connected = false;
-let videoRecorder = null;
-let captureStream = null;
 let recordStartedAt = 0;
 let recordClock = null;
 let currentLiveId = "";
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
-let videoChunkQueue = Promise.resolve();
 
 function showToast(message, isError) {
   const toast = byId("toast");
@@ -195,185 +192,127 @@ function formatDuration(milliseconds) {
   return hours + ":" + minutes + ":" + seconds;
 }
 
-function openCaptureSourcePicker(sources) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.className = "capture-overlay";
-    const panel = document.createElement("section");
-    panel.className = "capture-dialog";
-    const heading = document.createElement("div");
-    heading.className = "capture-dialog-heading";
-    heading.innerHTML = "<div><div class='eyebrow'>SELECT CAPTURE SOURCE</div><h2>録画する画面を選択</h2><p>ニコ生を表示しているブラウザーのウィンドウを選んでください。</p></div>";
-    const grid = document.createElement("div");
-    grid.className = "capture-source-grid";
-    const finish = (value) => {
-      overlay.remove();
-      resolve(value);
-    };
-    for (const source of sources) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "capture-source";
-      if (source.thumbnail) {
-        const image = document.createElement("img");
-        image.src = source.thumbnail;
-        image.alt = "";
-        button.appendChild(image);
-      } else {
-        const placeholder = document.createElement("div");
-        placeholder.className = "capture-source-placeholder";
-        placeholder.textContent = "画面";
-        button.appendChild(placeholder);
-      }
-      const name = document.createElement("span");
-      name.textContent = source.name || "名前のないウィンドウ";
-      button.appendChild(name);
-      button.addEventListener("click", () => finish(source));
-      grid.appendChild(button);
-    }
-    const actions = document.createElement("div");
-    actions.className = "capture-dialog-actions";
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "button button-outline";
-    cancel.textContent = "キャンセル";
-    cancel.addEventListener("click", () => finish(null));
-    actions.appendChild(cancel);
-    panel.append(heading, grid, actions);
-    overlay.appendChild(panel);
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) finish(null);
-    });
-    document.body.appendChild(overlay);
-  });
-}
-
-async function handleCaptureSourceRequest() {
-  try {
-    const sources = await api.listVideoSources();
-    if (!sources.length) {
-      await api.cancelCaptureSource();
-      showToast("録画できる画面・ウィンドウが見つかりません。", true);
-      return;
-    }
-    const source = await openCaptureSourcePicker(sources);
-    if (!source) {
-      await api.cancelCaptureSource();
-      showToast("画面録画をキャンセルしました。");
-      return;
-    }
-    await api.selectVideoSource(source.id);
-  } catch (error) {
-    try { await api.cancelCaptureSource(); } catch (_) {}
-    showToast(error.message || "録画元を選択できませんでした。", true);
-  }
-}
-
 async function startVideoRecording() {
   const liveId = normalizeId(liveInput.value || currentLiveId);
   if (!liveId) {
     showToast("先に放送IDを入力してください。", true);
     return;
   }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    showToast("この環境では画面録画を利用できません。", true);
-    return;
-  }
 
   recordButton.disabled = true;
   try {
-    // Request capture immediately from the button gesture. The main process
-    // asks the user to select one specific window or screen before granting it.
-    captureStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
-      audio: true
-    });
-
-    const result = await api.startVideo(liveId);
-    const supportedTypes = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm"
-    ];
-    const mimeType = supportedTypes.find((type) => MediaRecorder.isTypeSupported(type));
-    videoRecorder = new MediaRecorder(captureStream, mimeType ? { mimeType } : undefined);
-    videoChunkQueue = Promise.resolve();
-
-    videoRecorder.ondataavailable = (event) => {
-      if (!event.data || event.data.size === 0) return;
-      const chunk = event.data;
-      videoChunkQueue = videoChunkQueue.then(async () => {
-        await api.writeVideoChunk(await chunk.arrayBuffer());
-      }).catch((error) => {
-        showToast("録画データを保存できません: " + error.message, true);
-      });
-    };
-
-    videoRecorder.onerror = (event) => {
-      showToast("画面録画でエラーが発生しました。", true);
-      console.error(event);
-      stopVideoRecording();
-    };
-
-    videoRecorder.onstop = async () => {
-      try {
-        await videoChunkQueue;
-        const saved = await api.stopVideo();
-        showToast(saved.path ? "映像を保存しました: " + saved.path : "録画を停止しました。");
-        byId("video-file").textContent = saved.path ? "映像：" + saved.path : "保存先：未作成";
-      } catch (error) {
-        showToast(error.message || "録画ファイルを閉じられませんでした。", true);
-      }
-      if (captureStream) captureStream.getTracks().forEach((track) => track.stop());
-      captureStream = null;
-      videoRecorder = null;
-      clearRecordClock();
-      setVideoState(false);
-    };
-
-    videoRecorder.start(1000);
-    recordStartedAt = Date.now();
-    byId("video-file").textContent = "映像：" + result.path;
+    const quality = byId("record-quality")?.value || "best";
+    const result = await api.startVideo(liveId, quality);
+    byId("video-file").textContent = "保存先：" + result.path;
+    recordStartedAt = result.startedAt ? new Date(result.startedAt).getTime() : Date.now();
     setVideoState(true);
-    recordClock = window.setInterval(() => {
-      byId("record-timer").textContent = formatDuration(Date.now() - recordStartedAt);
-    }, 500);
-
-    const videoTrack = captureStream.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.addEventListener("ended", () => {
-        if (videoRecorder && videoRecorder.state !== "inactive") videoRecorder.stop();
-      }, { once: true });
-    }
-    showToast("画面録画を開始しました。");
+    startRecordClock();
+    showToast("配信ストリームの直接録画を開始しました。");
   } catch (error) {
-    try { await api.cancelCaptureSource(); } catch (_) {}
-    if (captureStream) captureStream.getTracks().forEach((track) => track.stop());
-    captureStream = null;
-    try { await api.stopVideo(); } catch (_) {}
-    recordButton.disabled = false;
-    showToast(error.message || "画面録画を開始できませんでした。", true);
+    setVideoState(false);
+    showToast(error.message || "直接録画を開始できませんでした。", true);
   }
 }
+
+function startRecordClock() {
+  if (recordClock) return;
+  if (!recordStartedAt) recordStartedAt = Date.now();
+  recordClock = window.setInterval(() => {
+    byId("record-timer").textContent = formatDuration(Date.now() - recordStartedAt);
+  }, 500);
+}
+
 function clearRecordClock() {
   if (recordClock) window.clearInterval(recordClock);
   recordClock = null;
+  recordStartedAt = 0;
   byId("record-timer").textContent = "00:00:00";
 }
 
-function setVideoState(recording) {
+function setVideoState(recording, stopping = false) {
   byId("record-indicator").classList.toggle("recording", recording);
-  byId("record-status").textContent = recording ? "録画中" : "録画していません";
-  recordButton.disabled = recording;
-  stopRecordButton.disabled = !recording;
+  byId("record-status").textContent = stopping
+    ? "録画停止中…"
+    : recording ? "録画中（直接取得）" : "録画していません";
+  recordButton.disabled = recording || stopping;
+  stopRecordButton.disabled = !recording || stopping;
 }
 
-function stopVideoRecording() {
-  if (videoRecorder && videoRecorder.state !== "inactive") videoRecorder.stop();
+async function stopVideoRecording() {
+  if (!stopRecordButton.disabled) {
+    setVideoState(true, true);
+    try {
+      const result = await api.stopVideo();
+      if (result.path) {
+        byId("video-file").textContent = "映像：" + result.path;
+      }
+    } catch (error) {
+      setVideoState(true);
+      showToast(error.message || "録画を停止できませんでした。", true);
+    }
+  }
+}
+
+function handleVideoState(payload) {
+  if (!payload) return;
+  if (payload.recording) {
+    if (payload.path) byId("video-file").textContent = "映像：" + payload.path;
+    recordStartedAt = payload.startedAt ? new Date(payload.startedAt).getTime() : (recordStartedAt || Date.now());
+    setVideoState(true);
+    startRecordClock();
+    return;
+  }
+
+  if (payload.path) {
+    byId("video-file").textContent = "映像：" + payload.path;
+    showToast(payload.converted
+      ? "録画を保存しました（MP4変換済み）: " + payload.path
+      : "録画を保存しました（TS形式）: " + payload.path);
+  } else if (payload.exitCode !== undefined) {
+    showToast("録画データがありません。配信の状態と視聴権限を確認してください。", true);
+  }
+  clearRecordClock();
+  setVideoState(false);
+}
+
+async function refreshVideoTools() {
+  try {
+    const status = await api.getVideoToolStatus();
+    const streamlinkLabel = byId("streamlink-status");
+    const ffmpegLabel = byId("ffmpeg-status");
+    streamlinkLabel.textContent = status.streamlinkAvailable
+      ? "Streamlink：設定済み（" + status.streamlinkPath.replace(/^.*[\\/]/, "") + "）"
+      : "Streamlink：未設定";
+    ffmpegLabel.textContent = status.ffmpegAvailable
+      ? "FFmpeg：設定済み（MP4変換可能）"
+      : "FFmpeg：未設定（録画はTS形式）";
+  } catch (_) {
+    byId("streamlink-status").textContent = "Streamlink：状態を確認できません";
+    byId("ffmpeg-status").textContent = "FFmpeg：状態を確認できません";
+  }
+}
+
+async function configureStreamlink() {
+  try {
+    const result = await api.selectStreamlink();
+    if (!result.cancelled) showToast("Streamlinkを設定しました。");
+    await refreshVideoTools();
+  } catch (error) {
+    showToast(error.message || "Streamlinkを設定できませんでした。", true);
+  }
+}
+
+async function configureFfmpeg() {
+  try {
+    const result = await api.selectFfmpeg();
+    if (!result.cancelled) showToast("FFmpegを設定しました。録画終了後にMP4へ変換します。");
+    await refreshVideoTools();
+  } catch (error) {
+    showToast(error.message || "FFmpegを設定できませんでした。", true);
+  }
 }
 
 api.onEvent(({ channel, payload }) => {
-  if (channel === "video:choose-source") handleCaptureSourceRequest();
   if (channel === "live:event") renderEvent(payload);
   if (channel === "live:metadata") updateMetadata(payload);
   if (channel === "live:state") {
@@ -383,9 +322,7 @@ api.onEvent(({ channel, payload }) => {
   if (channel === "comments:file" && payload && payload.path) {
     byId("comment-file").textContent = "コメント：" + payload.path;
   }
-  if (channel === "video:state" && payload && payload.path) {
-    byId("video-file").textContent = "映像：" + payload.path;
-  }
+  if (channel === "video:state") handleVideoState(payload);
   if (channel === "auth:status") refreshAuthStatus();
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
 });
@@ -394,6 +331,12 @@ connectButton.addEventListener("click", connectLive);
 disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 stopRecordButton.addEventListener("click", stopVideoRecording);
+byId("configure-streamlink-button").addEventListener("click", configureStreamlink);
+byId("configure-ffmpeg-button").addEventListener("click", configureFfmpeg);
+byId("download-streamlink-button").addEventListener("click", async () => {
+  try { await api.openStreamlinkDownload(); }
+  catch (error) { showToast(error.message || "配布ページを開けませんでした。", true); }
+});
 
 byId("open-watch-button").addEventListener("click", async () => {
   const liveId = normalizeId(liveInput.value);
@@ -452,6 +395,7 @@ liveInput.addEventListener("keydown", (event) => {
     byId("footer-version").textContent = text;
   } catch (_) {}
   await refreshAuthStatus();
+  await refreshVideoTools();
   setConnection("disconnected");
 })();
 
