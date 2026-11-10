@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { prepareCommentTimeline, timestampMs } = require("../composition.js");
+const { prepareCommentTimeline, timestampMs, reserveLane } = require("../composition.js");
 
 test("aligns comments to videoStart rather than sessionStart", () => {
   const result = prepareCommentTimeline([
@@ -60,4 +60,24 @@ test("uses first comment when session marker exists but video marker is absent",
 test("parses second and millisecond timestamps", () => {
   assert.equal(timestampMs(1794355200), 1794355200000);
   assert.equal(timestampMs(1794355200000), 1794355200000);
+});
+
+
+test("defers a comment until its selected lane becomes free", () => {
+  const lanes = [5000, 12000, 8000];
+  const reservation = reserveLane(lanes, 2000, 4000, 200);
+  assert.equal(reservation.lane, 0);
+  assert.equal(reservation.startMs, 5000);
+  assert.equal(reservation.endMs, 9000);
+  assert.equal(lanes[0], 9200);
+});
+
+test("keeps comments in the same lane from overlapping", () => {
+  const lanes = [0, 0];
+  const first = reserveLane(lanes, 1000, 6000, 250);
+  const second = reserveLane(lanes, 2000, 6000, 250);
+  assert.notEqual(first.lane, second.lane);
+  const third = reserveLane(lanes, 3000, 6000, 250);
+  assert.ok(third.startMs >= 7250);
+  assert.ok(third.startMs >= first.startMs + 6250);
 });
