@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, desktopCapturer } = require("electron");
+const { generateAssFromRecords } = require("./ass.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -55,11 +56,13 @@ function normalizeEvent(type, item) {
 
   const keys = [
     "id", "content", "userId", "userName", "itemId", "itemName",
-    "point", "message", "name", "link"
+    "point", "message", "name", "link", "mail"
   ];
   for (const key of keys) {
     if (data[key] !== undefined && data[key] !== null) {
-      result[key] = typeof data[key] === "string" ? data[key] : String(data[key]);
+      result[key] = key === "mail" && Array.isArray(data[key])
+        ? data[key].join(" ")
+        : (typeof data[key] === "string" ? data[key] : String(data[key]));
     }
   }
   return result;
@@ -73,6 +76,7 @@ function openCommentWriter(liveId) {
   commentWriter.on("error", (error) => {
     send("app:error", "コメントファイルの保存に失敗しました: " + error.message);
   });
+  appendMarker("sessionStart", { sessionStartedAt: new Date().toISOString() });
   send("comments:file", { path: commentFilePath });
 }
 
@@ -80,6 +84,13 @@ function appendEvent(type, item) {
   const record = normalizeEvent(type, item);
   if (commentWriter) commentWriter.write(JSON.stringify(record) + "\n");
   send("live:event", record);
+}
+
+function appendMarker(type, fields = {}) {
+  if (!commentWriter) return;
+  const timestamp = new Date().toISOString();
+  const marker = { type, liveId: currentLiveId, timestamp, receivedAt: timestamp, ...fields };
+  commentWriter.write(JSON.stringify(marker) + "\n");
 }
 
 function closeCommentWriter() {
@@ -276,8 +287,10 @@ ipcMain.handle("video:start", async (_event, value) => {
   videoWriter.on("error", (error) => {
     send("app:error", "映像ファイルの保存に失敗しました: " + error.message);
   });
+  const startedAt = new Date().toISOString();
+  if (currentLiveId === liveId) appendMarker("videoStart", { videoStartedAt: startedAt, videoFile: videoFilePath });
   send("video:state", { recording: true, path: videoFilePath });
-  return { path: videoFilePath };
+  return { path: videoFilePath, startedAt };
 });
 
 ipcMain.handle("video:chunk", async (_event, arrayBuffer) => {
@@ -297,6 +310,7 @@ ipcMain.handle("video:stop", async () => {
   if (!videoWriter) return { path: null };
   const writer = videoWriter;
   const savedPath = videoFilePath;
+  appendMarker("videoStop", { videoStoppedAt: new Date().toISOString(), videoFile: savedPath });
   videoWriter = null;
   videoFilePath = "";
   await new Promise((resolve, reject) => {
@@ -350,6 +364,38 @@ ipcMain.handle("comments:export-csv", async () => {
   if (result.canceled || !result.filePath) return { cancelled: true };
   fs.writeFileSync(result.filePath, "\uFEFF" + output.join("\r\n"), "utf8");
   return { path: result.filePath };
+});
+
+ipcMain.handle("comments:export-ass", async () => {
+  const directory = path.join(dataRoot(), "comments");
+  if (!fs.existsSync(directory)) throw new Error("保存済みコメントフォルダーがありません。");
+  const openResult = await dialog.showOpenDialog(mainWindow, {
+    title: "ASSに変換するコメントログを選択",
+    defaultPath: commentFilePath && fs.existsSync(commentFilePath) ? commentFilePath : directory,
+    properties: ["openFile"],
+    filters: [{ name: "コメントログ（JSONL）", extensions: ["jsonl"] }]
+  });
+  if (openResult.canceled || !openResult.filePaths || !openResult.filePaths[0]) return { cancelled: true };
+  const source = openResult.filePaths[0];
+  if (commentWriter && source === commentFilePath) {
+    await new Promise((resolve, reject) => {
+      commentWriter.write("", (error) => error ? reject(error) : resolve());
+    });
+  }
+  const records = [];
+  const lines = fs.readFileSync(source, "utf8").split(/\r?\n/).filter(Boolean);
+  for (const line of lines) {
+    try { records.push(JSON.parse(line)); } catch (_) { /* skip malformed rows */ }
+  }
+  const generated = generateAssFromRecords(records);
+  const saveResult = await dialog.showSaveDialog(mainWindow, {
+    title: "ASS字幕を書き出す",
+    defaultPath: source.replace(/\.jsonl$/i, ".ass"),
+    filters: [{ name: "Advanced SubStation Alpha", extensions: ["ass"] }]
+  });
+  if (saveResult.canceled || !saveResult.filePath) return { cancelled: true };
+  fs.writeFileSync(saveResult.filePath, "\uFEFF" + generated.content, "utf8");
+  return { path: saveResult.filePath, commentCount: generated.commentCount };
 });
 
 app.whenReady().then(() => {
