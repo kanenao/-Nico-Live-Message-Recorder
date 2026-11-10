@@ -100,7 +100,8 @@ function createStreamlinkRuntime(tempRoot, userSession) {
   const configPath = path.join(configDirectory, "config");
   fs.writeFileSync(configPath, "loglevel=info\n", { encoding: "utf8", mode: 0o600 });
 
-  const token = String(userSession || "").replace(/[\r\n]/g, "").trim();
+  const token = String(userSession || "").trim();
+  if (/[\r\n]/.test(token)) throw new Error("ログインセッションの形式が正しくありません。");
   if (token) {
     fs.writeFileSync(
       configPath + ".nicolive",
