@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   stopVideo: () => ipcRenderer.invoke("video:stop"),
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
   exportCsv: () => ipcRenderer.invoke("comments:export-csv"),
+  exportAss: () => ipcRenderer.invoke("comments:export-ass"),
   onEvent: (callback) => {
     const handler = (_event, message) => callback(message);
     ipcRenderer.on("app:event", handler);
