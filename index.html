@@ -92,6 +92,37 @@
           </article>
         </section>
 
+        <section class="panel compose-panel">
+          <div class="panel-heading">
+            <div>
+              <div class="eyebrow">COMMENT VIDEO COMPOSER</div>
+              <h2>コメント付き動画を生成</h2>
+            </div>
+            <span class="step-number">03</span>
+          </div>
+          <div class="compose-file-grid">
+            <label class="compose-file-field" for="compose-video-input">
+              <span>録画した動画</span>
+              <input id="compose-video-input" type="file" accept="video/webm,video/mp4,video/quicktime,video/*">
+              <small id="compose-video-name">WebM / MP4動画を選択</small>
+            </label>
+            <label class="compose-file-field" for="compose-comments-input">
+              <span>コメントログ</span>
+              <input id="compose-comments-input" type="file" accept=".jsonl,application/x-ndjson,application/json">
+              <small id="compose-comments-name">JSONLコメントログを選択</small>
+            </label>
+          </div>
+          <div class="button-row compose-actions">
+            <button class="button button-primary" id="compose-button">コメントを重ねて動画生成</button>
+            <button class="button button-outline" id="compose-cancel-button" disabled>生成をキャンセル</button>
+          </div>
+          <div class="compose-progress-wrap">
+            <progress id="compose-progress" max="100" value="0"></progress>
+            <span id="compose-progress-label">待機中</span>
+          </div>
+          <div class="hint">動画の上にコメントをニコニコ生放送風に流してWebM形式で保存します。音声がある動画は音声も引き継ぎます。</div>
+        </section>
+
         <section class="stats-grid">
           <article class="stat-card">
             <span class="stat-label">受信コメント</span>
@@ -142,6 +173,7 @@
     </div>
     <div class="toast" id="toast" role="status"></div>
   </div>
+  <script src="./composition.js"></script>
   <script src="./renderer.js"></script>
 </body>
 </html>
