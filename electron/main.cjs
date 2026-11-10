@@ -3,6 +3,8 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
+app.setName("Nico Live Message Recorder");
+
 let mainWindow = null;
 let loginWindow = null;
 let provider = null;
@@ -112,7 +114,7 @@ function makeWindow() {
     minWidth: 1120,
     minHeight: 720,
     backgroundColor: "#0b1020",
-    title: "NicoLive Recorder",
+    title: "Nico Live Message Recorder",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
