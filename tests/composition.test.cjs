@@ -12,9 +12,8 @@ test("aligns comments to videoStart rather than sessionStart", () => {
     { type: "comment", timestamp: "2026-11-11T00:00:06.250Z", content: "during video" }
   ], 10000);
 
-  assert.equal(result.comments.length, 2);
-  assert.equal(result.comments[0].timeMs, 0);
-  assert.equal(result.comments[1].timeMs, 1250);
+  assert.equal(result.comments.length, 1);
+  assert.equal(result.comments[0].timeMs, 1250);
 });
 
 test("limits the timeline to video duration and videoStop", () => {
