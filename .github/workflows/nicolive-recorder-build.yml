@@ -1,4 +1,4 @@
-name: Build NicoLive Recorder
+name: Build Nico Live Message Recorder
 
 on:
   push:
@@ -20,6 +20,7 @@ on:
       - "electron/**"
       - "index.html"
       - "renderer.js"
+      - "composition.js"
       - "styles.css"
       - "package.json"
       - "README.md"
