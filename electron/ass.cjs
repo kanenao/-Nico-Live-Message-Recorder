@@ -66,6 +66,8 @@ function generateAssFromRecords(records, options = {}) {
 
   const videoMarker = records.find((record) => record && record.type === "videoStart");
   const sessionMarker = records.find((record) => record && record.type === "sessionStart");
+  const videoStopMarker = records.find((record) => record && record.type === "videoStop");
+  const stopAt = parseTimestamp(videoStopMarker && (videoStopMarker.videoStoppedAt || videoStopMarker.timestamp));
   const origin =
     parseTimestamp(videoMarker && (videoMarker.videoStartedAt || videoMarker.timestamp)) ??
     parseTimestamp(sessionMarker && (sessionMarker.sessionStartedAt || sessionMarker.timestamp)) ??
@@ -91,8 +93,9 @@ function generateAssFromRecords(records, options = {}) {
 
   for (const item of comments) {
     const relativeMs = item.timestamp - origin;
-    // History comments received before video recording starts are not overlaid.
+    // Ignore comments from before the video started or after it stopped.
     if (relativeMs < -250) continue;
+    if (stopAt !== null && item.timestamp > stopAt + 250) continue;
 
     const record = item.record;
     const text = escapeAssText(record.content);
