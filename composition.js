@@ -23,12 +23,20 @@
     const videoStart = records.find((record) => record && record.type === "videoStart");
     const sessionStart = records.find((record) => record && record.type === "sessionStart");
     const videoStop = records.find((record) => record && record.type === "videoStop");
-    const origin =
+    let origin =
       timestampMs(videoStart && (videoStart.videoStartedAt || videoStart.timestamp)) ??
       timestampMs(sessionStart && (sessionStart.sessionStartedAt || sessionStart.timestamp));
 
     if (origin === null) {
-      throw new Error("録画開始時刻がコメントログにありません。β2以前のログは録画開始時刻を基準にできないため、コメントの先頭時刻を使用します。");
+      const firstCommentTime = records
+        .filter((record) => record && record.type === "comment")
+        .map((record) => timestampMs(record.timestamp) ?? timestampMs(record.receivedAt))
+        .filter((value) => value !== null)
+        .sort((a, b) => a - b)[0];
+      origin = firstCommentTime ?? null;
+    }
+    if (origin === null) {
+      throw new Error("コメントの日時を読み取れませんでした。");
     }
 
     const stopAt = timestampMs(videoStop && (videoStop.videoStoppedAt || videoStop.timestamp));
