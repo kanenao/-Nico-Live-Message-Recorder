@@ -13,6 +13,7 @@ on:
       - "styles.css"
       - "package.json"
       - "README.md"
+      - "CHANGELOG.md"
       - "tests/**"
       - ".github/workflows/nicolive-recorder-build.yml"
   pull_request:
@@ -24,6 +25,7 @@ on:
       - "styles.css"
       - "package.json"
       - "README.md"
+      - "CHANGELOG.md"
       - "tests/**"
       - ".github/workflows/nicolive-recorder-build.yml"
   workflow_dispatch:
@@ -43,14 +45,14 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Run ASS conversion tests
+      - name: Run application tests
         run: npm test
       - name: Build installer and portable ZIP
         run: npm run dist:win
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: Nico-Live-Message-Recorder-beta3-Windows
+          name: Nico-Live-Message-Recorder-beta5-Windows
           path: dist/*
           if-no-files-found: error
           retention-days: 14
