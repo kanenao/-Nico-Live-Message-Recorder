@@ -23,9 +23,7 @@
     const videoStart = records.find((record) => record && record.type === "videoStart");
     const sessionStart = records.find((record) => record && record.type === "sessionStart");
     const videoStop = records.find((record) => record && record.type === "videoStop");
-    let origin =
-      timestampMs(videoStart && (videoStart.videoStartedAt || videoStart.timestamp)) ??
-      timestampMs(sessionStart && (sessionStart.sessionStartedAt || sessionStart.timestamp));
+    let origin = timestampMs(videoStart && (videoStart.videoStartedAt || videoStart.timestamp));
 
     if (origin === null) {
       const firstCommentTime = records
@@ -33,7 +31,7 @@
         .map((record) => timestampMs(record.timestamp) ?? timestampMs(record.receivedAt))
         .filter((value) => value !== null)
         .sort((a, b) => a - b)[0];
-      origin = firstCommentTime ?? null;
+      origin = firstCommentTime ?? timestampMs(sessionStart && (sessionStart.sessionStartedAt || sessionStart.timestamp));
     }
     if (origin === null) {
       throw new Error("コメントの日時を読み取れませんでした。");
@@ -74,7 +72,7 @@
     return {
       originMs: origin,
       durationMs: Number.isFinite(maxDuration) ? maxDuration : null,
-      usedFallbackOrigin: !videoStart && !sessionStart,
+      usedFallbackOrigin: !videoStart,
       comments
     };
   }
