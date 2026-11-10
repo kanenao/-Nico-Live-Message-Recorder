@@ -31,7 +31,8 @@
       "renderer.js",
       "styles.css",
       "package.json",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "composition.js"
     ],
     "win": {
       "target": [
