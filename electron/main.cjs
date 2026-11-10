@@ -14,6 +14,8 @@ let commentFilePath = "";
 let videoWriter = null;
 let videoFilePath = "";
 let pendingCaptureRequest = null;
+let composeWriter = null;
+let composeFilePath = "";
 
 function dataRoot() {
   const root = path.join(app.getPath("videos"), "NicoLiveRecorder");
@@ -323,6 +325,64 @@ ipcMain.handle("video:stop", async () => {
   return { path: savedPath };
 });
 
+ipcMain.handle("compose:start", async () => {
+  if (composeWriter) throw new Error("動画生成はすでに実行中です。");
+  const saveResult = await dialog.showSaveDialog(mainWindow, {
+    title: "コメント付き動画を書き出す",
+    defaultPath: "NicoLiveMessage_" + stamp() + ".webm",
+    filters: [{ name: "WebM動画", extensions: ["webm"] }]
+  });
+  if (saveResult.canceled || !saveResult.filePath) return { cancelled: true };
+
+  composeFilePath = saveResult.filePath;
+  composeWriter = fs.createWriteStream(composeFilePath, { flags: "w" });
+  await new Promise((resolve, reject) => {
+    composeWriter.once("open", resolve);
+    composeWriter.once("error", reject);
+  });
+  composeWriter.on("error", (error) => {
+    send("app:error", "合成動画の保存に失敗しました: " + error.message);
+  });
+  return { path: composeFilePath };
+});
+
+ipcMain.handle("compose:chunk", async (_event, arrayBuffer) => {
+  if (!composeWriter || !arrayBuffer) throw new Error("合成動画ファイルが開かれていません。");
+  await new Promise((resolve, reject) => {
+    composeWriter.write(Buffer.from(arrayBuffer), (error) => error ? reject(error) : resolve());
+  });
+  return { written: true };
+});
+
+ipcMain.handle("compose:finish", async () => {
+  if (!composeWriter) return { path: null };
+  const writer = composeWriter;
+  const savedPath = composeFilePath;
+  composeWriter = null;
+  composeFilePath = "";
+  await new Promise((resolve, reject) => {
+    writer.once("error", reject);
+    writer.end(resolve);
+  });
+  return { path: savedPath };
+});
+
+ipcMain.handle("compose:cancel", async () => {
+  const writer = composeWriter;
+  const savedPath = composeFilePath;
+  composeWriter = null;
+  composeFilePath = "";
+  if (writer) {
+    await new Promise((resolve) => {
+      writer.end(resolve);
+    });
+  }
+  if (savedPath && fs.existsSync(savedPath)) {
+    await fs.promises.unlink(savedPath).catch(() => {});
+  }
+  return { cancelled: true };
+});
+
 ipcMain.handle("data:open-folder", async () => {
   const result = await shell.openPath(dataRoot());
   return { error: result || "" };
@@ -427,6 +487,7 @@ app.on("before-quit", () => {
   }
   if (commentWriter) commentWriter.end();
   if (videoWriter) videoWriter.end();
+  if (composeWriter) composeWriter.end();
 });
 
 app.on("window-all-closed", () => {
