@@ -419,6 +419,16 @@ byId("open-folder-button").addEventListener("click", async () => {
   }
 });
 
+byId("export-ass-button").addEventListener("click", async () => {
+  try {
+    const result = await api.exportAss();
+    if (result.cancelled) return;
+    showToast("ASSを書き出しました（" + result.commentCount + "件）: " + result.path);
+  } catch (error) {
+    showToast(error.message || "ASSを書き出せませんでした。", true);
+  }
+});
+
 byId("export-button").addEventListener("click", async () => {
   try {
     const result = await api.exportCsv();
