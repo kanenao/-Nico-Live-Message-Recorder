@@ -10,7 +10,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { autoUpdater } = require("electron-updater");
-const { normalizeNicoUserId, fetchUserBroadcastStatus } = require("./monitor.cjs");
+const { normalizeNicoUserId, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms } = require("./monitor.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -430,7 +430,7 @@ function getMonitorSettings() {
   return {
     ...DEFAULT_MONITOR_SETTINGS,
     ...stored,
-    intervalSeconds: [30, 60, 120, 300].includes(Number(stored.intervalSeconds))
+    intervalSeconds: [15, 30, 60, 120, 300].includes(Number(stored.intervalSeconds))
       ? Number(stored.intervalSeconds)
       : DEFAULT_MONITOR_SETTINGS.intervalSeconds,
     autoRecord: stored.autoRecord !== false,
@@ -451,7 +451,7 @@ function saveMonitorSettings(nextSettings) {
   const current = getMonitorSettings();
   const candidate = { ...current, ...(nextSettings || {}) };
   const intervalSeconds = Number(candidate.intervalSeconds);
-  if (![30, 60, 120, 300].includes(intervalSeconds)) {
+  if (![15, 30, 60, 120, 300].includes(intervalSeconds)) {
     throw new Error("監視間隔は30秒・1分・2分・5分から選択してください。");
   }
   const normalized = {
@@ -480,6 +480,24 @@ function sendMonitorState(state, details = {}) {
   send("monitor:state", { running: monitorRunning, state, ...details });
 }
 
+async function getNicoCookieHeader() {
+  const authSession = session.fromPartition("persist:nico-auth");
+  const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
+  if (!cookies.some((cookie) => cookie.name === "user_session" && cookie.value)) return "";
+
+  const byName = new Map();
+  for (const cookie of cookies) {
+    if (!cookie.name || !cookie.value) continue;
+    const current = byName.get(cookie.name);
+    if (!current || (cookie.domain || "").startsWith(".")) {
+      byName.set(cookie.name, cookie);
+    }
+  }
+  return Array.from(byName.values())
+    .map((cookie) => cookie.name + "=" + cookie.value)
+    .join("; ");
+}
+
 async function checkMonitoredUsers() {
   if (!monitorRunning || monitorChecking) return;
   monitorChecking = true;
@@ -488,19 +506,54 @@ async function checkMonitoredUsers() {
 
   try {
     const config = getMonitorSettings();
-    for (const target of config.targets.filter((item) => item.enabled)) {
+    const enabledTargets = config.targets.filter((item) => item.enabled);
+    const targetIds = new Set(enabledTargets.map((item) => item.userId));
+    const followedLiveByUser = new Map();
+
+    // 参考アプリと同様に、ログイン中のフォロー中番組一覧を先に確認する。
+    // 手動登録されたユーザーだけに絞り、対象外の配信を自動録画しない。
+    try {
+      const cookieHeader = await getNicoCookieHeader();
+      if (cookieHeader) {
+        const followedPrograms = await fetchFollowingOnAirPrograms(cookieHeader);
+        for (const program of followedPrograms) {
+          if (program.providerId && targetIds.has(program.providerId) &&
+              !followedLiveByUser.has(program.providerId)) {
+            followedLiveByUser.set(program.providerId, program);
+          }
+        }
+      }
+    } catch (error) {
+      // フォロー中番組APIが使えない場合でも、公開放送履歴で監視を継続する。
+      console.warn("Followed-program API unavailable; falling back to public history:", error);
+    }
+
+    for (const target of enabledTargets) {
       if (!monitorRunning) break;
       try {
-        const result = await fetchUserBroadcastStatus(target.userId);
-        const live = result.live;
+        const followedProgram = followedLiveByUser.get(target.userId);
+        const result = followedProgram ? null : await fetchUserBroadcastStatus(target.userId);
+        const live = followedProgram
+          ? {
+              liveId: followedProgram.liveId,
+              title: followedProgram.title,
+              status: "ON_AIR",
+              isFollowerOnly: followedProgram.isFollowerOnly
+            }
+          : result.live;
+        const checkedAt = result ? result.checkedAt : new Date().toISOString();
+        const latest = result ? result.latest : null;
+        const source = followedProgram ? "フォロー中番組API" : "公開放送履歴API";
         const status = {
           userId: target.userId,
           name: target.name,
           isLive: Boolean(live),
           liveId: live ? live.liveId : "",
-          title: live ? live.title : (result.latest ? result.latest.title : ""),
-          programStatus: live ? live.status : (result.latest ? result.latest.status : ""),
-          checkedAt: result.checkedAt,
+          title: live ? live.title : (latest ? latest.title : ""),
+          programStatus: live ? live.status : (latest ? latest.status : ""),
+          detectionSource: live ? source : "",
+          isFollowerOnly: Boolean(live && live.isFollowerOnly),
+          checkedAt,
           error: ""
         };
         monitorTargetStatuses.set(target.userId, status);
@@ -518,7 +571,9 @@ async function checkMonitoredUsers() {
             name: target.name,
             liveId: live.liveId,
             title: live.title,
-            detectedAt: result.checkedAt
+            source,
+            isFollowerOnly: Boolean(live.isFollowerOnly),
+            detectedAt: checkedAt
           });
         }
       } catch (error) {
@@ -544,7 +599,6 @@ async function checkMonitoredUsers() {
     }
   }
 }
-
 function restartMonitorTimer() {
   if (monitorTimer) clearInterval(monitorTimer);
   monitorTimer = null;
