@@ -218,20 +218,20 @@ function normalizeEvent(type, item) {
 }
 
 function sanitizeFolderSegment(value) {
-  let name = String(value || "").normalize("NFKC")
-    .replace(/[<>:"\\/\\\\|?*\\x00-\\x1f]/g, "_")
-    .replace(/[. ]+$/g, "")
-    .replace(/\\s+/g, " ")
-    .trim()
-    .slice(0, 56);
-  if (!name || /^\\.+$/.test(name)) name = "配信者名未取得";
+  let name = String(value || "").normalize("NFKC");
+  name = Array.from(name).map((character) => {
+    return '<>:"/\\|?*'.includes(character) || character.charCodeAt(0) < 32
+      ? "_" : character;
+  }).join("");
+  name = name.replace(/\s+/g, " ").replace(/[. ]+$/g, "").trim().slice(0, 56);
+  if (!name || /^\.+$/.test(name)) name = "配信者名未取得";
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) name = "_" + name;
   return name;
 }
 
 function broadcasterFolderName(name, userId) {
   const label = sanitizeFolderSegment(name || (userId ? "ユーザー" : "配信者名未取得"));
-  const id = /^\\d{5,}$/.test(String(userId || "")) ? "_" + String(userId) : "";
+  const id = /^\d{5,}$/.test(String(userId || "")) ? "_" + String(userId) : "";
   return (label + id).slice(0, 76);
 }
 
@@ -250,7 +250,7 @@ function recordsToCsv(records) {
       row.userId || "", row.content || row.message || row.itemName || row.id || ""
     ].map(quote).join(","));
   }
-  return "\\uFEFF" + rows.join("\\r\\n");
+  return "\uFEFF" + rows.join("\r\n");
 }
 
 async function exportCommentSidecars(sourcePath) {
@@ -259,12 +259,12 @@ async function exportCommentSidecars(sourcePath) {
   if (!formats.length || !sourcePath || !fs.existsSync(sourcePath)) return [];
 
   const records = [];
-  for (const line of fs.readFileSync(sourcePath, "utf8").split(/\\r?\\n/).filter(Boolean)) {
+  for (const line of fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).filter(Boolean)) {
     try { records.push(JSON.parse(line)); } catch (_) {}
   }
   const written = [];
   for (const outputFormat of formats) {
-    const outputPath = sourcePath.replace(/\\.jsonl$/i, "." + outputFormat);
+    const outputPath = sourcePath.replace(/\.jsonl$/i, "." + outputFormat);
     const output = outputFormat === "csv"
       ? recordsToCsv(records)
       : generateAssFromRecords(records);
@@ -1245,7 +1245,7 @@ ipcMain.handle("comments:export-csv", async () => {
     .filter(Boolean);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "コメントCSVを書き出す",
-    defaultPath: source.replace(/\\.jsonl$/i, ".csv"),
+    defaultPath: source.replace(/\.jsonl$/i, ".csv"),
     filters: [{ name: "CSVファイル", extensions: ["csv"] }]
   });
   if (result.canceled || !result.filePath) return { cancelled: true };
