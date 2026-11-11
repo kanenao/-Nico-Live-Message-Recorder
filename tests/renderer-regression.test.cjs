@@ -267,32 +267,32 @@ test("dashboard timestamps accept numeric and ISO dates and display a full start
 
 
 test("video deletion is limited to saved videos and requires a native confirmation", () => {
-  assert.match(main, /ipcMain\\.handle\\("library:delete-video"/);
-  assert.match(main, /const videosRoot = path\\.resolve\\(dataRoot\\(\\), "videos"\\)/);
+  assert.match(main, /ipcMain\.handle\("library:delete-video"/);
+  assert.match(main, /const videosRoot = path\.resolve\(dataRoot\(\), "videos"\)/);
   assert.match(main, /streamlinkOutputPath/);
-  assert.match(main, /streamlinkProcess \\|\\| streamlinkFinalizePromise/);
-  assert.match(main, /dialog\\.showMessageBox\\(mainWindow/);
+  assert.match(main, /streamlinkProcess \|\| streamlinkFinalizePromise/);
+  assert.match(main, /dialog\.showMessageBox\(mainWindow/);
   assert.match(main, /削除した動画は元に戻せません/);
-  assert.match(preload, /deleteLibraryVideo:.*ipcRenderer\\.invoke\\("library:delete-video"/);
-  assert.match(renderer, /api\\.deleteLibraryVideo\\(item\\.path\\)/);
-  assert.match(renderer, /deleteButton\\.textContent = "削除"/);
+  assert.match(preload, /deleteLibraryVideo:.*ipcRenderer\.invoke\("library:delete-video"/);
+  assert.match(renderer, /api\.deleteLibraryVideo\(item\.path\)/);
+  assert.match(renderer, /deleteButton\.textContent = "削除"/);
 });
 
 test("past timeshift comments are fetched through NDGR previous and backward segments and aligned to archive start", () => {
-  assert.match(main, /fetchTimeshiftArchive\\(page\\.webSocketUrl, cookieHeader/);
-  assert.match(main, /appendMarker\\("timeshiftOrigin"/);
-  assert.match(main, /record\\.isHistory = true/);
+  assert.match(main, /fetchTimeshiftArchive\(page\.webSocketUrl, cookieHeader/);
+  assert.match(main, /appendMarker\("timeshiftOrigin"/);
+  assert.match(main, /record\.isHistory = true/);
   assert.match(composition, /videoOriginAt/);
-  assert.match(composition, /timeshiftOrigin && timeshiftOrigin\\.originAt/);
-  assert.match(ass, /timeshiftOrigin && timeshiftOrigin\\.originAt/);
+  assert.match(composition, /timeshiftOrigin && timeshiftOrigin\.originAt/);
+  assert.match(ass, /timeshiftOrigin && timeshiftOrigin\.originAt/);
   assert.match(renderer, /過去コメント取得中/);
   assert.match(html, /タイムシフト映像＋コメント/);
 });
 
 test("editing menus and clipboard shortcuts support cut copy and paste", () => {
-  assert.match(main, /contents\\.on\\("context-menu"/);
-  assert.match(main, /contents\\.on\\("before-input-event"/);
-  assert.match(main, /actions = \\{ x: "cut", c: "copy", v: "paste"/);
-  assert.match(main, /Menu\\.buildFromTemplate\\(template\\)/);
-  assert.match(css, /user-select:\\s*text/);
+  assert.match(main, /contents\.on\("context-menu"/);
+  assert.match(main, /contents\.on\("before-input-event"/);
+  assert.match(main, /actions = \{ x: "cut", c: "copy", v: "paste"/);
+  assert.match(main, /Menu\.buildFromTemplate\(template\)/);
+  assert.match(css, /user-select:\s*text/);
 });
