@@ -1566,7 +1566,12 @@ app.whenReady().then(() => {
   makeWindow();
   if (process.platform === "win32") {
     const runAutomaticStreamlinkUpdate = () => {
-      if (getMonitorSettings().autoUpdateStreamlink === false) return;
+      if (getMonitorSettings().autoUpdateStreamlink === false) {
+        sendStreamlinkUpdateState("disabled", {
+          message: "Streamlinkの自動更新は設定で無効です。設定から再び有効にすると自動確認を再開します。"
+        });
+        return;
+      }
       checkStreamlinkUpdateNow({ autoInstall: true, silent: true });
     };
     setTimeout(runAutomaticStreamlinkUpdate, 12000);
