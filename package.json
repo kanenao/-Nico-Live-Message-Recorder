@@ -1,16 +1,17 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.1.0-beta.5",
+  "version": "0.1.0-beta.6",
   "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win nsis zip --publish never",
+    "dist:win": "npm run prepare:streamlink && electron-builder --win nsis zip --publish never",
     "pack": "electron-builder --dir",
-    "test": "node --test"
+    "test": "node --test",
+    "prepare:streamlink": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-streamlink.ps1"
   },
   "dependencies": {
     "nicomget": "github:Segu-g/nicomget"
@@ -56,6 +57,15 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Nico Live Message Recorder"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "vendor/streamlink",
+        "to": "streamlink",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   }
 }
