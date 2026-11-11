@@ -17,8 +17,6 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   connectLive: (liveId) => ipcRenderer.invoke("live:connect", liveId),
   disconnectLive: () => ipcRenderer.invoke("live:disconnect"),
   getVideoToolStatus: () => ipcRenderer.invoke("video:tools-status"),
-  checkStreamlinkUpdate: () => ipcRenderer.invoke("streamlink:update-check"),
-  installStreamlinkUpdate: () => ipcRenderer.invoke("streamlink:update-install"),
   getCaptureLibrary: () => ipcRenderer.invoke("library:list"),
   openLibraryItem: (filePath) => ipcRenderer.invoke("library:open-item", filePath),
   showLibraryItem: (filePath) => ipcRenderer.invoke("library:show-item", filePath),
