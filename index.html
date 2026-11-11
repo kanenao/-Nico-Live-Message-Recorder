@@ -20,6 +20,7 @@
       <div class="top-actions">
         <span class="version" id="version">v0.1.0-beta.8</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
+        <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
         <span class="login-state" id="login-state">ログイン状態を確認中</span>
       </div>
@@ -58,6 +59,42 @@
               <button class="button button-primary button-small" id="install-update-button" type="button" hidden>再起動して更新</button>
             </div>
           </div>
+        </section>
+
+        <section class="panel monitor-panel" id="monitor-panel">
+          <div class="panel-heading monitor-heading">
+            <div>
+              <div class="eyebrow">BROADCAST MONITOR</div>
+              <h2>録画したい配信者を監視</h2>
+            </div>
+            <div class="monitor-controls">
+              <span class="monitor-state" id="monitor-state">監視停止中</span>
+              <button class="button button-primary button-small" id="monitor-start-button" type="button">監視開始</button>
+              <button class="button button-outline button-small" id="monitor-stop-button" type="button" disabled>停止</button>
+            </div>
+          </div>
+          <div class="monitor-add-row">
+            <label class="monitor-input-field">
+              <span>ユーザーID / ユーザーページURL</span>
+              <input id="monitor-user-id" type="text" placeholder="例：48495285 または https://www.nicovideo.jp/user/48495285">
+            </label>
+            <label class="monitor-input-field monitor-name-field">
+              <span>表示名（任意）</span>
+              <input id="monitor-display-name" type="text" maxlength="80" placeholder="例：お気に入りの配信者">
+            </label>
+            <button class="button button-primary" id="monitor-add-button" type="button">監視リストに追加</button>
+          </div>
+          <div class="monitor-summary">
+            <span>登録ユーザー：<strong id="monitor-count">0</strong></span>
+            <span id="monitor-last-check">最終確認：未確認</span>
+          </div>
+          <div class="monitor-target-list" id="monitor-target-list">
+            <div class="monitor-empty" id="monitor-empty">監視対象がまだ登録されていません。</div>
+          </div>
+          <div class="monitor-activity" id="monitor-activity" aria-live="polite">
+            <span>監視ログ：配信開始を検知するとここに表示します。</span>
+          </div>
+          <p class="hint">登録したユーザーの公開放送履歴を設定した間隔で確認し、配信開始を検知すると自動録画します。限定公開・視聴権限が必要な番組は、ログイン済みアカウントに視聴権限が必要です。</p>
         </section>
 
         <section class="control-grid">
@@ -199,6 +236,48 @@
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
+    </div>
+    <div class="modal-backdrop" id="settings-modal" hidden>
+      <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="settings-heading">
+          <div>
+            <div class="eyebrow">APPLICATION SETTINGS</div>
+            <h2 id="settings-title">設定</h2>
+          </div>
+          <button class="button button-quiet button-small" id="close-settings-button" type="button" aria-label="閉じる">閉じる</button>
+        </div>
+        <div class="settings-fields">
+          <label class="settings-field">
+            <span>配信監視の確認間隔</span>
+            <select id="setting-monitor-interval">
+              <option value="30">30秒</option>
+              <option value="60" selected>1分（推奨）</option>
+              <option value="120">2分</option>
+              <option value="300">5分</option>
+            </select>
+          </label>
+          <label class="settings-field">
+            <span>自動録画の画質</span>
+            <select id="setting-monitor-quality">
+              <option value="best">最高画質</option>
+              <option value="worst">低画質（通信量を抑える）</option>
+            </select>
+          </label>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="setting-auto-record" checked>
+            <span>配信開始を検知したら自動で録画する</span>
+          </label>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="setting-auto-start" checked>
+            <span>アプリ起動時に監視を自動開始する</span>
+          </label>
+        </div>
+        <p class="hint">監視にはニコニコの公開放送履歴を使用します。APIの仕様変更やアクセス制限により、一時的に検知できない場合があります。</p>
+        <div class="settings-actions">
+          <button class="button button-outline" id="cancel-settings-button" type="button">キャンセル</button>
+          <button class="button button-primary" id="save-settings-button" type="button">設定を保存</button>
+        </div>
+      </section>
     </div>
     <div class="toast" id="toast" role="status"></div>
   </div>
