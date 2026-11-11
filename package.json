@@ -69,7 +69,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Nico Live Message Recorder",
-      "include": "build/installer.nsh"
+      "include": "installer.nsh"
     },
     "extraResources": [
       {
