@@ -235,9 +235,11 @@ async function fetchNicoUserName(userId, options = {}) {
         const html = await response.text();
                 const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
         if (!match) return "";
-        return decodeHtmlText(match[1])
+        const title = decodeHtmlText(match[1]);
+        if (/^(?:非公開プロフィール|無効なプロフィール)/u.test(title)) return "";
+        return title
           .replace(/さんのプロフィール.*$/u, "")
-          .replace(/\s*[-|｜].*ニコニコ.*$/u, "")
+          .replace(/\s*[-|｜‐‑–—].*ニコニコ.*$/u, "")
           .trim();
       }
     }
@@ -257,7 +259,7 @@ async function fetchNicoUserName(userId, options = {}) {
           (response ? response.status : "応答なし") + " を返しました。");
       }
       const name = await endpoint.parse(response);
-      if (name && name !== "非公開ユーザー" && name !== "無効なプロフィール") {
+      if (name && name !== "-" && name !== "非公開ユーザー" && name !== "非公開プロフィール" && name !== "無効なプロフィール") {
         return name.slice(0, 80);
       }
     } catch (error) {
