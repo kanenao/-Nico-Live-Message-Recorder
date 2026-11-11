@@ -126,9 +126,13 @@ test("NicoLive plugin timeout patch extends both connection waits to 30 seconds"
   assert.match(patched, /STREAM_OPENED_TIMEOUT = 30/);
   assert.match(patched, /STREAM_READY_TIMEOUT = 30/);
   assert.equal(patchNicoLivePluginSource(patched), patched);
+  const newerUpstreamDefaults = patchNicoLivePluginSource(
+    original.replace("STREAM_READY_TIMEOUT = 6", "STREAM_READY_TIMEOUT = 10")
+  );
+  assert.match(newerUpstreamDefaults, /STREAM_READY_TIMEOUT = 30/);
   assert.throws(
-    () => patchNicoLivePluginSource(original.replace("STREAM_READY_TIMEOUT = 6", "STREAM_READY_TIMEOUT = 10")),
-    /既定値が想定外/
+    () => patchNicoLivePluginSource(original.replace("STREAM_READY_TIMEOUT = 6", "STREAM_READY_TIMEOUT = 999")),
+    /安全な範囲外/
   );
 });
 
