@@ -1151,9 +1151,15 @@ ipcMain.handle("streamlink:update-check", () => checkStreamlinkUpdateNow({ autoI
 ipcMain.handle("streamlink:update-install", () => installLatestStreamlinkRuntime());
 
 
-async function startVideoInternal(value, quality, displayName = "", broadcasterId = "") {
+async function startVideoInternal(value, quality, displayName = "", broadcasterId = "", options = {}) {
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
   const liveId = safeLiveId(value);
+  const timeshift = Boolean(options && options.timeshift);
+  if (timeshift) {
+    // Past broadcasts may not provide live comment transport; keep this path video-only.
+    currentBroadcasterName = "";
+    currentBroadcasterId = "";
+  }
   const toolStatus = getVideoToolStatus();
   const streamlinkPath = toolStatus.streamlinkPath;
   if (!streamlinkPath) {
@@ -1175,7 +1181,8 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     liveId,
     quality,
     outputPath,
-    ffmpegPath
+    ffmpegPath,
+    timeshift
   });
 
   let child;
@@ -1237,7 +1244,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
 }
 
 ipcMain.handle("video:start", (_event, value, quality, options = {}) =>
-  startVideoInternal(value, quality, options && options.displayName, options && options.broadcasterId));
+  startVideoInternal(value, quality, options && options.displayName, options && options.broadcasterId, options));
 
 ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => {
   const liveId = safeLiveId(value);
