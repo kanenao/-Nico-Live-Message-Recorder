@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session } = require("electron");
-const { spawn } = require("node:child_process");
+const { spawn, execFileSync } = require("node:child_process");
 const {
   findStreamlinkExecutable,
   findFfmpegExecutable,
@@ -59,8 +59,37 @@ function send(channel, payload) {
   }
 }
 
+function isNsisInstalled() {
+  if (!app.isPackaged || process.platform !== "win32") return false;
+
+  try {
+    const registryOutput = execFileSync("reg.exe", [
+      "query",
+      "HKCU\\Software\\kanenao\\NicoLiveMessageRecorder",
+      "/v",
+      "InstallLocation"
+    ], {
+      encoding: "utf8",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    const match = registryOutput.match(/InstallLocation\\s+REG_SZ\\s+(.+)/i);
+    if (!match) return false;
+
+    const installDirectory = path.resolve(match[1].trim());
+    const executablePath = path.resolve(process.execPath);
+    const relativePath = path.relative(installDirectory, executablePath);
+    return Boolean(relativePath) &&
+      relativePath !== ".." &&
+      !relativePath.startsWith(".." + path.sep) &&
+      !path.isAbsolute(relativePath);
+  } catch (_) {
+    return false;
+  }
+}
+
 function isAutoUpdateSupported() {
-  return app.isPackaged && process.platform === "win32";
+  return isNsisInstalled();
 }
 
 function sendUpdateState(state, details = {}) {
