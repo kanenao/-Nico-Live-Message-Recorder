@@ -241,3 +241,27 @@ test("falls back to the public user profile title when the JSON endpoint has no 
   assert.equal(result, "かなちん");
   assert.equal(calls, 2);
 });
+
+
+test("uses an ID fallback when the public profile is private or invalid", async () => {
+  let calls = 0;
+  const name = await fetchNicoUserName("48495285", {
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            nicovideo_user_response: { user: { nickname: "-" } }
+          })
+        };
+      }
+      return {
+        ok: true,
+        text: async () => "<html><title>非公開プロフィール‐ニコニコ動画</title></html>"
+      };
+    }
+  });
+  assert.equal(name, "");
+  assert.equal(calls, 2);
+});
