@@ -222,6 +222,7 @@ async function startVideoRecording() {
     setVideoState(false);
     showToast(error.message || "直接録画を開始できませんでした。", true);
   }
+  processMonitorAutoQueue();
 }
 
 function startRecordClock() {
@@ -547,8 +548,12 @@ async function processMonitorAutoQueue() {
     showToast("監視対象の録画を自動開始しました：" + liveId);
   } catch (error) {
     setConnection("error");
+    await api.retryMonitorTarget({
+      userId: target.userId,
+      liveId: target.liveId
+    }).catch(() => {});
     addMonitorActivity(
-      (target.liveId || "") + " の自動録画に失敗：" + (error.message || String(error)),
+      (target.liveId || "") + " の自動録画に失敗。次回の監視確認で再試行します：" + (error.message || String(error)),
       "error"
     );
     showToast(error.message || "監視対象の自動録画に失敗しました。", true);
