@@ -13,7 +13,7 @@ test("GitHub beta channel is configured for auto-update metadata", () => {
   assert.deepEqual(packageJson.build.win.publish, [{
     provider: "github",
     owner: "kanenao",
-    repo: "nicolive-recorder",
+    repo: "-Nico-Live-Message-Recorder",
     releaseType: "prerelease",
     channel: "beta"
   }]);
@@ -35,7 +35,7 @@ test("auto-update is enabled only for the registered NSIS install location", () 
 
 test("main and renderer JavaScript files pass Node syntax checks", () => {
   const { execFileSync } = require("node:child_process");
-  for (const file of ["electron/main.cjs", "electron/preload.cjs", "renderer.js"]) {
+  for (const file of ["electron/main.cjs", "electron/preload.cjs", "electron/monitor.cjs", "renderer.js"]) {
     const sourcePath = path.join(__dirname, "..", file);
     execFileSync(process.execPath, ["--check", sourcePath], { stdio: "pipe" });
   }
