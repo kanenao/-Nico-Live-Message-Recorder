@@ -437,7 +437,7 @@ function getMonitorSettings() {
     autoStart: stored.autoStart !== false,
     quality: stored.quality === "worst" ? "worst" : "best",
     targets: targets
-      .filter((target) => target && /^\\d{5,}$/.test(String(target.userId || "")))
+      .filter((target) => target && /^\d{5,}$/.test(String(target.userId || "")))
       .map((target) => ({
         userId: String(target.userId),
         name: String(target.name || "").slice(0, 80),
@@ -993,6 +993,7 @@ app.whenReady().then(() => {
 });
 
 async function shutdownGracefully() {
+  stopMonitor();
   // Stop the live stream first so the TS file can be finalized and remuxed to MP4.
   try {
     await stopStreamlinkRecording();
