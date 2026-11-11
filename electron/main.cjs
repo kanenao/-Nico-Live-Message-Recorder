@@ -71,35 +71,93 @@ function send(channel, payload) {
   }
 }
 
+function isExecutableInsideInstallDirectory(installDirectory) {
+  if (!installDirectory) return false;
+  const expandedDirectory = String(installDirectory).replace(/%([^%]+)%/g, (_, key) =>
+    process.env[key] || "%" + key + "%"
+  );
+  const normalizedDirectory = path.resolve(expandedDirectory);
+  const executablePath = path.resolve(process.execPath);
+  const relativePath = path.relative(normalizedDirectory, executablePath);
+  return Boolean(relativePath) &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(".." + path.sep) &&
+    !path.isAbsolute(relativePath);
+}
+
+function readRegistryString(block, valueName) {
+  const match = String(block || "").match(
+    new RegExp("^\\s*" + valueName + "\\s+REG_(?:SZ|EXPAND_SZ)\\s+(.+)$", "im")
+  );
+  return match ? match[1].trim() : "";
+}
+
 function isNsisInstalled() {
   if (!app.isPackaged || process.platform !== "win32") return false;
 
-  try {
-    const registryOutput = execFileSync("reg.exe", [
-      "query",
-      "HKCU\\Software\\kanenao\\NicoLiveMessageRecorder",
-      "/v",
-      "InstallLocation"
-    ], {
-      encoding: "utf8",
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    const match = registryOutput.match(/InstallLocation\\s+REG_SZ\\s+(.+)/i);
-    if (!match) return false;
-
-    const installDirectory = path.resolve(match[1].trim());
-    const executablePath = path.resolve(process.execPath);
-    const relativePath = path.relative(installDirectory, executablePath);
-    return Boolean(relativePath) &&
-      relativePath !== ".." &&
-      !relativePath.startsWith(".." + path.sep) &&
-      !path.isAbsolute(relativePath);
-  } catch (_) {
-    return false;
+  const markerKeys = [
+    "HKCU\\Software\\kanenao\\NicoLiveMessageRecorder",
+    "HKLM\\Software\\kanenao\\NicoLiveMessageRecorder"
+  ];
+  for (const registryKey of markerKeys) {
+    try {
+      const output = execFileSync("reg.exe", [
+        "query", registryKey, "/v", "InstallLocation"
+      ], {
+        encoding: "utf8",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"]
+      });
+      const location = readRegistryString(output, "InstallLocation");
+      if (isExecutableInsideInstallDirectory(location)) return true;
+    } catch (_) {
+      // Existing installations may predate our stable marker; inspect NSIS uninstall entries below.
+    }
   }
-}
 
+  // electron-builder's NSIS target records its uninstaller under the standard
+  // Windows Uninstall registry tree. Older releases did not write our custom marker.
+  const uninstallRoots = [
+    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+    "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+    "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+  ];
+  for (const root of uninstallRoots) {
+    try {
+      const output = execFileSync("reg.exe", ["query", root, "/s"], {
+        encoding: "utf8",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: 4 * 1024 * 1024
+      });
+      const entries = output.split(/(?=^HKEY_)/m);
+      for (const entry of entries) {
+        const displayName = readRegistryString(entry, "DisplayName");
+        if (displayName !== "Nico Live Message Recorder") continue;
+
+        const installLocation = readRegistryString(entry, "InstallLocation");
+        if (isExecutableInsideInstallDirectory(installLocation)) return true;
+
+        const uninstallCommand = readRegistryString(entry, "UninstallString");
+        let uninstallExecutable = "";
+        if (uninstallCommand.startsWith('"')) {
+          const closingQuote = uninstallCommand.indexOf('"', 1);
+          if (closingQuote > 1) uninstallExecutable = uninstallCommand.slice(1, closingQuote);
+        } else {
+          const commandMatch = uninstallCommand.match(/^(.+?\.exe)(?:\s|$)/i);
+          if (commandMatch) uninstallExecutable = commandMatch[1];
+        }
+        if (uninstallExecutable &&
+            isExecutableInsideInstallDirectory(path.dirname(uninstallExecutable))) {
+          return true;
+        }
+      }
+    } catch (_) {
+      // Try the next registry view/root. Portable ZIP builds have no NSIS uninstall entry.
+    }
+  }
+  return false;
+}
 function isAutoUpdateSupported() {
   return isNsisInstalled();
 }
@@ -162,7 +220,12 @@ function configureAutoUpdater() {
 
 function checkForUpdatesNow() {
   if (!isAutoUpdateSupported()) {
-    return Promise.resolve({ supported: false });
+    const result = {
+      supported: false,
+      reason: "自動アップデートはWindowsのNSISインストーラー版で利用できます。ZIP版は手動更新してください。"
+    };
+    sendUpdateState("unsupported", { message: result.reason });
+    return Promise.resolve(result);
   }
   if (updateCheckPromise) return updateCheckPromise;
 
@@ -1303,6 +1366,10 @@ app.whenReady().then(() => {
     setTimeout(() => checkForUpdatesNow().catch(() => {}), 8000);
     const updateTimer = setInterval(() => checkForUpdatesNow().catch(() => {}), 6 * 60 * 60 * 1000);
     if (typeof updateTimer.unref === "function") updateTimer.unref();
+  } else {
+    sendUpdateState("unsupported", {
+      message: "WindowsのNSISインストーラー版ではないため、自動更新を利用できません。"
+    });
   }
   const monitorConfig = getMonitorSettings();
   if (monitorConfig.autoStart && monitorConfig.targets.some((target) => target.enabled)) {
