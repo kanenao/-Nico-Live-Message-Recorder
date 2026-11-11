@@ -68,7 +68,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Nico Live Message Recorder"
+      "shortcutName": "Nico Live Message Recorder",
+      "include": "build/installer.nsh"
     },
     "extraResources": [
       {
