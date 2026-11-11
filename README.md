@@ -93,7 +93,7 @@ JSONLは1イベント1行の同期用マスターデータとして常に保存�
 
 ## アプリの自動アップデート
 
-Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更新チャンネルを利用します。自動更新の配布にはGitHub Releasesへの公開が必要です。Actionsの「Release Nico Live Message Recorder」を実行し、公開された `beta.yml` とWindowsインストーラーを使って更新を確認します。ZIP版は自動更新の対象外です。
+Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更新チャンネルを利用します。自動更新の配布にはGitHub Releasesへの公開が必要です。GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** を実行してβ版を公開します。公開されたReleaseに `beta.yml` とWindowsインストーラーが含まれて初めて、アプリ側の更新確認・ダウンロードが動作します。ZIP版は自動更新の対象外です。
 
 - 起動後に更新を確認し、その後は約6時間ごとに再確認します。
 - 新しいβ版が公開されている場合はバックグラウンドでダウンロードします。
