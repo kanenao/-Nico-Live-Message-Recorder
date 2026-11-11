@@ -1,7 +1,7 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.1.0-beta.7",
+  "version": "0.1.0-beta.8",
   "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",
@@ -11,10 +11,12 @@
     "dist:win": "npm run prepare:streamlink && electron-builder --win nsis zip --publish never",
     "pack": "npm run prepare:streamlink && electron-builder --dir",
     "test": "node --test",
-    "prepare:streamlink": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-streamlink.ps1"
+    "prepare:streamlink": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-streamlink.ps1",
+    "dist:win:release": "npm run prepare:streamlink && electron-builder --win nsis zip --publish always"
   },
   "dependencies": {
-    "nicomget": "github:Segu-g/nicomget"
+    "nicomget": "github:Segu-g/nicomget",
+    "electron-updater": "6.8.12"
   },
   "devDependencies": {
     "electron": "^45.0.0",
@@ -50,6 +52,15 @@
             "x64"
           ]
         }
+      ],
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "kanenao",
+          "repo": "nicolive-recorder",
+          "releaseType": "prerelease",
+          "channel": "beta"
+        }
       ]
     },
     "nsis": {
@@ -67,6 +78,11 @@
           "**/*"
         ]
       }
-    ]
+    ],
+    "generateUpdatesFilesForAllChannels": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kanenao/nicolive-recorder.git"
   }
 }
