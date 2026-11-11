@@ -2,7 +2,7 @@
 
 ニコニコ生放送の映像ストリームとコメントを別々に直接保存し、コメント付き動画を生成できるWindowsデスクトップアプリです。
 
-**開発版：0.1.0-beta.13**
+**開発版：0.1.0-beta.14**
 
 ## 主な機能
 
@@ -104,13 +104,13 @@ Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更�
 
 ### 新しいバージョンの公開
 
-`package.json` のバージョンを更新して `vバージョン` 形式のタグ（例：`v0.1.0-beta.13`）を `main` に付けると、GitHub Actionsがテスト、Windowsビルド、GitHub Releasesへの公開を行います。タグを付けずに公開する場合は、GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** から手動実行できます。公開されたβ版は `beta` チャンネルで配信されます。
+`package.json` のバージョンを更新して `vバージョン` 形式のタグ（例：`v0.1.0-beta.14`）を `main` に付けると、GitHub Actionsがテスト、Windowsビルド、GitHub Releasesへの公開を行います。タグを付けずに公開する場合は、GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** から手動実行できます。公開されたβ版は `beta` チャンネルで配信されます。
 
 この公開ワークフローはリポジトリに設定済みの `GITHUB_TOKEN` を使用するため、個人アクセストークンをソースコードへ書き込む必要はありません。
 
 ## 直接録画の方式と制限
 
-映像はStreamlinkのニコ生プラグインでHLS配信を取得し、ファイルへ直接書き込みます。Windowsビルド時にStreamlink公式のPortable ZIPを自動ダウンロードし、公開SHA-256と照合したうえでアプリへ同梱します。Portable ZIPにはStreamlink・組み込みPython環境・FFmpegが含まれます。ユーザーのPCのPATHやシステム設定は変更しません。 Streamlink Windows Portable版に含まれる組み込みPython環境とFFmpegは、配布元が独自にビルドした未署名バイナリです。環境によってはセキュリティソフトが誤検知する可能性があります。
+映像はStreamlinkのニコ生プラグインでHLS配信を取得し、ファイルへ直接書き込みます。 同梱版は公式Windows Portable版 Streamlink 8.6.2-1（Python 3.14 / x64）です。Windowsビルド時にStreamlink公式のPortable ZIPを自動ダウンロードし、公開SHA-256と照合したうえでアプリへ同梱します。 展開後は `nicolive.py` の `STREAM_READY_TIMEOUT` と `STREAM_OPENED_TIMEOUT` をそれぞれ30秒へ変更します。接続許可やHLSストリーム開始の応答が遅い場合に、標準の6秒より長く待機します。Portable ZIPにはStreamlink・組み込みPython環境・FFmpegが含まれます。ユーザーのPCのPATHやシステム設定は変更しません。 Streamlink Windows Portable版に含まれる組み込みPython環境とFFmpegは、配布元が独自にビルドした未署名バイナリです。環境によってはセキュリティソフトが誤検知する可能性があります。
 
 Streamlink実行中のみ、アプリ内ログインで得た user_session を一時設定ファイルに渡します。一時設定は録画プロセス終了後に削除し、Streamlinkのプラグインキャッシュも無効にしています。
 
@@ -135,6 +135,12 @@ Streamlink実行中のみ、アプリ内ログインで得た user_session を�
 Nico Live Message Recorderはニコニコ（ドワンゴ）の公式アプリではありません。
 
 ## 更新履歴
+
+### 0.1.0-beta.14
+
+- Streamlink 8.6.2-1のWindows Portable版へ切り替え
+- `nicolive.py` の `STREAM_READY_TIMEOUT` / `STREAM_OPENED_TIMEOUT` を30秒へ延長
+- 同梱プラグインの定義が想定と異なる場合は、誤ったパッチを適用せずビルドを停止
 
 ### 0.1.0-beta.13
 
