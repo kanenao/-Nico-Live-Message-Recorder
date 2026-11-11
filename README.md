@@ -2,7 +2,7 @@
 
 ニコニコ生放送の映像ストリームとコメントを別々に直接保存し、コメント付き動画を生成できるWindowsデスクトップアプリです。
 
-**開発版：0.1.0-beta.11**
+**開発版：0.1.0-beta.12**
 
 ## 主な機能
 
@@ -93,7 +93,7 @@ JSONLは1イベント1行の同期用マスターデータとして常に保存�
 
 ## アプリの自動アップデート
 
-Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更新チャンネルを利用します。
+Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更新チャンネルを利用します。自動更新の配布にはGitHub Releasesへの公開が必要です。Actionsの「Release Nico Live Message Recorder」を実行し、公開された `beta.yml` とWindowsインストーラーを使って更新を確認します。ZIP版は自動更新の対象外です。
 
 - 起動後に更新を確認し、その後は約6時間ごとに再確認します。
 - 新しいβ版が公開されている場合はバックグラウンドでダウンロードします。
@@ -104,7 +104,7 @@ Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更�
 
 ### 新しいバージョンの公開
 
-`package.json` のバージョンを更新して `vバージョン` 形式のタグ（例：`v0.1.0-beta.9`）を `main` に付けると、GitHub Actionsがテスト、Windowsビルド、GitHub Releasesへの公開を行います。タグを付けずに公開する場合は、GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** から手動実行できます。公開されたβ版は `beta` チャンネルで配信されます。
+`package.json` のバージョンを更新して `vバージョン` 形式のタグ（例：`v0.1.0-beta.12`）を `main` に付けると、GitHub Actionsがテスト、Windowsビルド、GitHub Releasesへの公開を行います。タグを付けずに公開する場合は、GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** から手動実行できます。公開されたβ版は `beta` チャンネルで配信されます。
 
 この公開ワークフローはリポジトリに設定済みの `GITHUB_TOKEN` を使用するため、個人アクセストークンをソースコードへ書き込む必要はありません。
 
@@ -135,6 +135,13 @@ Streamlink実行中のみ、アプリ内ログインで得た user_session を�
 Nico Live Message Recorderはニコニコ（ドワンゴ）の公式アプリではありません。
 
 ## 更新履歴
+
+### 0.1.0-beta.12
+
+- NSISインストール判定を修正し、既存のインストーラー版も標準のアンインストール情報から検出
+- インストール先レジストリ登録の参照先を修正し、ユーザー単位・全ユーザー単位に対応
+- 自動更新の対象外（ZIP版など）の場合も画面へ理由を表示
+- betaチャンネルのGitHub Releases公開が必要なことを明記
 
 
 ## 0.1.0-beta.11
