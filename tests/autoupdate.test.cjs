@@ -23,6 +23,16 @@ test("release build explicitly publishes Windows NSIS update assets", () => {
   assert.match(packageJson.scripts["dist:win:release"], /electron-builder --win nsis zip --publish always/);
 });
 
+test("auto-update is enabled only for the registered NSIS install location", () => {
+  assert.equal(packageJson.build.nsis.include, "build/installer.nsh");
+  const installerScript = fs.readFileSync(path.join(__dirname, "..", "build", "installer.nsh"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+  assert.match(installerScript, /WriteRegStr HKCU .*InstallLocation/);
+  assert.match(installerScript, /DeleteRegKey HKCU/);
+  assert.match(mainProcess, /function isNsisInstalled\\(\\)/);
+  assert.match(mainProcess, /return isNsisInstalled\\(\\)/);
+});
+
 test("release workflow is tag-triggered and can be run manually", () => {
   const workflowPath = path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-release.yml");
   const workflow = fs.readFileSync(workflowPath, "utf8");
