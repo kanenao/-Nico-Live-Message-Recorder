@@ -205,3 +205,21 @@ test("recording watch preview opens in a separate authenticated window and can b
   assert.match(renderer, /if \(channel === "preview:state"\)/);
   assert.match(html, /見ないときは「閉じる」でプレビューだけ終了でき、録画は継続します/);
 });
+
+
+test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time", () => {
+  for (const id of [
+    "dashboard-target-count", "dashboard-live-count", "dashboard-recording-count",
+    "dashboard-monitor-status", "live-broadcast-count", "live-broadcast-list"
+  ]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing dashboard field: " + id);
+  }
+  assert.match(renderer, /function renderLiveBroadcasts\(/);
+  assert.match(renderer, /function formatBroadcastStart\(/);
+  assert.match(renderer, /function formatBroadcastElapsed\(/);
+  assert.match(renderer, /window\.setInterval\(updateLiveElapsedLabels, 1000\)/);
+  assert.match(main, /startedAt,\s*endedAt,/);
+  assert.match(main, /watchPageUrl:/);
+  assert.match(main, /normalizeMonitorDate\(live\.beginTime/);
+  assert.match(html, /配信者名・配信タイトル・開始時刻・経過時間・放送ID/);
+});
