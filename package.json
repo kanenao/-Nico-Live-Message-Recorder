@@ -1,7 +1,7 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.9",
   "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",
@@ -57,7 +57,7 @@
         {
           "provider": "github",
           "owner": "kanenao",
-          "repo": "nicolive-recorder",
+          "repo": "-Nico-Live-Message-Recorder",
           "releaseType": "prerelease",
           "channel": "beta"
         }
@@ -84,6 +84,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kanenao/nicolive-recorder.git"
+    "url": "https://github.com/kanenao/-Nico-Live-Message-Recorder.git"
   }
 }
