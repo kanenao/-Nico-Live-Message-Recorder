@@ -52,6 +52,8 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.match(renderer, /const monitorAutoQueue = \[\]/);
   assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
+  assert.match(renderer, /monitorAutoProcessing = true;\s*recordButton\.disabled = true/);
+  assert.match(renderer, /if \(!recordStartedAt && videoCaptureState !== "recording"\) \{\s*recordButton\.disabled = false/);
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
 
