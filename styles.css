@@ -286,7 +286,7 @@ input::placeholder { color: #5f6c88; }
 .library-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 190px; gap: 12px; align-items: end; margin: 18px 0 12px; }
 .library-search-field, .library-filter-field { display: flex; flex-direction: column; gap: 6px; color: #aebbd4; font-size: 10px; }
 .library-search-field input, .library-filter-field select { padding: 9px 11px; }
-.library-list-header, .library-row { display: grid; grid-template-columns: minmax(210px, 1.8fr) minmax(130px, 1fr) 145px 145px 85px 142px; align-items: center; gap: 10px; padding: 0 13px; }
+.library-list-header, .library-row { display: grid; grid-template-columns: minmax(140px, 1.7fr) minmax(90px, 1fr) 105px 116px 60px 116px; align-items: center; gap: 10px; padding: 0 13px; }
 .library-list-header { height: 38px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: #7483a1; background: rgba(4,9,18,.25); font-size: 9px; }
 .library-list { max-height: min(60vh, 620px); overflow: auto; }
 .library-row { min-height: 62px; border-bottom: 1px solid rgba(155,175,220,.08); color: #aab7d2; font-size: 10px; }
@@ -302,6 +302,7 @@ input::placeholder { color: #5f6c88; }
 .library-actions .button { padding: 6px 8px; font-size: 9px; }
 .library-empty { padding: 42px 14px; text-align: center; color: #7f8daa; font-size: 11px; line-height: 1.8; }
 .streamlink-update-row { align-items: center; flex-wrap: wrap; }
+.streamlink-update-row { grid-column: 1 / -1; }
 .streamlink-update-row > span { flex: 1 1 180px; }
 @media (max-width: 1200px) {
   .library-list-header, .library-row { grid-template-columns: minmax(170px, 1.5fr) minmax(110px, 1fr) 120px 128px 75px 130px; gap: 7px; padding-left: 9px; padding-right: 9px; }
