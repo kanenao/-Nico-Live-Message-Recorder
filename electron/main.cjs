@@ -27,6 +27,8 @@ app.setName("Nico Live Message Recorder");
 
 let mainWindow = null;
 let loginWindow = null;
+let livePreviewWindow = null;
+let livePreviewId = "";
 let provider = null;
 let currentLiveId = "";
 let commentWriter = null;
@@ -513,6 +515,98 @@ ipcMain.handle("live:open-watch", async (_event, value) => {
   await shell.openExternal("https://live.nicovideo.jp/watch/" + liveId);
   return { liveId };
 });
+
+function sendLivePreviewState(state, details = {}) {
+  send("preview:state", { state, liveId: livePreviewId, ...details });
+}
+
+async function openLivePreview(value) {
+  const liveId = safeLiveId(value);
+  const url = "https://live.nicovideo.jp/watch/" + liveId;
+
+  if (livePreviewWindow && !livePreviewWindow.isDestroyed()) {
+    if (livePreviewId !== liveId) {
+      livePreviewId = liveId;
+      sendLivePreviewState("opening");
+      await livePreviewWindow.loadURL(url);
+    }
+    if (livePreviewWindow.isMinimized()) livePreviewWindow.restore();
+    livePreviewWindow.show();
+    livePreviewWindow.focus();
+    sendLivePreviewState("opened");
+    return { liveId, reused: true };
+  }
+
+  livePreviewId = liveId;
+  livePreviewWindow = new BrowserWindow({
+    width: 1120,
+    height: 720,
+    minWidth: 760,
+    minHeight: 480,
+    backgroundColor: "#080d18",
+    title: "ニコ生 映像プレビュー - " + liveId,
+    autoHideMenuBar: true,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    webPreferences: {
+      partition: "persist:nico-auth",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  const preview = livePreviewWindow;
+  preview.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    if (/^https?:\/\//i.test(targetUrl)) {
+      shell.openExternal(targetUrl).catch((error) => console.error("Preview external link failed:", error));
+    }
+    return { action: "deny" };
+  });
+  preview.webContents.on("did-fail-load", (_event, errorCode, description, failedUrl, isMainFrame) => {
+    if (isMainFrame && livePreviewWindow === preview) {
+      sendLivePreviewState("error", {
+        message: description || ("ページ読み込みエラー " + errorCode),
+        url: failedUrl
+      });
+    }
+  });
+  preview.on("closed", () => {
+    if (livePreviewWindow === preview) {
+      livePreviewWindow = null;
+      livePreviewId = "";
+      send("preview:state", { state: "closed" });
+    }
+  });
+
+  sendLivePreviewState("opening");
+  try {
+    await preview.loadURL(url);
+    if (!preview.isDestroyed()) {
+      preview.show();
+      preview.focus();
+      sendLivePreviewState("opened");
+    }
+    return { liveId, reused: false };
+  } catch (error) {
+    if (!preview.isDestroyed()) preview.close();
+    sendLivePreviewState("error", { message: error.message || String(error) });
+    throw error;
+  }
+}
+
+function closeLivePreview() {
+  if (!livePreviewWindow || livePreviewWindow.isDestroyed()) {
+    livePreviewWindow = null;
+    livePreviewId = "";
+    send("preview:state", { state: "closed" });
+    return { closed: true, alreadyClosed: true };
+  }
+  livePreviewWindow.close();
+  return { closed: true };
+}
+
+ipcMain.handle("preview:open", (_event, value) => openLivePreview(value));
+ipcMain.handle("preview:close", () => closeLivePreview());
 
 async function prepareCommentSession(liveId, displayName = "", broadcasterId = "") {
   if (provider) {
@@ -1606,6 +1700,11 @@ app.whenReady().then(() => {
 
 async function shutdownGracefully() {
   stopMonitor();
+  if (livePreviewWindow && !livePreviewWindow.isDestroyed()) {
+    livePreviewWindow.close();
+    livePreviewWindow = null;
+    livePreviewId = "";
+  }
   // Stop the live stream first so the TS file can be finalized and remuxed to MP4.
   try {
     await stopStreamlinkRecording();

@@ -358,6 +358,67 @@ async function stopVideoRecording() {
   }
 }
 
+function renderLivePreviewState(payload) {
+  if (!payload) return;
+  const status = byId("live-preview-status");
+  const openButton = byId("live-preview-open-button");
+  const closeButton = byId("live-preview-close-button");
+  switch (payload.state) {
+    case "opening":
+      status.textContent = "映像プレビューを開いています…";
+      openButton.disabled = true;
+      closeButton.disabled = false;
+      break;
+    case "opened":
+      status.textContent = "視聴ページを別ウィンドウで表示中（" + (payload.liveId || "") + "）";
+      openButton.disabled = false;
+      closeButton.disabled = false;
+      break;
+    case "closed":
+      status.textContent = "映像プレビューは閉じています。録画は継続します。";
+      openButton.disabled = false;
+      closeButton.disabled = true;
+      break;
+    case "error":
+      status.textContent = "映像プレビューを開けませんでした：" + (payload.message || "ページを読み込めません。");
+      openButton.disabled = false;
+      closeButton.disabled = true;
+      break;
+    default:
+      status.textContent = "見たいときだけ別ウィンドウで映像プレビューを開けます。";
+      openButton.disabled = false;
+      closeButton.disabled = true;
+  }
+}
+
+async function openLivePreview() {
+  const liveId = normalizeId(liveInput.value || currentLiveId);
+  if (!liveId) {
+    showToast("先に放送IDまたは視聴URLを入力してください。", true);
+    return;
+  }
+  const button = byId("live-preview-open-button");
+  button.disabled = true;
+  try {
+    await api.openLivePreview(liveId);
+  } catch (error) {
+    renderLivePreviewState({ state: "error", message: error.message || String(error) });
+    showToast(error.message || "映像プレビューを開けませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function closeLivePreview() {
+  const button = byId("live-preview-close-button");
+  button.disabled = true;
+  try {
+    await api.closeLivePreview();
+  } catch (error) {
+    showToast(error.message || "映像プレビューを閉じられませんでした。", true);
+  }
+}
+
 function handleVideoState(payload) {
   if (!payload) return;
   if (payload.recording) {
@@ -975,6 +1036,7 @@ api.onEvent(({ channel, payload }) => {
     byId("comment-file").textContent = "コメント：" + payload.path;
   }
   if (channel === "video:state") handleVideoState(payload);
+  if (channel === "preview:state") renderLivePreviewState(payload);
   if (channel === "capture:state" && payload && payload.commentError) {
     byId("capture-status-detail").textContent = "映像録画は開始しましたが、コメント取得に失敗しました: " + payload.commentError;
   }
@@ -1028,6 +1090,9 @@ byId("monitor-user-id").addEventListener("keydown", (event) => {
 });
 byId("monitor-start-button").addEventListener("click", startMonitor);
 byId("monitor-stop-button").addEventListener("click", stopMonitor);
+
+byId("live-preview-open-button").addEventListener("click", openLivePreview);
+byId("live-preview-close-button").addEventListener("click", closeLivePreview);
 
 byId("open-watch-button").addEventListener("click", async () => {
   const liveId = normalizeId(liveInput.value);

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   openLogin: () => ipcRenderer.invoke("auth:open-login"),
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
   openWatch: (liveId) => ipcRenderer.invoke("live:open-watch", liveId),
+  openLivePreview: (liveId) => ipcRenderer.invoke("preview:open", liveId),
+  closeLivePreview: () => ipcRenderer.invoke("preview:close"),
   connectLive: (liveId) => ipcRenderer.invoke("live:connect", liveId),
   disconnectLive: () => ipcRenderer.invoke("live:disconnect"),
   getVideoToolStatus: () => ipcRenderer.invoke("video:tools-status"),

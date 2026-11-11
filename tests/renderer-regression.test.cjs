@@ -187,3 +187,21 @@ test("unsupported app update packages show their specific reason", () => {
   assert.match(renderer, /message: result\.reason \|\|/);
   assert.match(renderer, /Windowsインストーラー版をご利用ください/);
 });
+
+
+test("recording watch preview opens in a separate authenticated window and can be closed without stopping capture", () => {
+  for (const id of ["live-preview-open-button", "live-preview-close-button", "live-preview-status"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing preview control: " + id);
+  }
+  assert.match(main, /ipcMain\.handle\("preview:open"/);
+  assert.match(main, /ipcMain\.handle\("preview:close"/);
+  assert.match(main, /partition: "persist:nico-auth"/);
+  assert.match(main, /https:\/\/live\.nicovideo\.jp\/watch\//);
+  assert.match(main, /function closeLivePreview\(/);
+  assert.match(main, /send\("preview:state", \{ state: "closed" \}\)/);
+  assert.match(preload, /openLivePreview:.*ipcRenderer\.invoke\("preview:open"/);
+  assert.match(preload, /closeLivePreview:.*ipcRenderer\.invoke\("preview:close"/);
+  assert.match(renderer, /function renderLivePreviewState\(/);
+  assert.match(renderer, /if \(channel === "preview:state"\)/);
+  assert.match(html, /見ないときは「閉じる」でプレビューだけ終了でき、録画は継続します/);
+});

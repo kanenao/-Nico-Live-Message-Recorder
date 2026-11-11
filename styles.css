@@ -60,6 +60,9 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .session-record-state { justify-content: space-between; min-height: 50px; }
 .session-record-state > div:nth-child(2) { flex: 1; }
 .session-record-state .button { margin-left: 8px; }
+.live-preview-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; padding: 10px 11px; background: rgba(7,13,25,.42); border: 1px solid rgba(160,177,216,.12); border-radius: 9px; }
+.live-preview-actions { display: flex; align-items: center; gap: 7px; }
+#live-preview-status { color: #8290ad; font-size: 10px; line-height: 1.5; }
 .session-record-column .record-quality-row { margin-top: 12px; }
 .session-record-column .tool-settings { grid-template-columns: 1fr 1fr; }
 .session-record-column .hint { margin-bottom: 0; }
