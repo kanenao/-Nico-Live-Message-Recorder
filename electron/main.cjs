@@ -219,7 +219,7 @@ function normalizeEvent(type, item) {
 
 function sanitizeFolderSegment(value) {
   let name = String(value || "").normalize("NFKC")
-    .replace(/[<>:"/\\|?*\\x00-\\x1f]/g, "_")
+    .replace(/[<>:"\\/\\\\|?*\\x00-\\x1f]/g, "_")
     .replace(/[. ]+$/g, "")
     .replace(/\\s+/g, " ")
     .trim()
@@ -633,7 +633,8 @@ async function resolveMonitorUserName(target, followedProgram, latestProgram) {
     (followedProgram && followedProgram.providerName) ||
     (latestProgram && latestProgram.providerName) || ""
   ).trim();
-  let resolvedName = directName || String(target.name || "").trim();
+  const savedName = String(target.name || "").trim();
+  let resolvedName = directName || (/^ユーザー \\d+$/.test(savedName) ? "" : savedName);
 
   if (!resolvedName) {
     const cached = monitorUserNameCache.get(target.userId);
@@ -651,7 +652,7 @@ async function resolveMonitorUserName(target, followedProgram, latestProgram) {
   }
 
   if (!resolvedName) resolvedName = "ユーザー " + target.userId;
-  if (resolvedName !== target.name) {
+  if (resolvedName && resolvedName !== target.name && !/^ユーザー \\d+$/.test(resolvedName)) {
     const updated = getMonitorSettings();
     const match = updated.targets.find((item) => item.userId === target.userId);
     if (match) {
