@@ -182,6 +182,10 @@ function buildStreamlinkArgs(options) {
     "--hls-live-edge", "3"
   ];
   if (options.ffmpegPath) args.push("--ffmpeg-ffmpeg", options.ffmpegPath);
+  if (options.timeshift) {
+    // Streamlink's nicolive plugin supports VOD/timeshift URLs. Offset 0 starts at the archive beginning.
+    args.push("--niconico-timeshift-offset", "0");
+  }
   args.push(
     "--output", options.outputPath,
     "https://live.nicovideo.jp/watch/" + liveId,
