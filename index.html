@@ -18,7 +18,8 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.7</span>
+        <span class="version" id="version">v0.1.0-beta.8</span>
+        <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
         <span class="login-state" id="login-state">ログイン状態を確認中</span>
       </div>
@@ -32,7 +33,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.7</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.8</span></div>
         </div>
       </aside>
 
@@ -44,6 +45,19 @@
             <p>コメントは受信時に自動保存。映像は配信データを直接取得してファイルに保存します。</p>
           </div>
           <div class="live-badge" id="connection-badge"><span class="pulse"></span><span id="connection-label">未接続</span></div>
+        </section>
+
+        <section class="panel update-panel" id="update-panel" aria-live="polite" hidden>
+          <div class="update-panel-content">
+            <div class="update-copy">
+              <strong>アプリの自動アップデート</strong>
+              <span id="update-status">更新状態を確認します。</span>
+            </div>
+            <div class="update-actions">
+              <progress class="update-progress" id="update-progress" max="100" value="0" hidden></progress>
+              <button class="button button-primary button-small" id="install-update-button" type="button" hidden>再起動して更新</button>
+            </div>
+          </div>
         </section>
 
         <section class="control-grid">
@@ -181,7 +195,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.7</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.8</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
