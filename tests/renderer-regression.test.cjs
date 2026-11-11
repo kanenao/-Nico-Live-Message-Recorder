@@ -53,3 +53,13 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
+
+
+test("monitor prefers the authenticated follow-list API and retains public-history fallback", () => {
+  assert.match(main, /fetchFollowingOnAirPrograms\(cookieHeader\)/);
+  assert.match(main, /session\.fromPartition\("persist:nico-auth"\)/);
+  assert.match(main, /const result = followedProgram \? null : await fetchUserBroadcastStatus/);
+  assert.match(main, /isFollowerOnly: Boolean\(live && live\.isFollowerOnly\)/);
+  assert.match(main, /\[15, 30, 60, 120, 300\]/);
+  assert.match(html, /<option value="15">15秒（最速）<\/option>/);
+});
