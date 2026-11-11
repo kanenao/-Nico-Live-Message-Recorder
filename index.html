@@ -203,6 +203,11 @@
                 <span>流れる速度 <output id="compose-speed-value">100%</output></span>
                 <input id="compose-speed" type="range" min="50" max="200" step="5" value="100">
               </label>
+
+              <label class="compose-editor-field">
+                <span>コメント同期の微調整 <output id="compose-offset-value">0 ms</output></span>
+                <input id="compose-offset" type="range" min="-10000" max="10000" step="100" value="0">
+              </label>
               <label class="compose-editor-field">
                 <span>上下の余白 <output id="compose-position-value">7%</output></span>
                 <input id="compose-position" type="range" min="4" max="25" step="1" value="7">
@@ -217,6 +222,8 @@
                   <option value="all">スクロール・固定コメント</option>
                   <option value="scroll">スクロールのみ</option>
                   <option value="fixed">上・下固定のみ</option>
+                  <option value="top">上固定のみ</option>
+                  <option value="bottom">下固定のみ</option>
                 </select>
               </label>
               <label class="compose-editor-field">
@@ -266,7 +273,7 @@
             <progress id="compose-progress" max="100" value="0"></progress>
             <span id="compose-progress-label">待機中</span>
           </div>
-          <div class="hint">動画の上にコメントをニコニコ生放送風に流してWebM形式で保存します。音声がある動画は音声も引き継ぎます。</div>
+          <div class="hint">文字サイズ・速度・表示位置・透明度・同期ずれ・表示種類・色・解像度・fps・画質を調整してWebM形式で保存します。音声がある動画は音声も引き継ぎます。元動画とコメントログは変更しません。</div>
         </section>
 
         <section class="stats-grid">
