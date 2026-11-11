@@ -634,7 +634,7 @@ async function resolveMonitorUserName(target, followedProgram, latestProgram) {
     (latestProgram && latestProgram.providerName) || ""
   ).trim();
   const savedName = String(target.name || "").trim();
-  let resolvedName = directName || (/^ユーザー \\d+$/.test(savedName) ? "" : savedName);
+  let resolvedName = directName || (/^ユーザー \d+$/.test(savedName) ? "" : savedName);
 
   if (!resolvedName) {
     const cached = monitorUserNameCache.get(target.userId);
