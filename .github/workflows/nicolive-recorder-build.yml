@@ -17,6 +17,7 @@ on:
       - "tests/**"
       - "scripts/**"
       - ".github/workflows/nicolive-recorder-build.yml"
+      - ".github/workflows/nicolive-recorder-release.yml"
   pull_request:
     paths:
       - "electron/**"
@@ -53,7 +54,7 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: Nico-Live-Message-Recorder-beta7-Windows
+          name: Nico-Live-Message-Recorder-beta8-Windows
           path: dist/*
           if-no-files-found: error
           retention-days: 14
