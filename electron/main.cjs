@@ -617,6 +617,18 @@ ipcMain.handle("monitor:remove-target", (_event, rawUserId) => {
 ipcMain.handle("monitor:start", () => startMonitor());
 ipcMain.handle("monitor:stop", () => stopMonitor());
 
+ipcMain.handle("monitor:retry-target", (_event, input) => {
+  const userId = normalizeNicoUserId(input && input.userId);
+  const liveId = String(input && input.liveId || "");
+  const config = getMonitorSettings();
+  const target = config.targets.find((item) => item.userId === userId);
+  if (target && (!liveId || target.lastProgramId === liveId)) {
+    target.lastProgramId = "";
+    writeAppSettings({ monitor: config });
+  }
+  return getMonitorState();
+});
+
 function getStreamlinkBundleRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "streamlink")
