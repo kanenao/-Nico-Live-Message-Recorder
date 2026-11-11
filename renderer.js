@@ -23,11 +23,13 @@ let monitorSettings = {
   autoStart: true,
   quality: "best",
   commentFormat: "jsonl",
+  autoUpdateStreamlink: true,
   targets: []
 };
 const monitorStatuses = new Map();
 const monitorAutoQueue = [];
 let monitorAutoProcessing = false;
+let captureLibraryItems = [];
 
 function showToast(message, isError) {
   const toast = byId("toast");
@@ -380,7 +382,7 @@ async function refreshVideoTools() {
     const streamlinkLabel = byId("streamlink-status");
     const ffmpegLabel = byId("ffmpeg-status");
     streamlinkLabel.textContent = status.streamlinkBundled
-      ? "Streamlink：" + (status.streamlinkVersion || "同梱版") + "（自動セットアップ済み）"
+      ? "Streamlink：" + (status.streamlinkVersion || "同梱版") + (status.streamlinkManaged ? "（自動更新版）" : "（公式同梱版）")
       : status.streamlinkAvailable
         ? "Streamlink：PC内のインストール済み版を使用"
         : "Streamlink：見つかりません（アプリを再インストールしてください）";
@@ -602,6 +604,7 @@ function openSettings() {
   byId("setting-comment-format").value = ["jsonl", "csv", "ass", "all"].includes(monitorSettings.commentFormat) ? monitorSettings.commentFormat : "jsonl";
   byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
   byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
+  byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("settings-modal").hidden = false;
 }
 
@@ -615,7 +618,8 @@ async function saveSettings() {
     quality: byId("setting-monitor-quality").value,
     commentFormat: byId("setting-comment-format").value,
     autoRecord: byId("setting-auto-record").checked,
-    autoStart: byId("setting-auto-start").checked
+    autoStart: byId("setting-auto-start").checked,
+    autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked
   };
   const button = byId("save-settings-button");
   button.disabled = true;
@@ -716,10 +720,193 @@ async function processMonitorAutoQueue() {
 }
 
 
+function setLibraryView(open) {
+  const content = document.querySelector(".content");
+  content.classList.toggle("show-library", Boolean(open));
+  byId("library-panel").hidden = !open;
+  byId("open-folder-button").classList.toggle("active", Boolean(open));
+  byId("dashboard-nav-button").classList.toggle("active", !open);
+  if (open) loadCaptureLibrary();
+}
+
+function formatLibraryBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+}
+
+function formatLibraryDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "日時不明"
+    : date.toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function createLibraryText(className, value) {
+  const element = document.createElement("span");
+  element.className = className;
+  element.textContent = String(value || "");
+  return element;
+}
+
+function renderCaptureLibrary() {
+  const list = byId("library-list");
+  if (!list) return;
+  list.replaceChildren();
+  const query = String(byId("library-search").value || "").trim().toLowerCase();
+  const filter = byId("library-filter").value;
+  const items = captureLibraryItems.filter((item) => {
+    if (filter !== "all" && item.type !== filter) return false;
+    const searchable = [item.fileName, item.broadcaster, item.liveId, item.extension].join(" ").toLowerCase();
+    return !query || searchable.includes(query);
+  });
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "library-empty";
+    empty.textContent = captureLibraryItems.length
+      ? "条件に一致するファイルがありません。"
+      : "まだ録画・コメントファイルがありません。録画またはコメント接続を開始すると、ここに表示されます。";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "library-row";
+    const file = document.createElement("div");
+    file.className = "library-file-cell";
+    file.appendChild(createLibraryText("library-file-name", item.fileName));
+    file.appendChild(createLibraryText("library-file-meta", item.liveId || item.extension));
+    row.appendChild(file);
+    row.appendChild(createLibraryText("library-broadcaster", item.broadcaster));
+    const type = createLibraryText("library-type", item.type === "video" ? "録画動画 · " + item.extension : "コメント · " + item.extension);
+    type.classList.toggle("is-video", item.type === "video");
+    row.appendChild(type);
+    row.appendChild(createLibraryText("library-date", formatLibraryDate(item.modifiedAt)));
+    row.appendChild(createLibraryText("library-size", formatLibraryBytes(item.sizeBytes)));
+    const actions = document.createElement("div");
+    actions.className = "library-actions";
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "button button-primary button-small";
+    openButton.textContent = item.type === "video" ? "再生" : "開く";
+    openButton.addEventListener("click", async () => {
+      try { await api.openLibraryItem(item.path); }
+      catch (error) { showToast(error.message || "ファイルを開けませんでした。", true); }
+    });
+    const showButton = document.createElement("button");
+    showButton.type = "button";
+    showButton.className = "button button-quiet button-small";
+    showButton.textContent = "場所";
+    showButton.addEventListener("click", async () => {
+      try { await api.showLibraryItem(item.path); }
+      catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
+    });
+    actions.append(openButton, showButton);
+    row.appendChild(actions);
+    list.appendChild(row);
+  }
+}
+
+async function loadCaptureLibrary() {
+  const button = byId("library-refresh-button");
+  if (button) button.disabled = true;
+  const list = byId("library-list");
+  if (list && !captureLibraryItems.length) {
+    list.textContent = "録画ファイルを検索しています…";
+  }
+  try {
+    const result = await api.getCaptureLibrary();
+    captureLibraryItems = Array.isArray(result.items) ? result.items : [];
+    byId("library-total").textContent = String(result.total || 0);
+    byId("library-video-count").textContent = String(result.videoCount || 0);
+    byId("library-comment-count").textContent = String(result.commentCount || 0);
+    renderCaptureLibrary();
+  } catch (error) {
+    if (list) list.textContent = error.message || "ライブラリを読み込めませんでした。";
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function formatUpdateBytes(value) {
   const bytes = Math.max(0, Number(value) || 0);
   if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function renderStreamlinkUpdateState(payload) {
+  if (!payload) return;
+  const status = byId("streamlink-update-status");
+  const checkButton = byId("streamlink-update-check-button");
+  const installButton = byId("streamlink-update-install-button");
+  checkButton.disabled = false;
+  installButton.hidden = true;
+  switch (payload.state) {
+    case "checking":
+      status.textContent = "Streamlink：公式最新版を確認中…";
+      checkButton.disabled = true;
+      break;
+    case "available":
+      status.textContent = "Streamlink " + payload.version + " が利用できます（現在 " + (payload.currentVersion || "不明") + "）。";
+      installButton.hidden = false;
+      break;
+    case "downloading":
+      status.textContent = "Streamlink " + payload.version + " をダウンロード・検証中…";
+      checkButton.disabled = true;
+      installButton.disabled = true;
+      break;
+    case "extracting":
+      status.textContent = "Streamlink " + payload.version + " を展開・動作確認中…";
+      checkButton.disabled = true;
+      installButton.disabled = true;
+      break;
+    case "updated":
+      status.textContent = payload.message || ("Streamlink " + payload.version + " に更新しました。");
+      installButton.hidden = true;
+      installButton.disabled = false;
+      refreshVideoTools();
+      showToast("Streamlink " + payload.version + " へ更新しました。");
+      break;
+    case "current":
+      status.textContent = "Streamlinkは最新です（" + (payload.version || "確認済み") + "）。";
+      break;
+    case "unsupported":
+      status.textContent = payload.message || "Streamlinkの自動更新はWindows版のみ対応です。";
+      break;
+    case "error":
+      status.textContent = "Streamlink更新エラー：" + (payload.message || "確認できませんでした。");
+      break;
+    default:
+      status.textContent = "Streamlink更新：起動後に確認します";
+  }
+}
+
+async function checkStreamlinkUpdates() {
+  const button = byId("streamlink-update-check-button");
+  button.disabled = true;
+  try {
+    await api.checkStreamlinkUpdate();
+  } catch (error) {
+    renderStreamlinkUpdateState({ state: "error", message: error.message || "通信エラー" });
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function installStreamlinkUpdates() {
+  const button = byId("streamlink-update-install-button");
+  button.disabled = true;
+  try {
+    await api.installStreamlinkUpdate();
+    await refreshVideoTools();
+  } catch (error) {
+    renderStreamlinkUpdateState({ state: "error", message: error.message || "更新に失敗しました。" });
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderUpdateState(payload) {
@@ -821,6 +1008,7 @@ api.onEvent(({ channel, payload }) => {
     addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
   }
   if (channel === "update:state") renderUpdateState(payload);
+  if (channel === "streamlink:update-state") renderStreamlinkUpdateState(payload);
   if (channel === "monitor:state") renderMonitorState(payload);
   if (channel === "monitor:target-status") {
     monitorStatuses.set(payload.userId, payload);
@@ -840,6 +1028,8 @@ disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
+byId("streamlink-update-check-button").addEventListener("click", checkStreamlinkUpdates);
+byId("streamlink-update-install-button").addEventListener("click", installStreamlinkUpdates);
 byId("install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
@@ -873,7 +1063,12 @@ byId("login-button").addEventListener("click", async () => {
   }
 });
 
-byId("open-folder-button").addEventListener("click", async () => {
+byId("open-folder-button").addEventListener("click", () => setLibraryView(true));
+byId("dashboard-nav-button").addEventListener("click", () => setLibraryView(false));
+byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
+byId("library-search").addEventListener("input", renderCaptureLibrary);
+byId("library-filter").addEventListener("change", renderCaptureLibrary);
+byId("library-open-folder-button").addEventListener("click", async () => {
   try {
     const result = await api.openDataFolder();
     if (result.error) showToast(result.error, true);
