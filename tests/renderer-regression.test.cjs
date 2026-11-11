@@ -132,24 +132,28 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
     "dashboard-nav-button", "open-folder-button", "library-panel", "library-search",
     "library-filter", "library-list", "library-refresh-button", "library-open-folder-button",
     "library-total", "library-video-count", "library-comment-count",
-    "streamlink-update-status", "streamlink-update-check-button",
-    "streamlink-update-install-button", "setting-auto-update-streamlink"
+    "streamlink-update-status", "setting-auto-update-streamlink"
   ]) {
     assert.ok(html.includes('id="' + id + '"'), "missing library or updater UI: " + id);
   }
   assert.match(preload, /getCaptureLibrary:.*ipcRenderer\.invoke\("library:list"/);
   assert.match(preload, /openLibraryItem:.*ipcRenderer\.invoke\("library:open-item"/);
   assert.match(preload, /showLibraryItem:.*ipcRenderer\.invoke\("library:show-item"/);
-  assert.match(preload, /checkStreamlinkUpdate:.*ipcRenderer\.invoke\("streamlink:update-check"/);
   assert.match(main, /ipcMain\.handle\("library:list"/);
   assert.match(main, /function listCaptureLibrary\(/);
   assert.match(main, /function resolveLibraryItemPath\(/);
-  assert.match(main, /ipcMain\.handle\("streamlink:update-check"/);
   assert.match(main, /checkStreamlinkUpdateNow\(\{ autoInstall: true, silent: true \}\)/);
-  assert.match(main, /24 \* 60 \* 60 \* 1000/);
+  assert.match(main, /6 \* 60 \* 60 \* 1000/);
+  assert.match(main, /setTimeout\(runAutomaticStreamlinkUpdate, 12000\)/);
+  assert.match(main, /autoUpdateStreamlink: true/);
+  assert.match(main, /if \(!current\.autoUpdateStreamlink && process\.platform === "win32"\)/);
+  assert.doesNotMatch(html, /streamlink-update-check-button|streamlink-update-install-button/);
+  assert.doesNotMatch(preload, /checkStreamlinkUpdate|installStreamlinkUpdate/);
   assert.match(renderer, /function setLibraryView\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
+  assert.match(renderer, /自動ダウンロード・SHA-256検証中/);
+  assert.match(renderer, /次回の確認時に再試行します/);
 });
 
 test("comment video composer exposes timing, layout, appearance and quality controls", () => {
