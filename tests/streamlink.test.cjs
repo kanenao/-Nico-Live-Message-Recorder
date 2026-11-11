@@ -22,6 +22,24 @@ test("normalizeLiveId accepts IDs and watch URLs", () => {
   assert.throws(() => normalizeLiveId("not-a-live-id"));
 });
 
+test("timeshift mode requests the beginning of the Nico Live archive", () => {
+  const args = buildStreamlinkArgs({
+    configPath: "config",
+    liveId: "lv123456789",
+    quality: "best",
+    outputPath: "capture.ts",
+    timeshift: true
+  });
+  const offsetIndex = args.indexOf("--niconico-timeshift-offset");
+  assert.ok(offsetIndex >= 0);
+  assert.equal(args[offsetIndex + 1], "0");
+  assert.equal(args.includes("https://live.nicovideo.jp/watch/lv123456789"), true);
+  const liveArgs = buildStreamlinkArgs({
+    configPath: "config", liveId: "lv123456789", quality: "best", outputPath: "live.ts"
+  });
+  assert.equal(liveArgs.includes("--niconico-timeshift-offset"), false);
+});
+
 test("quality is restricted to supported choices", () => {
   assert.equal(normalizeQuality("worst"), "worst");
   assert.equal(normalizeQuality("audio_only"), "best");
