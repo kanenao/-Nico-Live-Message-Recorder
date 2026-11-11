@@ -40,6 +40,7 @@ function normalizeProgram(entry) {
   return {
     liveId,
     title: String(program.title || entry.title || "タイトル未取得"),
+    providerName: String((program.provider && program.provider.name) || (program.programProvider && program.programProvider.name) || entry.providerName || ""),
     status,
     isLive,
     beginTime: schedule.beginTime || schedule.begin || program.beginTime || null,
@@ -195,12 +196,85 @@ async function fetchFollowingOnAirPrograms(cookieHeader, options = {}) {
   return programs.map(normalizeFollowingProgram).filter(Boolean);
 }
 
+function decodeHtmlText(value) {
+  return String(value || "")
+    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\\da-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+/**
+ * Best-effort public profile lookup. Prefer the provider name included in
+ * the authenticated follow-list API; this is only a fallback for folder labels.
+ */
+async function fetchNicoUserName(userId, options = {}) {
+  const normalizedId = normalizeNicoUserId(userId);
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 8000);
+  if (typeof fetchImpl !== "function") throw new Error("HTTP通信機能を利用できません。");
+
+  const endpoints = [
+    {
+      url: "https://api.ce.nicovideo.jp/api/v1/user.info?user_id=" +
+        encodeURIComponent(normalizedId) + "&__format=json",
+      parse: async (response) => {
+        const payload = await response.json();
+        const user = payload && payload.nicovideo_user_response &&
+          payload.nicovideo_user_response.user;
+        return user && typeof user.nickname === "string" ? user.nickname.trim() : "";
+      }
+    },
+    {
+      url: "https://ext.nicovideo.jp/thumb_user/" + encodeURIComponent(normalizedId),
+      parse: async (response) => {
+        const html = await response.text();
+        const match = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);
+        if (!match) return "";
+        return decodeHtmlText(match[1])
+          .replace(/さんのプロフィール.*$/u, "")
+          .replace(/\\s*[-|｜].*ニコニコ.*$/u, "")
+          .trim();
+      }
+    }
+  ];
+
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetchImpl(endpoint.url, {
+        method: "GET",
+        headers: { accept: "application/json, text/html;q=0.9", "user-agent": "Nico-Live-Message-Recorder" },
+        signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout
+          ? AbortSignal.timeout(timeoutMs) : undefined
+      });
+      if (!response || !response.ok) {
+        throw new Error("ユーザープロフィールAPIがHTTP " +
+          (response ? response.status : "応答なし") + " を返しました。");
+      }
+      const name = await endpoint.parse(response);
+      if (name && name !== "非公開ユーザー" && name !== "無効なプロフィール") {
+        return name.slice(0, 80);
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) throw lastError;
+  return "";
+}
+
 module.exports = {
   HISTORY_ENDPOINTS,
   FOLLOWING_ONAIR_ENDPOINT,
   NotAuthenticatedError,
   normalizeFollowingProgram,
   fetchFollowingOnAirPrograms,
+  fetchNicoUserName,
   normalizeNicoUserId,
   normalizeProgram,
   extractUserBroadcasts,
