@@ -296,3 +296,9 @@ test("editing menus and clipboard shortcuts support cut copy and paste", () => {
   assert.match(main, /Menu\.buildFromTemplate\(template\)/);
   assert.match(css, /user-select:\s*text/);
 });
+
+
+test("timeshift comment retrieval does not restore recording state after the video ended", () => {
+  assert.match(renderer, /Do not overwrite a completed video:state event/);
+  assert.match(renderer, /if \(!timeshift \|\| videoCaptureState === "recording"\)/);
+});

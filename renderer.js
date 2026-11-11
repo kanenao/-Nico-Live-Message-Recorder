@@ -325,9 +325,13 @@ async function startVideoRecording(target = null) {
 
     const video = result.video || {};
     byId("video-file").textContent = "保存先：" + (video.path || "");
-    recordStartedAt = video.startedAt ? new Date(video.startedAt).getTime() : Date.now();
-    setVideoState(true);
-    startRecordClock();
+    // A long archive-comment fetch may outlive the timeshift video itself.
+    // Do not overwrite a completed video:state event when the IPC finally returns.
+    if (!timeshift || videoCaptureState === "recording") {
+      recordStartedAt = video.startedAt ? new Date(video.startedAt).getTime() : Date.now();
+      setVideoState(true);
+      startRecordClock();
+    }
     if (timeshift && result.commentCount > 0) {
       showToast("タイムシフトの映像・音声録画と過去コメント " +
         result.commentCount.toLocaleString("ja-JP") + "件の保存を開始しました。");
