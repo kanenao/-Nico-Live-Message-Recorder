@@ -972,7 +972,10 @@ async function checkAppUpdates() {
   try {
     const result = await api.checkForUpdates();
     if (result && result.supported === false) {
-      renderUpdateState({ state: "unsupported" });
+      renderUpdateState({
+        state: "unsupported",
+        message: result.reason || "この配布形式ではアプリ内自動更新を利用できません。Windowsインストーラー版をご利用ください。"
+      });
     }
   } catch (error) {
     renderUpdateState({
