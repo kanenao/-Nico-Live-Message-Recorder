@@ -214,7 +214,7 @@ test("follow-list API failures can be handled without hiding public-history fall
 test("fetches the broadcaster display name from the public profile API", async () => {
   const result = await fetchNicoUserName("48495285", {
     fetchImpl: async (url) => {
-      assert.match(String(url), /api\\.ce\\.nicovideo\\.jp\\/api\\/v1\\/user\\.info/);
+      assert.match(String(url), /api\.ce\.nicovideo\.jp\/api\/v1\/user\.info/);
       return {
         ok: true,
         json: async () => ({
