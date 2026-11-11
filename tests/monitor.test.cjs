@@ -234,7 +234,7 @@ test("falls back to the public user profile title when the JSON endpoint has no 
       if (calls === 1) return { ok: true, json: async () => ({ nicovideo_user_response: {} }) };
       return {
         ok: true,
-        text: async () => "<html><title>かなちんさんのプロフィール - ニコニコ</title></html>"
+        text: async () => "<html><title>&#12363;&#12394;&#12385;&#12435;さんのプロフィール - ニコニコ</title></html>"
       };
     }
   });
