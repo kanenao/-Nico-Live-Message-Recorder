@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   removeMonitorTarget: (userId) => ipcRenderer.invoke("monitor:remove-target", userId),
   startMonitor: () => ipcRenderer.invoke("monitor:start"),
   stopMonitor: () => ipcRenderer.invoke("monitor:stop"),
+  retryMonitorTarget: (target) => ipcRenderer.invoke("monitor:retry-target", target),
   openLogin: () => ipcRenderer.invoke("auth:open-login"),
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
   openWatch: (liveId) => ipcRenderer.invoke("live:open-watch", liveId),
