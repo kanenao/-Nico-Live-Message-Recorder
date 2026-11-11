@@ -40,6 +40,12 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
   assert.match(main, /ipcMain\.handle\("monitor:stop"/);
 });
 
+test("saved monitor user IDs are validated with a numeric pattern", () => {
+  assert.ok(main.includes("/^\\d{5,}$/"), "saved numeric user IDs must load after restart");
+  assert.ok(!main.includes("/^\\\\d{5,}$/"), "the digit pattern must not match a literal backslash");
+  assert.ok(main.includes("stopMonitor();"), "monitor timer must stop during app shutdown");
+});
+
 test("automatic monitor recording is queued instead of interrupting an active recording", () => {
   assert.match(renderer, /const monitorAutoQueue = \[\]/);
   assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
