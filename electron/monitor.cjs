@@ -112,8 +112,95 @@ async function fetchUserBroadcastStatus(userId, options = {}) {
   );
 }
 
+const FOLLOWING_ONAIR_ENDPOINT =
+  "https://live.nicovideo.jp/front/api/pages/follow/v1/programs?status=onair&offset=0";
+
+class NotAuthenticatedError extends Error {
+  constructor(status) {
+    super("ニコニコのログインが必要です（フォロー中番組API: HTTP " + status + "）。");
+    this.name = "NotAuthenticatedError";
+    this.status = status;
+  }
+}
+
+function asIdentifier(value) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
+function normalizeFollowingProgram(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const liveId = toLiveId(raw.id);
+  if (!liveId) return null;
+
+  const provider = raw.programProvider && typeof raw.programProvider === "object"
+    ? raw.programProvider : {};
+  const socialGroup = raw.socialGroup && typeof raw.socialGroup === "object"
+    ? raw.socialGroup : {};
+  const beginAtRaw = raw.beginAt;
+  const beginAt = typeof beginAtRaw === "number" || typeof beginAtRaw === "string"
+    ? new Date(beginAtRaw) : null;
+
+  return {
+    id: liveId,
+    liveId,
+    title: String(raw.title || "タイトル未取得"),
+    watchPageUrl: typeof raw.watchPageUrl === "string"
+      ? raw.watchPageUrl : "https://live.nicovideo.jp/watch/" + liveId,
+    providerId: asIdentifier(provider.id) || "",
+    providerName: typeof provider.name === "string" ? provider.name : "",
+    providerIcon: typeof provider.icon === "string" ? provider.icon : "",
+    socialGroupId: asIdentifier(socialGroup.id) || "",
+    socialGroupName: typeof socialGroup.name === "string" ? socialGroup.name : "",
+    beginAt: beginAt && Number.isFinite(beginAt.getTime()) ? beginAt : null,
+    isFollowerOnly: raw.isFollowerOnly === true
+  };
+}
+
+/**
+ * ログイン中アカウントがフォローしている配信者の放送中一覧を取得する。
+ * 取得できない場合は呼び出し元で公開放送履歴APIへフォールバックする。
+ */
+async function fetchFollowingOnAirPrograms(cookieHeader, options = {}) {
+  const cookie = String(cookieHeader || "").trim();
+  if (!cookie) throw new NotAuthenticatedError(401);
+
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== "function") throw new Error("HTTP通信機能を利用できません。");
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 10000);
+  const response = await fetchImpl(FOLLOWING_ONAIR_ENDPOINT, {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      "user-agent": options.userAgent || "Nico-Live-Message-Recorder",
+      cookie
+    },
+    redirect: "manual",
+    signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout
+      ? AbortSignal.timeout(timeoutMs) : undefined
+  });
+
+  if (!response || response.status === 401 || response.status === 403 || response.status === 302) {
+    throw new NotAuthenticatedError(response ? response.status : 401);
+  }
+  if (!response.ok) {
+    throw new Error("フォロー中番組APIの取得に失敗しました（HTTP " +
+      (response ? response.status : "応答なし") + "）。");
+  }
+
+  const payload = await response.json();
+  const programs = payload && payload.data && Array.isArray(payload.data.programs)
+    ? payload.data.programs : [];
+  return programs.map(normalizeFollowingProgram).filter(Boolean);
+}
+
 module.exports = {
   HISTORY_ENDPOINTS,
+  FOLLOWING_ONAIR_ENDPOINT,
+  NotAuthenticatedError,
+  normalizeFollowingProgram,
+  fetchFollowingOnAirPrograms,
   normalizeNicoUserId,
   normalizeProgram,
   extractUserBroadcasts,
