@@ -280,35 +280,19 @@ async function refreshVideoTools() {
     const status = await api.getVideoToolStatus();
     const streamlinkLabel = byId("streamlink-status");
     const ffmpegLabel = byId("ffmpeg-status");
-    streamlinkLabel.textContent = status.streamlinkAvailable
-      ? "Streamlink：設定済み（" + status.streamlinkPath.replace(/^.*[\\/]/, "") + "）"
-      : "Streamlink：未設定";
-    ffmpegLabel.textContent = status.ffmpegAvailable
-      ? "FFmpeg：設定済み（MP4変換可能）"
-      : "FFmpeg：未設定（録画はTS形式）";
+    streamlinkLabel.textContent = status.streamlinkBundled
+      ? "Streamlink：" + (status.streamlinkVersion || "同梱版") + "（自動セットアップ済み）"
+      : status.streamlinkAvailable
+        ? "Streamlink：PC内のインストール済み版を使用"
+        : "Streamlink：見つかりません（アプリを再インストールしてください）";
+    ffmpegLabel.textContent = status.ffmpegBundled
+      ? "FFmpeg：同梱済み（MP4変換可能）"
+      : status.ffmpegAvailable
+        ? "FFmpeg：PC内のインストール済み版を使用"
+        : "FFmpeg：未検出（録画はTS形式）";
   } catch (_) {
     byId("streamlink-status").textContent = "Streamlink：状態を確認できません";
     byId("ffmpeg-status").textContent = "FFmpeg：状態を確認できません";
-  }
-}
-
-async function configureStreamlink() {
-  try {
-    const result = await api.selectStreamlink();
-    if (!result.cancelled) showToast("Streamlinkを設定しました。");
-    await refreshVideoTools();
-  } catch (error) {
-    showToast(error.message || "Streamlinkを設定できませんでした。", true);
-  }
-}
-
-async function configureFfmpeg() {
-  try {
-    const result = await api.selectFfmpeg();
-    if (!result.cancelled) showToast("FFmpegを設定しました。録画終了後にMP4へ変換します。");
-    await refreshVideoTools();
-  } catch (error) {
-    showToast(error.message || "FFmpegを設定できませんでした。", true);
   }
 }
 
@@ -331,12 +315,6 @@ connectButton.addEventListener("click", connectLive);
 disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 stopRecordButton.addEventListener("click", stopVideoRecording);
-byId("configure-streamlink-button").addEventListener("click", configureStreamlink);
-byId("configure-ffmpeg-button").addEventListener("click", configureFfmpeg);
-byId("download-streamlink-button").addEventListener("click", async () => {
-  try { await api.openStreamlinkDownload(); }
-  catch (error) { showToast(error.message || "配布ページを開けませんでした。", true); }
-});
 
 byId("open-watch-button").addEventListener("click", async () => {
   const liveId = normalizeId(liveInput.value);
