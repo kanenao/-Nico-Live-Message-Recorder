@@ -1,5 +1,12 @@
 # 更新履歴
 
+## 0.1.0-beta.14
+
+- 同梱Streamlinkを公式Windows Portable版 8.6.2-1（Python 3.14 / x64）へ切り替え
+- 同梱 `nicolive.py` の `STREAM_READY_TIMEOUT` と `STREAM_OPENED_TIMEOUT` を各30秒へ延長
+- 展開後にプラグインの定義を検証してからパッチし、想定外のStreamlink構造ではビルドを停止
+- Streamlinkの画面表示バージョンとWindowsビルド成果物名を更新
+
 ## 0.1.0-beta.13
 
 - 「放送に接続」と「配信映像・音声の直接録画」を一つのパネルへ統合
