@@ -936,7 +936,7 @@ function getVideoToolStatus() {
     streamlinkAvailable: Boolean(streamlinkPath),
     streamlinkPath,
     streamlinkBundled: Boolean(bundledStreamlinkPath),
-    streamlinkVersion: bundledStreamlinkPath ? "8.6.3" : null,
+    streamlinkVersion: bundledStreamlinkPath ? "8.6.2" : null,
     ffmpegAvailable: Boolean(ffmpegPath),
     ffmpegPath,
     ffmpegBundled: Boolean(bundledFfmpegPath)
