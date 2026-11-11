@@ -192,12 +192,8 @@
                 <div class="tool-row">
                   <span id="ffmpeg-status">FFmpeg：同梱版を確認中…</span>
                 </div>
-                <div class="tool-row streamlink-update-row">
-                  <span id="streamlink-update-status">Streamlink更新：起動後に確認します</span>
-                  <div class="tool-buttons">
-                    <button class="button button-quiet button-small" id="streamlink-update-check-button" type="button">更新確認</button>
-                    <button class="button button-primary button-small" id="streamlink-update-install-button" type="button" hidden>更新する</button>
-                  </div>
+                <div class="tool-row streamlink-update-row" aria-live="polite">
+                  <span id="streamlink-update-status">Streamlink自動更新の状態を確認しています…</span>
                 </div>
               </div>
               <p class="hint">Streamlinkで配信データを直接取得します。映像と配信に含まれる音声をTS形式で保存し、録画停止後にFFmpegでMP4へ無劣化変換します。画面キャプチャは使用しません。</p>
@@ -417,7 +413,7 @@
           </label>
           <label class="settings-checkbox">
             <input type="checkbox" id="setting-auto-update-streamlink" checked>
-            <span>Streamlinkの更新を自動確認・適用する（1日ごと）</span>
+            <span>Streamlinkを起動時・6時間ごとに自動確認し、更新を自動適用する</span>
           </label>
         </div>
         <p class="hint">監視にはニコニコの公開放送履歴を使用します。APIの仕様変更やアクセス制限により、一時的に検知できない場合があります。</p>
