@@ -563,6 +563,7 @@ function getCompositionEditorOptions() {
     fontScale: number("compose-font-scale", 100, 50, 200) / 100,
     speed: number("compose-speed", 100, 50, 200) / 100,
     marginPercent: number("compose-position", 7, 4, 25),
+    offsetMs: number("compose-offset", 0, -10000, 10000),
     opacity: number("compose-opacity", 100, 20, 100) / 100,
     displayMode: byId("compose-display-mode").value,
     colorMode: byId("compose-color-mode").value,
@@ -583,6 +584,12 @@ function updateCompositionEditorLabels() {
     const input = byId(inputId);
     const output = byId(outputId);
     if (input && output) output.textContent = input.value + suffix;
+  }
+  const offset = byId("compose-offset");
+  const offsetOutput = byId("compose-offset-value");
+  if (offset && offsetOutput) {
+    const value = Number(offset.value) || 0;
+    offsetOutput.textContent = (value > 0 ? "+" : "") + value + " ms";
   }
 }
 
@@ -924,7 +931,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
   const fontScale = Math.min(2, Math.max(0.5, Number(options.fontScale) || 1));
   const speed = Math.min(2, Math.max(0.5, Number(options.speed) || 1));
   const marginPercent = Math.min(25, Math.max(4, Number(options.marginPercent) || 7));
-  const displayMode = ["all", "scroll", "fixed"].includes(options.displayMode) ? options.displayMode : "all";
+  const displayMode = ["all", "scroll", "fixed", "top", "bottom"].includes(options.displayMode) ? options.displayMode : "all";
   const colorMode = ["original", "white", "green"].includes(options.colorMode) ? options.colorMode : "original";
   const baseSize = Math.max(12, Math.min(110, Math.round(height * 0.045 * fontScale)));
   const scrollLaneCount = Math.max(1, Math.min(24, Math.floor(height / Math.max(24, baseSize * 1.3))));
@@ -940,6 +947,8 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     const isFixed = isTop || isBottom;
     if (displayMode === "scroll" && isFixed) continue;
     if (displayMode === "fixed" && !isFixed) continue;
+    if (displayMode === "top" && !isTop) continue;
+    if (displayMode === "bottom" && !isBottom) continue;
 
     let fontSize = baseSize;
     if (commands.includes("big")) fontSize = Math.min(120, Math.round(baseSize * 1.22));
@@ -1165,8 +1174,12 @@ async function composeCommentVideo() {
     canvas.height = Math.max(2, Math.round(sourceHeight * resolutionScale / 2) * 2);
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("動画合成用キャンバスを作成できません。");
+    const adjustedComments = timeline.comments.map((comment) => ({
+      ...comment,
+      timeMs: comment.timeMs + composeOptions.offsetMs
+    })).filter((comment) => comment.timeMs <= durationMs);
     const schedule = createCommentOverlaySchedule(
-      timeline.comments, context, canvas.width, canvas.height, composeOptions
+      adjustedComments, context, canvas.width, canvas.height, composeOptions
     );
     if (!schedule.length) throw new Error("現在の表示設定に一致するコメントがありません。");
 
@@ -1322,7 +1335,7 @@ async function composeCommentVideo() {
   }
 }
 
-for (const id of ["compose-font-scale", "compose-speed", "compose-position", "compose-opacity"]) {
+for (const id of ["compose-font-scale", "compose-speed", "compose-position", "compose-opacity", "compose-offset"]) {
   byId(id).addEventListener("input", updateCompositionEditorLabels);
 }
 updateCompositionEditorLabels();
