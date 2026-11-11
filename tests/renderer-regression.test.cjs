@@ -8,6 +8,7 @@ const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf8");
+const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
@@ -166,4 +167,19 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   assert.match(renderer, /canvas\.captureStream\(composeOptions\.fps\)/);
   assert.match(renderer, /videoBitsPerSecond: composeOptions\.bitrate/);
   assert.match(renderer, /comment\.timeMs \+ composeOptions\.offsetMs/);
+});
+
+
+test("successful main-branch Windows builds automatically publish a beta update once", () => {
+  assert.match(releaseWorkflow, /workflow_run:/);
+  assert.match(releaseWorkflow, /Build Nico Live Message Recorder/);
+  assert.match(releaseWorkflow, /conclusion == 'success'/);
+  assert.match(releaseWorkflow, /gh release view/);
+  assert.match(releaseWorkflow, /dist:win:release/);
+  assert.match(releaseWorkflow, /beta update metadata/);
+});
+
+test("unsupported app update packages show their specific reason", () => {
+  assert.match(renderer, /message: result\.reason \|\|/);
+  assert.match(renderer, /Windowsインストーラー版をご利用ください/);
 });
