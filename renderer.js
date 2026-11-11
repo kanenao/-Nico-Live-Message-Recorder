@@ -15,6 +15,16 @@ let currentLiveId = "";
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
+let monitorSettings = {
+  intervalSeconds: 60,
+  autoRecord: true,
+  autoStart: true,
+  quality: "best",
+  targets: []
+};
+const monitorStatuses = new Map();
+const monitorAutoQueue = [];
+let monitorAutoProcessing = false;
 
 function showToast(message, isError) {
   const toast = byId("toast");
@@ -273,6 +283,7 @@ function handleVideoState(payload) {
   }
   clearRecordClock();
   setVideoState(false);
+  processMonitorAutoQueue();
 }
 
 async function refreshVideoTools() {
@@ -293,6 +304,259 @@ async function refreshVideoTools() {
   } catch (_) {
     byId("streamlink-status").textContent = "Streamlink：状態を確認できません";
     byId("ffmpeg-status").textContent = "FFmpeg：状態を確認できません";
+  }
+}
+
+
+function renderMonitorState(payload) {
+  if (!payload) return;
+  const state = byId("monitor-state");
+  const startButton = byId("monitor-start-button");
+  const stopButton = byId("monitor-stop-button");
+  const running = Boolean(payload.running);
+  state.textContent = payload.state === "checking"
+    ? "配信状況を確認中…"
+    : running ? "監視中" : "監視停止中";
+  state.classList.toggle("is-running", running);
+  startButton.disabled = running;
+  stopButton.disabled = !running;
+  if (payload.checkedAt || payload.lastCheckAt) {
+    const date = new Date(payload.checkedAt || payload.lastCheckAt);
+    if (!Number.isNaN(date.getTime())) {
+      byId("monitor-last-check").textContent =
+        "最終確認：" + date.toLocaleTimeString("ja-JP", { hour12: false });
+    }
+  }
+  if (payload.settings) {
+    monitorSettings = payload.settings;
+    renderMonitorTargets();
+  }
+}
+
+function renderMonitorTargets() {
+  const list = byId("monitor-target-list");
+  list.replaceChildren();
+  const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
+  byId("monitor-count").textContent = String(targets.length);
+
+  if (!targets.length) {
+    const empty = document.createElement("div");
+    empty.className = "monitor-empty";
+    empty.textContent = "監視対象がまだ登録されていません。";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const target of targets) {
+    const status = monitorStatuses.get(target.userId);
+    const row = document.createElement("div");
+    row.className = "monitor-target-row";
+
+    const main = document.createElement("div");
+    main.className = "monitor-target-main";
+    const name = document.createElement("strong");
+    name.textContent = target.name || ("ユーザー " + target.userId);
+    const id = document.createElement("span");
+    id.textContent = "user/" + target.userId;
+    main.append(name, id);
+
+    const statusLabel = document.createElement("span");
+    statusLabel.className = "monitor-target-status";
+    if (status && status.error) {
+      statusLabel.classList.add("is-error");
+      statusLabel.textContent = "確認エラー";
+      statusLabel.title = status.error;
+    } else if (status && status.isLive) {
+      statusLabel.classList.add("is-live");
+      statusLabel.textContent = "● 放送中：" + (status.liveId || "");
+      statusLabel.title = status.title || "";
+    } else if (status && status.checkedAt) {
+      statusLabel.textContent = "待機中";
+    } else {
+      statusLabel.textContent = "未確認";
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "monitor-target-actions";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "button button-quiet button-small";
+    remove.textContent = "削除";
+    remove.addEventListener("click", async () => {
+      try {
+        const result = await api.removeMonitorTarget(target.userId);
+        applyMonitorState(result);
+        monitorStatuses.delete(target.userId);
+        renderMonitorTargets();
+        showToast("監視リストから削除しました。");
+      } catch (error) {
+        showToast(error.message || "監視対象を削除できませんでした。", true);
+      }
+    });
+    actions.appendChild(remove);
+    row.append(main, statusLabel, actions);
+    list.appendChild(row);
+  }
+}
+
+function applyMonitorState(result) {
+  if (!result) return;
+  if (result.settings) monitorSettings = result.settings;
+  if (result.statuses && typeof result.statuses === "object") {
+    for (const [userId, status] of Object.entries(result.statuses)) {
+      monitorStatuses.set(userId, status);
+    }
+  }
+  renderMonitorState(result);
+  renderMonitorTargets();
+}
+
+function addMonitorActivity(message, kind = "") {
+  const activity = byId("monitor-activity");
+  const line = document.createElement("span");
+  line.textContent = "[" + new Date().toLocaleTimeString("ja-JP", { hour12: false }) + "] " + message;
+  if (kind === "live") line.className = "monitor-log-live";
+  if (kind === "error") line.className = "monitor-log-error";
+  activity.prepend(line);
+  while (activity.children.length > 10) activity.lastElementChild.remove();
+}
+
+async function refreshMonitorState() {
+  try {
+    applyMonitorState(await api.getMonitorState());
+  } catch (error) {
+    addMonitorActivity(error.message || "監視状態を取得できませんでした。", "error");
+  }
+}
+
+async function addMonitorTarget() {
+  const userId = byId("monitor-user-id").value.trim();
+  const name = byId("monitor-display-name").value.trim();
+  try {
+    const result = await api.addMonitorTarget({ userId, name });
+    applyMonitorState(result);
+    byId("monitor-user-id").value = "";
+    byId("monitor-display-name").value = "";
+    addMonitorActivity((name || userId) + " を監視リストに追加しました。");
+    showToast("監視対象を追加しました。");
+  } catch (error) {
+    showToast(error.message || "監視対象を追加できませんでした。", true);
+  }
+}
+
+async function startMonitor() {
+  const button = byId("monitor-start-button");
+  button.disabled = true;
+  try {
+    applyMonitorState(await api.startMonitor());
+    addMonitorActivity("配信監視を開始しました。");
+    showToast("配信監視を開始しました。");
+  } catch (error) {
+    button.disabled = false;
+    showToast(error.message || "監視を開始できませんでした。", true);
+  }
+}
+
+async function stopMonitor() {
+  try {
+    applyMonitorState(await api.stopMonitor());
+    addMonitorActivity("配信監視を停止しました。");
+    showToast("配信監視を停止しました。");
+  } catch (error) {
+    showToast(error.message || "監視を停止できませんでした。", true);
+  }
+}
+
+function openSettings() {
+  byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 60);
+  byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
+  byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
+  byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
+  byId("settings-modal").hidden = false;
+}
+
+function closeSettings() {
+  byId("settings-modal").hidden = true;
+}
+
+async function saveSettings() {
+  const values = {
+    intervalSeconds: Number(byId("setting-monitor-interval").value),
+    quality: byId("setting-monitor-quality").value,
+    autoRecord: byId("setting-auto-record").checked,
+    autoStart: byId("setting-auto-start").checked
+  };
+  const button = byId("save-settings-button");
+  button.disabled = true;
+  try {
+    applyMonitorState(await api.saveMonitorSettings(values));
+    closeSettings();
+    showToast("設定を保存しました。");
+  } catch (error) {
+    showToast(error.message || "設定を保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function handleMonitorLiveDetected(payload) {
+  if (!payload || !payload.liveId) return;
+  const label = (payload.name || ("ユーザー " + payload.userId)) +
+    " の配信開始を検知：" + payload.liveId +
+    (payload.title ? "「" + payload.title + "」" : "");
+  addMonitorActivity(label, "live");
+  showToast("配信開始を検知しました：" + payload.liveId);
+
+  if (!monitorSettings.autoRecord) return;
+  if (monitorAutoQueue.some((item) => item.liveId === payload.liveId)) return;
+  monitorAutoQueue.push(payload);
+  processMonitorAutoQueue();
+}
+
+async function processMonitorAutoQueue() {
+  if (monitorAutoProcessing || monitorAutoQueue.length === 0) return;
+  // Never interrupt an existing manual or automatic recording.
+  if (recordButton.disabled || recordStartedAt) return;
+
+  const target = monitorAutoQueue.shift();
+  if (!target || !target.liveId) return;
+  monitorAutoProcessing = true;
+
+  try {
+    const liveId = normalizeId(target.liveId);
+    if (!liveId) throw new Error("監視で検出した放送IDが正しくありません。");
+
+    currentLiveId = liveId;
+    liveInput.value = liveId;
+    clearComments();
+    setConnection("connecting");
+    byId("live-title").textContent = target.title || "番組情報を取得中…";
+    byId("live-meta").textContent = "配信監視から自動録画を開始しています";
+
+    const connectedResult = await api.connectLive(liveId);
+    updateMetadata(connectedResult.metadata);
+    byId("comment-file").textContent = "コメント：" + connectedResult.commentFile;
+    setConnection("connected");
+
+    const result = await api.startVideo(liveId, monitorSettings.quality || "best");
+    byId("video-file").textContent = "保存先：" + result.path;
+    recordStartedAt = result.startedAt ? new Date(result.startedAt).getTime() : Date.now();
+    setVideoState(true);
+    startRecordClock();
+    addMonitorActivity(liveId + " の自動録画を開始しました。", "live");
+    showToast("監視対象の録画を自動開始しました：" + liveId);
+  } catch (error) {
+    setConnection("error");
+    addMonitorActivity(
+      (target.liveId || "") + " の自動録画に失敗：" + (error.message || String(error)),
+      "error"
+    );
+    showToast(error.message || "監視対象の自動録画に失敗しました。", true);
+  } finally {
+    monitorAutoProcessing = false;
+    if (monitorAutoQueue.length > 0 && !recordButton.disabled) {
+      window.setTimeout(processMonitorAutoQueue, 1500);
+    }
   }
 }
 
@@ -396,6 +660,16 @@ api.onEvent(({ channel, payload }) => {
   }
   if (channel === "video:state") handleVideoState(payload);
   if (channel === "update:state") renderUpdateState(payload);
+  if (channel === "monitor:state") renderMonitorState(payload);
+  if (channel === "monitor:target-status") {
+    monitorStatuses.set(payload.userId, payload);
+    renderMonitorTargets();
+  }
+  if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
+  if (channel === "monitor:error") addMonitorActivity(
+    (payload.name || payload.userId || "ユーザー") + " の状態確認エラー：" + (payload.error || ""),
+    "error"
+  );
   if (channel === "auth:status") refreshAuthStatus();
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
 });
@@ -406,6 +680,22 @@ recordButton.addEventListener("click", startVideoRecording);
 stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
 byId("install-update-button").addEventListener("click", installAppUpdate);
+byId("settings-button").addEventListener("click", openSettings);
+byId("close-settings-button").addEventListener("click", closeSettings);
+byId("cancel-settings-button").addEventListener("click", closeSettings);
+byId("save-settings-button").addEventListener("click", saveSettings);
+byId("settings-modal").addEventListener("click", (event) => {
+  if (event.target === byId("settings-modal")) closeSettings();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !byId("settings-modal").hidden) closeSettings();
+});
+byId("monitor-add-button").addEventListener("click", addMonitorTarget);
+byId("monitor-user-id").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") addMonitorTarget();
+});
+byId("monitor-start-button").addEventListener("click", startMonitor);
+byId("monitor-stop-button").addEventListener("click", stopMonitor);
 
 byId("open-watch-button").addEventListener("click", async () => {
   const liveId = normalizeId(liveInput.value);
@@ -465,6 +755,7 @@ liveInput.addEventListener("keydown", (event) => {
   } catch (_) {}
   await refreshAuthStatus();
   await refreshVideoTools();
+  await refreshMonitorState();
   setConnection("disconnected");
 })();
 
