@@ -89,12 +89,14 @@ async function fetchUserBroadcastStatus(userId, options = {}) {
 
       const payload = await response.json();
       const broadcasts = extractUserBroadcasts(payload);
-      const live = broadcasts.find((item) => item.isLive) || null;
+      const latest = broadcasts[0] || null;
+      // History is newest-first: an older ON_AIR record must not override a newer ended one.
+      const live = latest && latest.isLive ? latest : null;
       return {
         userId: normalizedId,
         isLive: Boolean(live),
         live,
-        latest: broadcasts[0] || null,
+        latest,
         broadcasts,
         checkedAt: new Date().toISOString(),
         endpoint
