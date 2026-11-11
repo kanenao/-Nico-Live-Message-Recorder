@@ -841,6 +841,22 @@ async function resolveMonitorUserName(target, followedProgram, latestProgram) {
   return resolvedName.slice(0, 80);
 }
 
+function normalizeMonitorDate(value) {
+  if (value === null || value === undefined || value === "") return "";
+  let timestamp;
+  if (value instanceof Date) {
+    timestamp = value.getTime();
+  } else if (typeof value === "number" || /^\\d{10,13}$/.test(String(value).trim())) {
+    timestamp = Number(value);
+    if (timestamp > 0 && timestamp < 1000000000000) timestamp *= 1000;
+  } else {
+    timestamp = Date.parse(String(value));
+  }
+  if (!Number.isFinite(timestamp)) return "";
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 async function checkMonitoredUsers() {
   if (!monitorRunning || monitorChecking) return;
   monitorChecking = true;
@@ -881,13 +897,16 @@ async function checkMonitoredUsers() {
               liveId: followedProgram.liveId,
               title: followedProgram.title,
               status: "ON_AIR",
-              isFollowerOnly: followedProgram.isFollowerOnly
+              isFollowerOnly: followedProgram.isFollowerOnly,
+              beginTime: followedProgram.beginAt
             }
           : result.live;
         const displayName = await resolveMonitorUserName(target, followedProgram, result && result.latest);
         const checkedAt = result ? result.checkedAt : new Date().toISOString();
         const latest = result ? result.latest : null;
         const source = followedProgram ? "フォロー中番組API" : "公開放送履歴API";
+        const startedAt = live ? normalizeMonitorDate(live.beginTime || live.startedAt) : "";
+        const endedAt = live ? normalizeMonitorDate(live.endTime || live.endedAt) : "";
         const status = {
           userId: target.userId,
           name: displayName,
@@ -895,6 +914,13 @@ async function checkMonitoredUsers() {
           liveId: live ? live.liveId : "",
           title: live ? live.title : (latest ? latest.title : ""),
           programStatus: live ? live.status : (latest ? latest.status : ""),
+          startedAt,
+          endedAt,
+          watchPageUrl: live
+            ? (followedProgram && followedProgram.watchPageUrl
+              ? followedProgram.watchPageUrl
+              : "https://live.nicovideo.jp/watch/" + live.liveId)
+            : "",
           detectionSource: live ? source : "",
           isFollowerOnly: Boolean(live && live.isFollowerOnly),
           checkedAt,
@@ -917,6 +943,8 @@ async function checkMonitoredUsers() {
             broadcasterId: target.userId,
             liveId: live.liveId,
             title: live.title,
+            startedAt,
+            watchPageUrl: status.watchPageUrl,
             source,
             isFollowerOnly: Boolean(live.isFollowerOnly),
             detectedAt: checkedAt
