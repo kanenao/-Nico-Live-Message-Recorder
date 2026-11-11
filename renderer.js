@@ -27,6 +27,7 @@ let monitorSettings = {
   targets: []
 };
 const monitorStatuses = new Map();
+let monitorIsRunning = false;
 const monitorAutoQueue = [];
 let monitorAutoProcessing = false;
 let captureLibraryItems = [];
@@ -341,6 +342,7 @@ function setVideoState(recording, stopping = false) {
   recordButton.disabled = recording || stopping;
   stopRecordButton.disabled = !recording || stopping;
   updateCaptureIndicators();
+  renderDashboardStats();
 }
 
 async function stopVideoRecording() {
@@ -464,12 +466,139 @@ async function refreshVideoTools() {
 }
 
 
+function parseBroadcastTimestamp(value) {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  const raw = String(value).trim();
+  if (/^\\d{10,13}$/.test(raw)) {
+    const numeric = Number(raw);
+    return numeric < 1000000000000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatBroadcastStart(value) {
+  const timestamp = parseBroadcastTimestamp(value);
+  if (!timestamp) return "開始時刻未取得";
+  return new Date(timestamp).toLocaleTimeString("ja-JP", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+  });
+}
+
+function formatBroadcastElapsed(value) {
+  const timestamp = parseBroadcastTimestamp(value);
+  if (!timestamp) return "経過時間未取得";
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return "経過 " + [hours, minutes, remainder].map(part => String(part).padStart(2, "0")).join(":");
+}
+
+function renderDashboardStats() {
+  const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
+  const liveCount = targets.filter(target => {
+    const status = monitorStatuses.get(target.userId);
+    return Boolean(status && status.isLive && !status.error);
+  }).length;
+  byId("dashboard-target-count").textContent = String(targets.length).padStart(2, "0");
+  byId("dashboard-live-count").textContent = String(liveCount).padStart(2, "0");
+  byId("dashboard-recording-count").textContent = videoCaptureState === "recording" ? "01" : "00";
+  byId("dashboard-monitor-status").textContent = monitorIsRunning ? "監視中" : "停止中";
+  byId("live-broadcast-count").textContent = String(liveCount);
+}
+
+function updateLiveElapsedLabels() {
+  document.querySelectorAll(".live-broadcast-elapsed").forEach(element => {
+    element.textContent = formatBroadcastElapsed(element.dataset.startedAt || "");
+  });
+}
+
+function renderLiveBroadcasts() {
+  const list = byId("live-broadcast-list");
+  if (!list) return;
+  list.replaceChildren();
+  const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
+  const liveItems = targets
+    .map(target => monitorStatuses.get(target.userId))
+    .filter(status => status && status.isLive && !status.error)
+    .sort((a, b) => parseBroadcastTimestamp(b.startedAt) - parseBroadcastTimestamp(a.startedAt));
+
+  if (!liveItems.length) {
+    const empty = document.createElement("div");
+    empty.className = "live-broadcast-empty";
+    empty.textContent = monitorIsRunning
+      ? "現在、登録した配信者のLIVEは検知されていません。監視は継続中です。"
+      : "監視を開始すると、登録した配信者のLIVE情報がここに表示されます。";
+    list.appendChild(empty);
+    renderDashboardStats();
+    return;
+  }
+
+  for (const status of liveItems) {
+    const card = document.createElement("article");
+    card.className = "live-broadcast-card";
+
+    const top = document.createElement("div");
+    top.className = "live-broadcast-top";
+    const liveBadge = document.createElement("span");
+    liveBadge.className = "live-broadcast-badge";
+    liveBadge.textContent = "● LIVE";
+    const start = document.createElement("span");
+    start.className = "live-broadcast-start";
+    start.textContent = "開始 " + formatBroadcastStart(status.startedAt);
+    top.append(liveBadge, start);
+
+    const broadcaster = document.createElement("strong");
+    broadcaster.className = "live-broadcast-name";
+    broadcaster.textContent = status.name || ("ユーザー " + status.userId);
+
+    const title = document.createElement("p");
+    title.className = "live-broadcast-title";
+    title.textContent = status.title || "配信タイトルを取得できませんでした";
+
+    const meta = document.createElement("div");
+    meta.className = "live-broadcast-meta";
+    const liveId = document.createElement("span");
+    liveId.textContent = status.liveId || "";
+    const elapsed = document.createElement("span");
+    elapsed.className = "live-broadcast-elapsed";
+    elapsed.dataset.startedAt = status.startedAt || "";
+    elapsed.textContent = formatBroadcastElapsed(status.startedAt);
+    meta.append(liveId, elapsed);
+
+    const footer = document.createElement("div");
+    footer.className = "live-broadcast-footer";
+    const source = document.createElement("span");
+    source.textContent = (status.isFollowerOnly ? "フォロー限定 · " : "") +
+      (status.detectionSource || "配信監視");
+    const watch = document.createElement("button");
+    watch.type = "button";
+    watch.className = "button button-quiet button-small";
+    watch.textContent = "視聴ページを開く";
+    watch.addEventListener("click", async () => {
+      try {
+        await api.openWatch(status.liveId);
+      } catch (error) {
+        showToast(error.message || "視聴ページを開けませんでした。", true);
+      }
+    });
+    footer.append(source, watch);
+
+    card.append(top, broadcaster, title, meta, footer);
+    list.appendChild(card);
+  }
+  renderDashboardStats();
+}
+
 function renderMonitorState(payload) {
   if (!payload) return;
   const state = byId("monitor-state");
   const startButton = byId("monitor-start-button");
   const stopButton = byId("monitor-stop-button");
   const running = Boolean(payload.running);
+  monitorIsRunning = running;
   state.textContent = payload.state === "checking"
     ? "配信状況を確認中…"
     : running ? "監視中" : "監視停止中";
@@ -487,6 +616,8 @@ function renderMonitorState(payload) {
     monitorSettings = payload.settings;
     renderMonitorTargets();
   }
+  renderLiveBroadcasts();
+  renderDashboardStats();
 }
 
 function renderMonitorTargets() {
@@ -500,6 +631,8 @@ function renderMonitorTargets() {
     empty.className = "monitor-empty";
     empty.textContent = "監視対象がまだ登録されていません。";
     list.appendChild(empty);
+    renderLiveBroadcasts();
+    renderDashboardStats();
     return;
   }
 
@@ -514,7 +647,12 @@ function renderMonitorTargets() {
     name.textContent = target.name || ("ユーザー " + target.userId);
     const id = document.createElement("span");
     id.textContent = "user/" + target.userId;
-    main.append(name, id);
+    const detail = document.createElement("small");
+    detail.className = "monitor-target-detail";
+    detail.textContent = status && status.isLive
+      ? (status.title || "番組タイトル未取得") + " · 開始 " + formatBroadcastStart(status.startedAt)
+      : status && status.error ? status.error : (status && status.checkedAt ? "現在オフライン" : "配信状況を確認すると詳細を表示します");
+    main.append(name, id, detail);
 
     const statusLabel = document.createElement("span");
     statusLabel.className = "monitor-target-status";
@@ -555,6 +693,8 @@ function renderMonitorTargets() {
     row.append(main, statusLabel, actions);
     list.appendChild(row);
   }
+  renderLiveBroadcasts();
+  renderDashboardStats();
 }
 
 function applyMonitorState(result) {
@@ -1158,8 +1298,12 @@ liveInput.addEventListener("keydown", (event) => {
   await refreshAuthStatus();
   await refreshVideoTools();
   await refreshMonitorState();
+  renderLiveBroadcasts();
+  renderDashboardStats();
   setConnection("disconnected");
 })();
+
+window.setInterval(updateLiveElapsedLabels, 1000);
 
 // ---------------------------------------------------------------------------
 // Comment video composition (canvas overlay + browser MediaRecorder)
