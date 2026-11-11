@@ -8,6 +8,8 @@ const {
   normalizeQuality,
   findStreamlinkExecutable,
   findFfmpegExecutable,
+  findBundledStreamlinkExecutable,
+  findBundledFfmpegExecutable,
   createStreamlinkRuntime,
   buildStreamlinkArgs
 } = require("../electron/streamlink.cjs");
@@ -85,4 +87,27 @@ test("session token is written only to the temporary plugin config, not process 
     if (runtime) fs.rmSync(runtime.runtimeDirectory, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test("finds bundled Streamlink and FFmpeg inside a portable runtime", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nlmr-bundled-tools-"));
+  try {
+    const streamlinkPath = path.join(root, "Streamlink", "bin", "streamlink.exe");
+    const ffmpegPath = path.join(root, "Streamlink", "ffmpeg", "ffmpeg.exe");
+    fs.mkdirSync(path.dirname(streamlinkPath), { recursive: true });
+    fs.mkdirSync(path.dirname(ffmpegPath), { recursive: true });
+    fs.writeFileSync(streamlinkPath, "");
+    fs.writeFileSync(ffmpegPath, "");
+
+    assert.equal(findBundledStreamlinkExecutable(root), streamlinkPath);
+    assert.equal(findBundledFfmpegExecutable(root), ffmpegPath);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("returns null when the bundled runtime is missing", () => {
+  assert.equal(findBundledStreamlinkExecutable(path.join(os.tmpdir(), "nlmr-does-not-exist")), null);
+  assert.equal(findBundledFfmpegExecutable(path.join(os.tmpdir(), "nlmr-does-not-exist")), null);
 });
