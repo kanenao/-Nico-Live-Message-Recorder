@@ -283,14 +283,17 @@ async function startVideoRecording() {
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
   try {
     const quality = byId("record-quality")?.value || "best";
-    const result = await api.startCapture(liveId, quality, {});
+    const timeshift = byId("record-mode")?.value === "timeshift";
+    const result = timeshift
+      ? { video: await api.startVideo(liveId, quality, { timeshift: true }) }
+      : await api.startCapture(liveId, quality, {});
     if (result.comment && result.comment.metadata) updateMetadata(result.comment.metadata);
     if (result.comment && result.comment.commentFile) {
       byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
     }
     if (result.commentsConnected) {
       setConnection("connected");
-    } else {
+    } else if (!timeshift) {
       setConnection("error");
     }
 
@@ -299,7 +302,9 @@ async function startVideoRecording() {
     recordStartedAt = video.startedAt ? new Date(video.startedAt).getTime() : Date.now();
     setVideoState(true);
     startRecordClock();
-    if (result.commentError) {
+    if (timeshift) {
+      showToast("タイムシフトの映像・音声録画を開始しました。コメントは保存されません。");
+    } else if (result.commentError) {
       showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
     } else {
       showToast("映像録画とコメント取得を同時に開始しました。");
@@ -1026,6 +1031,15 @@ api.onEvent(({ channel, payload }) => {
 connectButton.addEventListener("click", connectLive);
 disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
+byId("record-mode").addEventListener("change", () => {
+  const timeshift = byId("record-mode").value === "timeshift";
+  byId("record-mode-hint").textContent = timeshift
+    ? "視聴期限内で、ログイン中アカウントに視聴権限があるタイムシフトを最初から映像・音声のみ保存します。コメントは取得しません。"
+    : "配信中の放送は映像・音声とコメントを同時に保存します。コメントだけ保存する場合は「コメントのみ接続」を選んでください。";
+  recordButton.textContent = timeshift
+    ? "● 過去配信（タイムシフト）を録画"
+    : "● 接続して映像・音声＋コメントを録画";
+});
 stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
 byId("streamlink-update-check-button").addEventListener("click", checkStreamlinkUpdates);
