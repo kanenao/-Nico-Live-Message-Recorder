@@ -302,3 +302,15 @@ test("timeshift comment retrieval does not restore recording state after the vid
   assert.match(renderer, /Do not overwrite a completed video:state event/);
   assert.match(renderer, /if \(!timeshift \|\| videoCaptureState === "recording"\)/);
 });
+
+
+test("timeshift without a comment endpoint replaces and closes the previous comment session", () => {
+  const branchStart = main.indexOf('if (!page || !page.webSocketUrl)');
+  const branchEnd = main.indexOf('let video = null;', branchStart);
+  assert.ok(branchStart >= 0 && branchEnd > branchStart);
+  const fallback = main.slice(branchStart, branchEnd);
+  assert.match(fallback, /await prepareCommentSession\(/);
+  assert.match(fallback, /await startVideoInternal\(/);
+  assert.match(fallback, /await closeCommentWriter\(\)/);
+  assert.match(fallback, /timeshiftCommentFetchActive = false/);
+});

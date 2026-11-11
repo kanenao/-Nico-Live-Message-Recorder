@@ -1414,16 +1414,39 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
   }
 
   if (!page || !page.webSocketUrl) {
-    const video = await startVideoInternal(
-      liveId, quality, page && page.broadcasterName || "", page && page.broadcasterId || "",
-      { ...options, timeshift: true, timeshiftOriginAt: page && page.beginAt || "" }
-    );
-    return {
-      ...video,
-      commentCount: 0,
-      commentsFetched: false,
-      commentError
-    };
+    timeshiftCommentFetchActive = true;
+    try {
+      // Close any previous live-comment session and create this archive's own
+      // log even when the archive does not expose a comment WebSocket endpoint.
+      await prepareCommentSession(
+        liveId,
+        page && page.broadcasterName || "",
+        page && page.broadcasterId || ""
+      );
+      const video = await startVideoInternal(
+        liveId,
+        quality,
+        page && page.broadcasterName || "",
+        page && page.broadcasterId || "",
+        { ...options, timeshift: true, timeshiftOriginAt: page && page.beginAt || "" }
+      );
+      await closeCommentWriter();
+      const finalCommentFile = commentFilePath;
+      send("live:state", { state: "disconnected" });
+      return {
+        ...video,
+        commentFile: finalCommentFile,
+        commentCount: 0,
+        commentsFetched: false,
+        commentError
+      };
+    } catch (error) {
+      if (commentWriter) await closeCommentWriter();
+      send("live:state", { state: "error" });
+      throw error;
+    } finally {
+      timeshiftCommentFetchActive = false;
+    }
   }
 
   let video = null;
