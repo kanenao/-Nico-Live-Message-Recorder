@@ -3,6 +3,8 @@ const { spawn } = require("node:child_process");
 const {
   findStreamlinkExecutable,
   findFfmpegExecutable,
+  findBundledStreamlinkExecutable,
+  findBundledFfmpegExecutable,
   createStreamlinkRuntime,
   buildStreamlinkArgs
 } = require("./streamlink.cjs");
@@ -272,14 +274,33 @@ function writeAppSettings(patch) {
   return next;
 }
 
+function getStreamlinkBundleRoot() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "streamlink")
+    : path.join(__dirname, "..", "vendor", "streamlink");
+}
+
 function getVideoToolStatus() {
   const settings = readAppSettings();
-  const streamlinkPath = findStreamlinkExecutable({ customPath: settings.streamlinkPath });
-  const ffmpegPath = findFfmpegExecutable({
+  const bundleRoot = getStreamlinkBundleRoot();
+  const bundledStreamlinkPath = findBundledStreamlinkExecutable(bundleRoot);
+  const bundledFfmpegPath = findBundledFfmpegExecutable(bundleRoot);
+  const streamlinkPath = bundledStreamlinkPath || findStreamlinkExecutable({
+    customPath: settings.streamlinkPath
+  });
+  const ffmpegPath = bundledFfmpegPath || findFfmpegExecutable({
     customPath: settings.ffmpegPath,
     streamlinkPath
   });
-  return { streamlinkAvailable: Boolean(streamlinkPath), streamlinkPath, ffmpegAvailable: Boolean(ffmpegPath), ffmpegPath };
+  return {
+    streamlinkAvailable: Boolean(streamlinkPath),
+    streamlinkPath,
+    streamlinkBundled: Boolean(bundledStreamlinkPath),
+    streamlinkVersion: bundledStreamlinkPath ? "8.6.3" : null,
+    ffmpegAvailable: Boolean(ffmpegPath),
+    ffmpegPath,
+    ffmpegBundled: Boolean(bundledFfmpegPath)
+  };
 }
 
 function remuxTransportStreamToMp4(inputPath, outputPath, ffmpegPath) {
@@ -369,51 +390,15 @@ async function finalizeStreamlinkRecording(exit) {
 
 ipcMain.handle("video:tools-status", async () => getVideoToolStatus());
 
-ipcMain.handle("video:select-streamlink", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Streamlink実行ファイルを選択",
-    properties: ["openFile"],
-    filters: [{ name: "Streamlink実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }]
-  });
-  if (result.canceled || !result.filePaths[0]) return { cancelled: true, ...getVideoToolStatus() };
-  const selectedPath = result.filePaths[0];
-  if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isFile()) {
-    throw new Error("選択したファイルを確認できませんでした。");
-  }
-  writeAppSettings({ streamlinkPath: selectedPath });
-  return { cancelled: false, ...getVideoToolStatus() };
-});
-
-ipcMain.handle("video:select-ffmpeg", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: "FFmpeg実行ファイルを選択",
-    properties: ["openFile"],
-    filters: [{ name: "FFmpeg実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }]
-  });
-  if (result.canceled || !result.filePaths[0]) return { cancelled: true, ...getVideoToolStatus() };
-  const selectedPath = result.filePaths[0];
-  if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isFile()) {
-    throw new Error("選択したファイルを確認できませんでした。");
-  }
-  writeAppSettings({ ffmpegPath: selectedPath });
-  return { cancelled: false, ...getVideoToolStatus() };
-});
-
-ipcMain.handle("video:open-streamlink-download", async () => {
-  await shell.openExternal("https://github.com/streamlink/windows-builds/releases");
-  return { opened: true };
-});
-
 ipcMain.handle("video:start", async (_event, value, quality) => {
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
   const liveId = safeLiveId(value);
-  const settings = readAppSettings();
-  const streamlinkPath = findStreamlinkExecutable({ customPath: settings.streamlinkPath });
+  const toolStatus = getVideoToolStatus();
+  const streamlinkPath = toolStatus.streamlinkPath;
   if (!streamlinkPath) {
-    throw new Error("Streamlinkが見つかりません。「Streamlinkを設定」からstreamlink.exeを選択するか、公式配布版をインストールしてください。");
+    throw new Error("同梱Streamlinkが見つかりません。アプリを再インストールしてください。");
   }
 
-  const toolStatus = getVideoToolStatus();
   const ffmpegPath = toolStatus.ffmpegPath;
   const authSession = session.fromPartition("persist:nico-auth");
   const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
