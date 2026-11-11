@@ -763,7 +763,7 @@ function renderUpdateState(payload) {
       status.textContent = "最新バージョンです" + (version ? "（" + version + "）" : "。");
       break;
     case "unsupported":
-      status.textContent = "自動アップデートはWindowsのインストーラー版で利用できます。";
+      status.textContent = payload.message || "自動アップデートはWindowsのインストーラー版で利用できます。";
       break;
     case "error":
       status.textContent = "更新を確認できませんでした: " + (payload.message || "通信エラー");
