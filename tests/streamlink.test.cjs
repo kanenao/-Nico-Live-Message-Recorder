@@ -1,4 +1,6 @@
 const test = require("node:test");
+const { patchNicoLivePluginSource } = require("../scripts/patch-nicolive.cjs");
+const preparationScript = fs.readFileSync(path.join(__dirname, "..", "scripts", "prepare-streamlink.ps1"), "utf8");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -110,4 +112,30 @@ test("finds bundled Streamlink and FFmpeg inside a portable runtime", () => {
 test("returns null when the bundled runtime is missing", () => {
   assert.equal(findBundledStreamlinkExecutable(path.join(os.tmpdir(), "nlmr-does-not-exist")), null);
   assert.equal(findBundledFfmpegExecutable(path.join(os.tmpdir(), "nlmr-does-not-exist")), null);
+});
+
+test("NicoLive plugin timeout patch extends both connection waits to 30 seconds", () => {
+  const original = [
+    "class NicoLiveWsClient(WebsocketClient):",
+    "    STREAM_OPENED_TIMEOUT = 6",
+    "",
+    "class NicoLive(Plugin):",
+    "    STREAM_READY_TIMEOUT = 6"
+  ].join("\n");
+  const patched = patchNicoLivePluginSource(original);
+  assert.match(patched, /STREAM_OPENED_TIMEOUT = 30/);
+  assert.match(patched, /STREAM_READY_TIMEOUT = 30/);
+  assert.equal(patchNicoLivePluginSource(patched), patched);
+  assert.throws(
+    () => patchNicoLivePluginSource(original.replace("STREAM_READY_TIMEOUT = 6", "STREAM_READY_TIMEOUT = 10")),
+    /既定値が想定外/
+  );
+});
+
+test("Windows portable preparation pins the official Streamlink 8.6.2-1 archive and patches nicolive.py", () => {
+  assert.match(preparationScript, /\$version = "8\.6\.2-1"/);
+  assert.match(preparationScript, /streamlink-8\.6\.2-1-py314-x86_64\.zip/);
+  assert.match(preparationScript, /329eb05252a3dbc8d8c5b8b6857b41acf61df4fd818545a8ee322f3740b6caa1/);
+  assert.match(preparationScript, /patch-nicolive\.cjs/);
+  assert.match(preparationScript, /nicolive\.py/);
 });
