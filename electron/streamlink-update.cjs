@@ -33,7 +33,7 @@ function selectWindowsPortableAsset(release) {
   const assets = Array.isArray(release.assets) ? release.assets : [];
   const asset = assets.find((item) =>
     item &&
-    item.name === "streamlink-" + version + "-py315-x86_64.zip" &&
+    new RegExp("^streamlink-" + version.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\item.name === "streamlink-" + version + "-py315-x86_64.zip"") + "-py\\\\d+-x86_64\\\\.zip$").test(String(item.name || "")) &&
     /^sha256:[0-9a-f]{64}$/i.test(String(item.digest || "")) &&
     /^https:\/\/github\.com\/streamlink\/windows-builds\/releases\/download\//.test(String(item.browser_download_url || ""))
   );
