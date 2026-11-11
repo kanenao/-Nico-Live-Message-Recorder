@@ -2,7 +2,7 @@
 
 ニコニコ生放送の映像ストリームとコメントを別々に直接保存し、コメント付き動画を生成できるWindowsデスクトップアプリです。
 
-**開発版：0.1.0-beta.15**
+**開発版：0.1.0-beta.16**
 
 ## 主な機能
 
@@ -107,7 +107,11 @@ Windowsのインストーラー版（NSIS）では、GitHub Releasesのβ版更�
 
 ### 新しいバージョンの公開
 
-`package.json` のバージョンを更新して `vバージョン` 形式のタグ（例：`v0.1.0-beta.15`）を `main` に付けると、GitHub Actionsがテスト、Windowsビルド、GitHub Releasesへの公開を行います。タグを付けずに公開する場合は、GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** から手動実行できます。公開されたβ版は `beta` チャンネルで配信されます。
+`package.json` のバージョンを更新して `main` に反映すると、Windowsビルドワークフローがテストとインストーラー／ZIP作成を実行します。**mainブランチのビルドとテストが成功すると、Releaseワークフローが自動で起動し、未公開バージョンをGitHub Releasesへ公開します。** 同じバージョンがすでに公開済みなら重複公開しません。
+
+従来どおり `vバージョン` 形式のタグ（例：`v0.1.0-beta.16`）を付けた場合や、GitHubの **Actions → Release Nico Live Message Recorder → Run workflow** から手動実行した場合も公開できます。公開されたβ版は `beta` チャンネルで配信されます。
+
+アプリ内自動更新はWindowsのNSISインストーラー版が対象です。ZIP版は自動更新されないため、Actionsのビルド成果物またはGitHub Releasesから新しいZIPを手動で入れ替えてください。
 
 この公開ワークフローはリポジトリに設定済みの `GITHUB_TOKEN` を使用するため、個人アクセストークンをソースコードへ書き込む必要はありません。
 
