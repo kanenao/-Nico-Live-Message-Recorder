@@ -5,28 +5,54 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Build Nico Live Message Recorder
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: write
 
 concurrency:
-  group: nicolive-recorder-release-${{ github.ref }}
+  group: nicolive-recorder-release-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
   release-windows:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Check whether this version is already published
+        id: release-check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "v$version"
+          gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            "already_published=true" >> $env:GITHUB_OUTPUT
+            Write-Host "$tag is already published; skip duplicate release."
+          } else {
+            "already_published=false" >> $env:GITHUB_OUTPUT
+            Write-Host "$tag is not published; create beta release."
+          }
       - name: Verify release tag matches package version
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && steps.release-check.outputs.already_published != 'true'
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -37,12 +63,15 @@ jobs:
             throw "Tag $env:RELEASE_TAG does not match package version $expected"
           }
       - name: Run application tests
+        if: steps.release-check.outputs.already_published != 'true'
         run: npm test
       - name: Build and publish Windows release to GitHub Releases
+        if: steps.release-check.outputs.already_published != 'true'
         run: npm run dist:win:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify beta update metadata
+        if: steps.release-check.outputs.already_published != 'true'
         shell: pwsh
         run: |
           $metadata = Join-Path "dist" "beta.yml"
