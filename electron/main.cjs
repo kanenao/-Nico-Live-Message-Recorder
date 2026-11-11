@@ -665,6 +665,18 @@ function saveMonitorSettings(nextSettings) {
   };
   writeAppSettings({ monitor: normalized });
   if (monitorRunning) restartMonitorTimer();
+
+  if (!normalized.autoUpdateStreamlink) {
+    sendStreamlinkUpdateState("disabled", {
+      message: "Streamlinkの自動更新は設定で無効です。"
+    });
+  } else if (!current.autoUpdateStreamlink && process.platform === "win32") {
+    // Re-enabling automatic updates starts a check immediately instead of waiting
+    // for the next six-hour timer tick.
+    setTimeout(() => {
+      checkStreamlinkUpdateNow({ autoInstall: true, silent: true });
+    }, 1000);
+  }
   return getMonitorState();
 }
 
@@ -1147,10 +1159,6 @@ function checkStreamlinkUpdateNow(options = {}) {
   return streamlinkUpdateCheckPromise;
 }
 
-ipcMain.handle("streamlink:update-check", () => checkStreamlinkUpdateNow({ autoInstall: false }));
-ipcMain.handle("streamlink:update-install", () => installLatestStreamlinkRuntime());
-
-
 async function startVideoInternal(value, quality, displayName = "", broadcasterId = "", options = {}) {
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
   const liveId = safeLiveId(value);
@@ -1564,7 +1572,7 @@ app.whenReady().then(() => {
     setTimeout(runAutomaticStreamlinkUpdate, 12000);
     const streamlinkUpdateTimer = setInterval(
       runAutomaticStreamlinkUpdate,
-      24 * 60 * 60 * 1000
+      6 * 60 * 60 * 1000
     );
     if (typeof streamlinkUpdateTimer.unref === "function") streamlinkUpdateTimer.unref();
   }
