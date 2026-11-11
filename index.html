@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.12</span>
+        <span class="version" id="version">v0.1.0-beta.13</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -34,7 +34,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.12</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.13</span></div>
         </div>
       </aside>
 
@@ -42,8 +42,8 @@
         <section class="welcome">
           <div>
             <div class="eyebrow">DESKTOP RECORDER / BETA</div>
-            <h1>配信を、コメントと一緒に保存。</h1>
-            <p>コメントは受信時に自動保存。映像は配信データを直接取得してファイルに保存します。</p>
+            <h1>配信映像・音声とコメントを、まとめて保存。</h1>
+            <p>放送に接続するだけで、配信データの直接録画とコメント保存を一つの画面から操作できます。</p>
           </div>
           <div class="live-badge" id="connection-badge"><span class="pulse"></span><span id="connection-label">未接続</span></div>
         </section>
@@ -97,67 +97,59 @@
           <p class="hint">ログイン中はフォロー中番組APIを優先し、登録ユーザーの公開放送履歴も併用して配信を検知します。フォロー限定番組はログイン中アカウントに表示・視聴権限がある場合のみ対象です。</p>
         </section>
 
-        <section class="control-grid">
-          <article class="panel connect-panel">
-            <div class="panel-heading">
-              <div>
-                <div class="eyebrow">LIVE CONNECTION</div>
-                <h2>放送に接続</h2>
+        <section class="panel session-panel">
+          <div class="panel-heading session-heading">
+            <div>
+              <div class="eyebrow">LIVE CONNECTION / DIRECT STREAM</div>
+              <h2>放送に接続・映像／音声を録画</h2>
+              <p class="session-description">放送IDを入力して、配信ストリームとコメントを同時に保存できます。</p>
+            </div>
+            <span class="step-number">01</span>
+          </div>
+          <div class="session-grid">
+            <div class="session-connect-column">
+              <label for="live-id">放送ID / 視聴URL</label>
+              <div class="input-row">
+                <input id="live-id" type="text" placeholder="例：lv123456789 または視聴URL" autocomplete="off">
+                <button class="button button-quiet" id="open-watch-button" type="button">視聴ページ</button>
               </div>
-              <span class="step-number">01</span>
-            </div>
-            <label for="live-id">放送ID / 視聴URL</label>
-            <div class="input-row">
-              <input id="live-id" type="text" placeholder="例：lv123456789 または視聴URL" autocomplete="off">
-              <button class="button button-quiet" id="open-watch-button">視聴ページ</button>
-            </div>
-            <div class="button-row">
-              <button class="button button-primary" id="connect-button">コメント取得を開始</button>
-              <button class="button button-outline" id="disconnect-button" disabled>切断</button>
-            </div>
-            <div class="hint">接続すると、過去コメントの取得とリアルタイム受信を開始します。</div>
-            <div class="file-line"><span class="dot dot-green"></span><span id="comment-file">保存先：接続後に表示</span></div>
-          </article>
-
-          <article class="panel video-panel">
-            <div class="panel-heading">
-              <div>
-                <div class="eyebrow">DIRECT STREAM RECORDING</div>
-                <h2>配信映像・音声の直接録画</h2>
+              <div class="button-row session-actions">
+                <button class="button button-record" id="record-button" type="button">● 接続して映像・音声＋コメントを録画</button>
+                <button class="button button-primary" id="connect-button" type="button">コメントのみ接続</button>
+                <button class="button button-outline" id="disconnect-button" type="button" disabled>コメント切断</button>
               </div>
-              <span class="step-number">02</span>
+              <p class="hint">メインボタンは配信映像・音声を直接保存しながらコメントも取得します。コメントだけ保存する場合は「コメントのみ接続」を選んでください。先にコメントのみ接続した後、同じ放送IDの録画を開始することもできます。</p>
+              <div class="file-line"><span class="dot dot-green"></span><span id="comment-file">コメント保存先：接続後に表示</span></div>
+              <div class="file-line"><span class="dot dot-blue"></span><span id="video-file">映像・音声保存先：録画開始後に表示</span></div>
             </div>
-            <div class="record-state">
-              <div class="record-indicator" id="record-indicator"></div>
-              <div>
-                <strong id="record-status">録画していません</strong>
-                <span id="record-timer">00:00:00</span>
+            <div class="session-record-column">
+              <div class="record-state session-record-state">
+                <div class="record-indicator" id="record-indicator"></div>
+                <div>
+                  <strong id="record-status">録画していません</strong>
+                  <span id="record-timer">00:00:00</span>
+                </div>
+                <button class="button button-outline" id="stop-record-button" type="button" disabled>録画停止</button>
               </div>
-            </div>
-            <div class="button-row">
-              <button class="button button-record" id="record-button">● 録画＋コメント同時開始</button>
-              <button class="button button-outline" id="stop-record-button" disabled>録画停止</button>
-            </div>
-            <div class="record-quality-row">
-              <label for="record-quality">録画画質</label>
-              <select id="record-quality">
-                <option value="best" selected>最高画質（推奨）</option>
-                <option value="worst">低画質（通信量を抑える）</option>
-              </select>
-            </div>
-            <div class="tool-settings">
-              <div class="tool-row">
-                <span id="streamlink-status">Streamlink：同梱版を確認中…</span>
+              <div class="record-quality-row">
+                <label for="record-quality">録画画質</label>
+                <select id="record-quality">
+                  <option value="best" selected>最高画質（推奨）</option>
+                  <option value="worst">低画質（通信量を抑える）</option>
+                </select>
               </div>
-              <div class="tool-row">
-                <span id="ffmpeg-status">FFmpeg：同梱版を確認中…</span>
+              <div class="tool-settings">
+                <div class="tool-row">
+                  <span id="streamlink-status">Streamlink：同梱版を確認中…</span>
+                </div>
+                <div class="tool-row">
+                  <span id="ffmpeg-status">FFmpeg：同梱版を確認中…</span>
+                </div>
               </div>
+              <p class="hint">Streamlinkで配信データを直接取得します。映像と配信に含まれる音声をTS形式で保存し、録画停止後にFFmpegでMP4へ無劣化変換します。画面キャプチャは使用しません。</p>
             </div>
-            <div class="hint">StreamlinkとFFmpegはアプリに同梱されています。別途インストールや実行ファイルの指定は不要です。配信ストリームをTS形式で保存し、録画停止後にMP4へ無劣化変換します。</div>
-            <div class="file-line"><span class="dot dot-blue"></span><span id="video-file">保存先：録画開始後に表示</span></div>
-          </article>
+          </div>
         </section>
-
 
         <section class="capture-status-panel" aria-live="polite">
           <div class="capture-status-item">
@@ -319,7 +311,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.12</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.13</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
