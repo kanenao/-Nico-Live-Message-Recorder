@@ -10,7 +10,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { autoUpdater } = require("electron-updater");
-const { normalizeNicoUserId, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
+const { normalizeNicoUserId, normalizeMonitorDate, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
 const {
   compareReleaseVersions,
   fetchLatestWindowsRelease,
@@ -839,22 +839,6 @@ async function resolveMonitorUserName(target, followedProgram, latestProgram) {
     }
   }
   return resolvedName.slice(0, 80);
-}
-
-function normalizeMonitorDate(value) {
-  if (value === null || value === undefined || value === "") return "";
-  let timestamp;
-  if (value instanceof Date) {
-    timestamp = value.getTime();
-  } else if (typeof value === "number" || /^\\d{10,13}$/.test(String(value).trim())) {
-    timestamp = Number(value);
-    if (timestamp > 0 && timestamp < 1000000000000) timestamp *= 1000;
-  } else {
-    timestamp = Date.parse(String(value));
-  }
-  if (!Number.isFinite(timestamp)) return "";
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 async function checkMonitoredUsers() {

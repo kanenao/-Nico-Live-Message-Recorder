@@ -359,3 +359,75 @@ input::placeholder { color: #5f6c88; }
   .live-broadcast-heading { align-items:flex-start; }
   .live-broadcast-list { grid-template-columns:1fr; }
 }
+
+
+/* beta.20: Kick-inspired charcoal and green dashboard finish */
+:root {
+  --muted: #8a929e;
+  --panel: #191c23;
+  --panel-2: #20242d;
+  --line: rgba(190, 200, 215, .13);
+  --accent: #53df9b;
+  --accent-2: #69e7a8;
+}
+body {
+  background: radial-gradient(ellipse at 78% -15%, rgba(54, 111, 78, .2), transparent 38%), #111318;
+}
+.topbar { background: rgba(20, 23, 29, .94); border-bottom-color: #282b33; }
+.brand-icon {
+  color: #102219;
+  background: linear-gradient(135deg, #70e9ac, #42ca85);
+  box-shadow: 0 8px 26px rgba(65, 207, 132, .16);
+}
+.version {
+  border-color: rgba(83, 223, 155, .3);
+  background: rgba(83, 223, 155, .1);
+  color: #8ce8b5;
+}
+.sidebar { background: #15171d; border-right-color: #282b33; }
+.nav-item { color: #a0a7b3; }
+.nav-item.active {
+  color: #7ce7ac;
+  background: rgba(83, 223, 155, .12);
+  box-shadow: inset 2px 0 #55d895;
+}
+.nav-icon { color: #74dfa5; }
+.panel {
+  background: linear-gradient(145deg, rgba(27, 30, 37, .99), rgba(24, 27, 34, .99));
+  border-color: #2a2e37;
+}
+.button-primary {
+  background: linear-gradient(100deg, #55d895, #43c783);
+  color: #10251a;
+  box-shadow: 0 7px 18px rgba(65, 207, 132, .13);
+}
+.button-primary:hover:not(:disabled) { filter: brightness(1.07); }
+.button-quiet, .button-outline {
+  border-color: rgba(170, 183, 200, .16);
+  color: #b3bdca;
+  background: rgba(255,255,255,.025);
+}
+input:focus, select:focus {
+  border-color: rgba(85, 201, 141, .72);
+  box-shadow: 0 0 0 3px rgba(85, 201, 141, .1);
+}
+.dashboard-stat-live {
+  border-color: rgba(83, 223, 155, .3);
+  background: linear-gradient(135deg, rgba(27, 51, 39, .88), rgba(16, 24, 42, .88));
+}
+.dashboard-stat-live strong { color: #7ce7ac; }
+.live-broadcast-count {
+  border-color: rgba(83, 223, 155, .28);
+  color: #85e6ad;
+  background: rgba(65, 190, 124, .09);
+}
+.live-broadcast-card {
+  border-color: rgba(83, 223, 155, .22);
+  background: linear-gradient(145deg, rgba(29, 53, 40, .62), rgba(20, 27, 34, .94));
+}
+.live-broadcast-meta span + span { color: #76dfa5; }
+.monitor-target-status.is-live { color: #7ce7ac; }
+.monitor-target-row.is-live {
+  border-color: rgba(83, 223, 155, .32);
+  background: linear-gradient(115deg, rgba(28, 54, 40, .42), rgba(28, 32, 39, .96) 68%);
+}

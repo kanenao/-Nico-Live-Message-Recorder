@@ -5,8 +5,17 @@ const {
   extractUserBroadcasts,
   fetchUserBroadcastStatus,
   fetchFollowingOnAirPrograms,
-  fetchNicoUserName
+  fetchNicoUserName,
+  normalizeMonitorDate
 } = require("../electron/monitor.cjs");
+
+test("normalizes second, millisecond and ISO broadcast timestamps", () => {
+  const expected = "2026-11-11T03:34:00.000Z";
+  assert.equal(normalizeMonitorDate("1794400000000"), new Date(1794400000000).toISOString());
+  assert.equal(normalizeMonitorDate(1794400000), new Date(1794400000000).toISOString());
+  assert.equal(normalizeMonitorDate("2026-11-11T12:34:00+09:00"), expected);
+  assert.equal(normalizeMonitorDate("not-a-date"), "");
+});
 
 test("normalizes a numeric user id and public user page URL", () => {
   assert.equal(normalizeNicoUserId("48495285"), "48495285");
@@ -175,6 +184,7 @@ test("fetches on-air programs from the authenticated follow list", async () => {
   assert.equal(programs[0].providerId, "48495285");
   assert.equal(programs[0].isFollowerOnly, true);
   assert.equal(programs[0].title, "フォロー限定配信");
+  assert.equal(programs[0].startedAt, new Date(1794400000000).toISOString());
 });
 
 test("follow-list API authentication failures are distinguishable", async () => {

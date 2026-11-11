@@ -470,7 +470,9 @@ function parseBroadcastTimestamp(value) {
   if (!value) return 0;
   if (value instanceof Date) return value.getTime();
   const raw = String(value).trim();
-  if (/^\\d{10,13}$/.test(raw)) {
+  const isEpoch = raw.length >= 10 && raw.length <= 13 &&
+    Array.from(raw).every(character => character >= "0" && character <= "9");
+  if (isEpoch) {
     const numeric = Number(raw);
     return numeric < 1000000000000 ? numeric * 1000 : numeric;
   }
@@ -481,7 +483,8 @@ function parseBroadcastTimestamp(value) {
 function formatBroadcastStart(value) {
   const timestamp = parseBroadcastTimestamp(value);
   if (!timestamp) return "開始時刻未取得";
-  return new Date(timestamp).toLocaleTimeString("ja-JP", {
+  return new Date(timestamp).toLocaleString("ja-JP", {
+    month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
   });
 }

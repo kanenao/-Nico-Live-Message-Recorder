@@ -24,6 +24,31 @@ function toLiveId(value) {
   return "";
 }
 
+function normalizeMonitorDate(value) {
+  if (value === null || value === undefined || value === "") return "";
+  let timestamp;
+  if (value instanceof Date) {
+    timestamp = value.getTime();
+  } else if (typeof value === "number") {
+    timestamp = value;
+    if (timestamp > 0 && timestamp < 1000000000000) timestamp *= 1000;
+  } else {
+    const raw = String(value).trim();
+    if (!raw) return "";
+    const isEpoch = raw.length >= 10 && raw.length <= 13 &&
+      Array.from(raw).every((character) => character >= "0" && character <= "9");
+    if (isEpoch) {
+      timestamp = Number(raw);
+      if (timestamp > 0 && timestamp < 1000000000000) timestamp *= 1000;
+    } else {
+      timestamp = Date.parse(raw);
+    }
+  }
+  if (!Number.isFinite(timestamp)) return "";
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 function normalizeProgram(entry) {
   const program = entry && entry.program ? entry.program : entry || {};
   const idValue = entry && entry.id && typeof entry.id === "object"
@@ -37,14 +62,18 @@ function normalizeProgram(entry) {
   const isLive = ["ON_AIR", "ONAIR", "ON AIR", "LIVE"].includes(status) ||
     schedule.isOnAir === true || program.isOnAir === true || entry.isOnAir === true;
 
+  const beginTime = schedule.beginTime || schedule.begin || program.beginTime || program.beginAt || entry.beginTime || entry.beginAt || null;
+  const endTime = schedule.endTime || schedule.end || program.endTime || program.endAt || entry.endTime || entry.endAt || null;
   return {
     liveId,
     title: String(program.title || entry.title || "タイトル未取得"),
     providerName: String((program.provider && program.provider.name) || (program.programProvider && program.programProvider.name) || entry.providerName || ""),
     status,
     isLive,
-    beginTime: schedule.beginTime || schedule.begin || program.beginTime || program.beginAt || entry.beginTime || entry.beginAt || null,
-    endTime: schedule.endTime || schedule.end || program.endTime || program.endAt || entry.endTime || entry.endAt || null,
+    beginTime,
+    endTime,
+    startedAt: normalizeMonitorDate(beginTime),
+    endedAt: normalizeMonitorDate(endTime),
     isFollowerOnly: program.isFollowerOnly === true || entry.isFollowerOnly === true
   };
 }
@@ -140,9 +169,9 @@ function normalizeFollowingProgram(raw) {
     ? raw.programProvider : {};
   const socialGroup = raw.socialGroup && typeof raw.socialGroup === "object"
     ? raw.socialGroup : {};
-  const beginAtRaw = raw.beginAt;
-  const beginAt = typeof beginAtRaw === "number" || typeof beginAtRaw === "string"
-    ? new Date(beginAtRaw) : null;
+  const startedAt = normalizeMonitorDate(raw.beginAt || raw.beginTime || raw.startTime || null);
+  const endedAt = normalizeMonitorDate(raw.endAt || raw.endTime || null);
+  const beginAt = startedAt ? new Date(startedAt) : null;
 
   return {
     id: liveId,
@@ -156,6 +185,8 @@ function normalizeFollowingProgram(raw) {
     socialGroupId: asIdentifier(socialGroup.id) || "",
     socialGroupName: typeof socialGroup.name === "string" ? socialGroup.name : "",
     beginAt: beginAt && Number.isFinite(beginAt.getTime()) ? beginAt : null,
+    startedAt,
+    endedAt,
     isFollowerOnly: raw.isFollowerOnly === true
   };
 }
@@ -279,6 +310,7 @@ module.exports = {
   fetchFollowingOnAirPrograms,
   fetchNicoUserName,
   normalizeNicoUserId,
+  normalizeMonitorDate,
   normalizeProgram,
   extractUserBroadcasts,
   fetchUserBroadcastStatus

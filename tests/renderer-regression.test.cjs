@@ -6,6 +6,8 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+const monitor = fs.readFileSync(path.join(root, "electron", "monitor.cjs"), "utf8");
 const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
@@ -222,4 +224,16 @@ test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time",
   assert.match(main, /watchPageUrl:/);
   assert.match(main, /normalizeMonitorDate\(live\.beginTime/);
   assert.match(html, /配信者名・配信タイトル・開始時刻・経過時間・放送ID/);
+});
+
+
+test("dashboard timestamps accept numeric and ISO dates and display a full start date", () => {
+  assert.match(monitor, /function normalizeMonitorDate\(/);
+  assert.match(monitor, /Array\.from\(raw\)\.every/);
+  assert.match(renderer, /const isEpoch = raw\.length >= 10/);
+  assert.match(renderer, /month: "2-digit", day: "2-digit"/);
+  assert.match(main, /normalizeMonitorDate, fetchUserBroadcastStatus/);
+  assert.match(css, /--accent: #53df9b/);
+  assert.match(css, /\.live-broadcast-card/);
+  assert.match(html, /0\.1\.0-beta\.20/);
 });
