@@ -16,6 +16,7 @@ on:
       - "CHANGELOG.md"
       - "tests/**"
       - "scripts/**"
+      - "build/**"
       - ".github/workflows/nicolive-recorder-build.yml"
       - ".github/workflows/nicolive-recorder-release.yml"
   pull_request:
