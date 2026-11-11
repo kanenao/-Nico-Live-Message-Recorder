@@ -40,6 +40,50 @@ function findExecutable(options = {}) {
   }) || null;
 }
 
+function findBundledExecutable(bundleRoot, executableName, maxDepth = 7) {
+  if (!bundleRoot) return null;
+  let root;
+  try {
+    root = fs.realpathSync(bundleRoot);
+    if (!fs.statSync(root).isDirectory()) return null;
+  } catch (_) {
+    return null;
+  }
+
+  const target = executableName.toLowerCase();
+  const queue = [{ directory: root, depth: 0 }];
+  while (queue.length) {
+    const current = queue.shift();
+    let entries;
+    try {
+      entries = fs.readdirSync(current.directory, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current.directory, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase() === target) return fullPath;
+      if (
+        entry.isDirectory() &&
+        current.depth < maxDepth &&
+        !["__pycache__", ".git", "cache", "caches"].includes(entry.name.toLowerCase())
+      ) {
+        queue.push({ directory: fullPath, depth: current.depth + 1 });
+      }
+    }
+  }
+  return null;
+}
+
+function findBundledStreamlinkExecutable(bundleRoot) {
+  return findBundledExecutable(bundleRoot, "streamlink.exe");
+}
+
+function findBundledFfmpegExecutable(bundleRoot) {
+  return findBundledExecutable(bundleRoot, "ffmpeg.exe");
+}
+
 function findStreamlinkExecutable(options = {}) {
   const env = options.env || process.env;
   const commonDirectories = [];
@@ -151,6 +195,9 @@ module.exports = {
   normalizeQuality,
   findStreamlinkExecutable,
   findFfmpegExecutable,
+  findBundledExecutable,
+  findBundledStreamlinkExecutable,
+  findBundledFfmpegExecutable,
   createStreamlinkRuntime,
   buildStreamlinkArgs
 };
