@@ -9,6 +9,7 @@ const {
   buildStreamlinkArgs
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
+const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -33,6 +34,8 @@ let composeWriter = null;
 let composeFilePath = "";
 let shutdownPromise = null;
 let shutdownComplete = false;
+let updateCheckPromise = null;
+let downloadedUpdateInfo = null;
 
 function dataRoot() {
   const root = path.join(app.getPath("videos"), "NicoLiveRecorder");
@@ -54,6 +57,90 @@ function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("app:event", { channel, payload });
   }
+}
+
+function isAutoUpdateSupported() {
+  return app.isPackaged && process.platform === "win32";
+}
+
+function sendUpdateState(state, details = {}) {
+  send("update:state", { state, ...details });
+}
+
+function configureAutoUpdater() {
+  if (!isAutoUpdateSupported()) return false;
+
+  // The GitHub publisher writes beta.yml; only beta and newer stable releases are accepted.
+  autoUpdater.channel = "beta";
+  autoUpdater.allowPrerelease = true;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.logger = console;
+
+  autoUpdater.on("checking-for-update", () => {
+    sendUpdateState("checking");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    sendUpdateState("available", {
+      version: info && info.version ? info.version : "",
+      releaseDate: info && info.releaseDate ? info.releaseDate : null
+    });
+  });
+
+  autoUpdater.on("update-not-available", (info) => {
+    sendUpdateState("not-available", {
+      version: info && info.version ? info.version : app.getVersion()
+    });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    sendUpdateState("progress", {
+      percent: Number(progress && progress.percent) || 0,
+      bytesPerSecond: Number(progress && progress.bytesPerSecond) || 0,
+      transferred: Number(progress && progress.transferred) || 0,
+      total: Number(progress && progress.total) || 0
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    downloadedUpdateInfo = info || {};
+    sendUpdateState("downloaded", {
+      version: info && info.version ? info.version : ""
+    });
+  });
+
+  autoUpdater.on("error", (error) => {
+    sendUpdateState("error", {
+      message: error && error.message ? error.message : String(error)
+    });
+  });
+
+  return true;
+}
+
+function checkForUpdatesNow() {
+  if (!isAutoUpdateSupported()) {
+    return Promise.resolve({ supported: false });
+  }
+  if (updateCheckPromise) return updateCheckPromise;
+
+  sendUpdateState("checking");
+  updateCheckPromise = autoUpdater.checkForUpdates()
+    .then((result) => ({
+      supported: true,
+      version: result && result.updateInfo ? result.updateInfo.version : null
+    }))
+    .catch((error) => {
+      sendUpdateState("error", {
+        message: error && error.message ? error.message : String(error)
+      });
+      throw error;
+    })
+    .finally(() => {
+      updateCheckPromise = null;
+    });
+  return updateCheckPromise;
 }
 
 function toIso(value) {
@@ -150,6 +237,23 @@ function makeWindow() {
 }
 
 ipcMain.handle("app:version", () => app.getVersion());
+
+ipcMain.handle("updates:check", () => checkForUpdatesNow());
+
+ipcMain.handle("updates:install", async () => {
+  if (!isAutoUpdateSupported()) {
+    throw new Error("自動アップデートはWindowsのインストーラー版で利用できます。");
+  }
+  if (!downloadedUpdateInfo) {
+    throw new Error("インストールできる更新データがまだありません。");
+  }
+
+  // Preserve active recordings and close comment logs before handing control to NSIS.
+  await shutdownGracefully();
+  shutdownComplete = true;
+  autoUpdater.quitAndInstall(false, true);
+  return { installing: true };
+});
 
 ipcMain.handle("auth:open-login", async () => {
   if (loginWindow && !loginWindow.isDestroyed()) {
@@ -632,6 +736,12 @@ ipcMain.handle("comments:export-ass", async () => {
 
 app.whenReady().then(() => {
   makeWindow();
+  if (configureAutoUpdater()) {
+    // Check shortly after startup, then refresh the beta channel every six hours.
+    setTimeout(() => checkForUpdatesNow().catch(() => {}), 8000);
+    const updateTimer = setInterval(() => checkForUpdatesNow().catch(() => {}), 6 * 60 * 60 * 1000);
+    if (typeof updateTimer.unref === "function") updateTimer.unref();
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) makeWindow();
   });
