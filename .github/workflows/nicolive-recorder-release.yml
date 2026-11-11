@@ -1,0 +1,44 @@
+name: Release Nico Live Message Recorder
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nicolive-recorder-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify release tag matches package version
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $expected = "v$version"
+          if ($env:RELEASE_TAG -ne $expected) {
+            throw "Tag $env:RELEASE_TAG does not match package version $expected"
+          }
+      - name: Run application tests
+        run: npm test
+      - name: Build and publish Windows release to GitHub Releases
+        run: npm run dist:win:release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
