@@ -25,12 +25,13 @@
 
 **配布するWindowsアプリの利用者は、Streamlink・FFmpeg・Pythonを別途インストールする必要はありません。** いずれもWindowsアプリの中に同梱されます。
 
-ソースコードから開発・ビルドする場合のみ、Node.js 22以上とWindows PowerShellが必要です。
+ソースコードから起動する場合はNode.js 22以上とWindows PowerShellが必要です。初回は `npm run prepare:streamlink` が公式Portable版を自動取得・検証します。Windows用の配布ビルドでは `npm run dist:win` がこの準備を自動実行します。
 
 ## 起動とビルド
 
 ~~~powershell
 npm install
+npm run prepare:streamlink
 npm start
 ~~~
 
