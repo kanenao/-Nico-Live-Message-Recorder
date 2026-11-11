@@ -132,10 +132,10 @@ test("NicoLive plugin timeout patch extends both connection waits to 30 seconds"
   );
 });
 
-test("Windows portable preparation pins the official Streamlink 8.6.2-1 archive and patches nicolive.py", () => {
-  assert.match(preparationScript, /\$version = "8\.6\.2-1"/);
-  assert.match(preparationScript, /streamlink-8\.6\.2-1-py314-x86_64\.zip/);
-  assert.match(preparationScript, /329eb05252a3dbc8d8c5b8b6857b41acf61df4fd818545a8ee322f3740b6caa1/);
+test("Windows portable preparation pins the latest verified Streamlink 8.6.3-1 archive and patches nicolive.py", () => {
+  assert.match(preparationScript, /\$version = "8\.6\.3-1"/);
+  assert.match(preparationScript, /streamlink-8\.6\.3-1-py315-x86_64\.zip/);
+  assert.match(preparationScript, /3b1f1470d4b135080a8107ca2917379ca3ff5acadbcdc215568b79eea1450497/);
   assert.match(preparationScript, /patch-nicolive\.cjs/);
   assert.match(preparationScript, /nicolive\.py/);
 });
