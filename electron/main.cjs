@@ -10,7 +10,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { autoUpdater } = require("electron-updater");
-const { normalizeNicoUserId, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms } = require("./monitor.cjs");
+const { normalizeNicoUserId, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -25,6 +25,12 @@ let provider = null;
 let currentLiveId = "";
 let commentWriter = null;
 let commentFilePath = "";
+let currentBroadcasterName = "";
+let currentBroadcasterId = "";
+let streamlinkLiveId = "";
+let streamlinkBroadcasterName = "";
+let streamlinkBroadcasterId = "";
+const monitorUserNameCache = new Map();
 let streamlinkProcess = null;
 let streamlinkFinalizePromise = null;
 let streamlinkRuntimeDirectory = "";
@@ -211,16 +217,116 @@ function normalizeEvent(type, item) {
   return result;
 }
 
-function openCommentWriter(liveId) {
-  const directory = path.join(dataRoot(), "comments");
+function sanitizeFolderSegment(value) {
+  let name = String(value || "").normalize("NFKC")
+    .replace(/[<>:"/\\|?*\\x00-\\x1f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .replace(/\\s+/g, " ")
+    .trim()
+    .slice(0, 56);
+  if (!name || /^\\.+$/.test(name)) name = "配信者名未取得";
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) name = "_" + name;
+  return name;
+}
+
+function broadcasterFolderName(name, userId) {
+  const label = sanitizeFolderSegment(name || (userId ? "ユーザー" : "配信者名未取得"));
+  const id = /^\\d{5,}$/.test(String(userId || "")) ? "_" + String(userId) : "";
+  return (label + id).slice(0, 76);
+}
+
+function getCommentFormat() {
+  const settings = readAppSettings();
+  const value = settings.monitor && settings.monitor.commentFormat;
+  return ["jsonl", "csv", "ass", "all"].includes(value) ? value : "jsonl";
+}
+
+function recordsToCsv(records) {
+  const quote = (value) => '"' + String(value === undefined || value === null ? "" : value).replace(/"/g, '""') + '"';
+  const rows = ["種別,日時,ユーザー名,ユーザーID,内容"];
+  for (const row of records) {
+    rows.push([
+      row.type, row.timestamp, row.userName || row.name || "",
+      row.userId || "", row.content || row.message || row.itemName || row.id || ""
+    ].map(quote).join(","));
+  }
+  return "\\uFEFF" + rows.join("\\r\\n");
+}
+
+async function exportCommentSidecars(sourcePath) {
+  const format = getCommentFormat();
+  const formats = format === "all" ? ["csv", "ass"] : (format === "jsonl" ? [] : [format]);
+  if (!formats.length || !sourcePath || !fs.existsSync(sourcePath)) return [];
+
+  const records = [];
+  for (const line of fs.readFileSync(sourcePath, "utf8").split(/\\r?\\n/).filter(Boolean)) {
+    try { records.push(JSON.parse(line)); } catch (_) {}
+  }
+  const written = [];
+  for (const outputFormat of formats) {
+    const outputPath = sourcePath.replace(/\\.jsonl$/i, "." + outputFormat);
+    const output = outputFormat === "csv"
+      ? recordsToCsv(records)
+      : generateAssFromRecords(records);
+    fs.writeFileSync(outputPath, output, "utf8");
+    written.push(outputPath);
+  }
+  if (written.length) send("comments:exports", { paths: written });
+  return written;
+}
+
+async function moveCommentLogToBroadcasterFolder(sourcePath) {
+  if (!sourcePath || !fs.existsSync(sourcePath)) return sourcePath;
+  const folder = broadcasterFolderName(currentBroadcasterName, currentBroadcasterId);
+  const destinationDirectory = path.join(dataRoot(), "comments", folder);
+  if (path.resolve(path.dirname(sourcePath)) === path.resolve(destinationDirectory)) return sourcePath;
+  fs.mkdirSync(destinationDirectory, { recursive: true });
+  let destinationPath = path.join(destinationDirectory, path.basename(sourcePath));
+  if (fs.existsSync(destinationPath)) {
+    destinationPath = path.join(destinationDirectory,
+      path.basename(sourcePath, ".jsonl") + "_" + stamp() + ".jsonl");
+  }
+  await fs.promises.rename(sourcePath, destinationPath);
+  return destinationPath;
+}
+
+function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
+  currentBroadcasterName = String(displayName || "").trim();
+  currentBroadcasterId = String(broadcasterId || "");
+  const directory = path.join(dataRoot(), "comments",
+    broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
   commentFilePath = path.join(directory, liveId + "_" + stamp() + ".jsonl");
   commentWriter = fs.createWriteStream(commentFilePath, { flags: "wx" });
   commentWriter.on("error", (error) => {
     send("app:error", "コメントファイルの保存に失敗しました: " + error.message);
   });
-  appendMarker("sessionStart", { sessionStartedAt: new Date().toISOString() });
+  appendMarker("sessionStart", {
+    sessionStartedAt: new Date().toISOString(),
+    broadcasterName: currentBroadcasterName,
+    broadcasterId: currentBroadcasterId
+  });
   send("comments:file", { path: commentFilePath });
+}
+
+function updateCurrentBroadcaster(metadata, liveId) {
+  if (!metadata || (liveId && currentLiveId !== liveId)) return;
+  const name = String(metadata.broadcasterName || metadata.providerName ||
+    (metadata.provider && metadata.provider.name) || "").trim();
+  const id = String(metadata.broadcasterId || metadata.providerId ||
+    (metadata.provider && metadata.provider.id) || "").trim();
+  if (name) {
+    currentBroadcasterName = name.slice(0, 80);
+    if (streamlinkLiveId && (!liveId || streamlinkLiveId === liveId)) {
+      streamlinkBroadcasterName = currentBroadcasterName;
+    }
+  }
+  if (id) {
+    currentBroadcasterId = id;
+    if (streamlinkLiveId && (!liveId || streamlinkLiveId === liveId)) {
+      streamlinkBroadcasterId = id;
+    }
+  }
 }
 
 function appendEvent(type, item) {
@@ -243,8 +349,18 @@ function closeCommentWriter() {
       return;
     }
     const writer = commentWriter;
+    const oldPath = commentFilePath;
     commentWriter = null;
-    writer.end(() => resolve());
+    writer.end(async () => {
+      try {
+        commentFilePath = await moveCommentLogToBroadcasterFolder(oldPath);
+        send("comments:file", { path: commentFilePath });
+        await exportCommentSidecars(commentFilePath);
+      } catch (error) {
+        send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
+      }
+      resolve();
+    });
   });
 }
 
@@ -329,18 +445,18 @@ ipcMain.handle("live:open-watch", async (_event, value) => {
   return { liveId };
 });
 
-ipcMain.handle("live:connect", async (_event, value) => {
-  const liveId = safeLiveId(value);
-
+async function prepareCommentSession(liveId, displayName = "", broadcasterId = "") {
   if (provider) {
     try { provider.disconnect(); } catch (_) {}
     provider = null;
   }
   await closeCommentWriter();
-
   currentLiveId = liveId;
-  openCommentWriter(liveId);
+  openCommentWriter(liveId, displayName, broadcasterId);
+  send("live:state", { state: "connecting" });
+}
 
+async function connectPreparedCommentSession(liveId) {
   try {
     const authSession = session.fromPartition("persist:nico-auth");
     const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
@@ -364,13 +480,17 @@ ipcMain.handle("live:connect", async (_event, value) => {
     provider.on("emotion", (data) => appendEvent("emotion", data));
     provider.on("notification", (data) => appendEvent("notification", data));
     provider.on("operatorComment", (data) => appendEvent("operatorComment", data));
-    provider.on("metadata", (metadata) => send("live:metadata", metadata));
+    provider.on("metadata", (metadata) => {
+      updateCurrentBroadcaster(metadata, liveId);
+      send("live:metadata", metadata);
+    });
     provider.on("stateChange", (state) => send("live:state", { state }));
     provider.on("error", (error) => {
       send("app:error", error && error.message ? error.message : String(error));
     });
 
     const metadata = await provider.connect();
+    updateCurrentBroadcaster(metadata, liveId);
     send("live:state", { state: "connected" });
     return { liveId, metadata, commentFile: commentFilePath };
   } catch (error) {
@@ -382,8 +502,15 @@ ipcMain.handle("live:connect", async (_event, value) => {
     send("live:state", { state: "error" });
     throw new Error(error && error.message ? error.message : "コメント接続に失敗しました。");
   }
-});
+}
 
+ipcMain.handle("live:connect", async (_event, value, options = {}) => {
+  const liveId = safeLiveId(value);
+  await prepareCommentSession(liveId,
+    options && options.displayName || "",
+    options && options.broadcasterId || "");
+  return connectPreparedCommentSession(liveId);
+});
 ipcMain.handle("live:disconnect", async () => {
   if (provider) {
     try { provider.disconnect(); } catch (_) {}
@@ -421,6 +548,7 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   autoRecord: true,
   autoStart: true,
   quality: "best",
+  commentFormat: "jsonl",
   targets: []
 });
 
@@ -436,6 +564,7 @@ function getMonitorSettings() {
     autoRecord: stored.autoRecord !== false,
     autoStart: stored.autoStart !== false,
     quality: stored.quality === "worst" ? "worst" : "best",
+    commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
     targets: targets
       .filter((target) => target && /^\d{5,}$/.test(String(target.userId || "")))
       .map((target) => ({
@@ -459,6 +588,7 @@ function saveMonitorSettings(nextSettings) {
     autoRecord: candidate.autoRecord !== false,
     autoStart: candidate.autoStart !== false,
     quality: candidate.quality === "worst" ? "worst" : "best",
+    commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
     targets: current.targets
   };
   writeAppSettings({ monitor: normalized });
@@ -496,6 +626,40 @@ async function getNicoCookieHeader() {
   return Array.from(byName.values())
     .map((cookie) => cookie.name + "=" + cookie.value)
     .join("; ");
+}
+
+async function resolveMonitorUserName(target, followedProgram, latestProgram) {
+  const directName = String(
+    (followedProgram && followedProgram.providerName) ||
+    (latestProgram && latestProgram.providerName) || ""
+  ).trim();
+  let resolvedName = directName || String(target.name || "").trim();
+
+  if (!resolvedName) {
+    const cached = monitorUserNameCache.get(target.userId);
+    if (cached && cached.name) {
+      resolvedName = cached.name;
+    } else if (!cached || Date.now() - cached.checkedAt > 6 * 60 * 60 * 1000) {
+      try {
+        resolvedName = await fetchNicoUserName(target.userId);
+        monitorUserNameCache.set(target.userId, { name: resolvedName, checkedAt: Date.now() });
+      } catch (error) {
+        monitorUserNameCache.set(target.userId, { name: "", checkedAt: Date.now() });
+        console.warn("Could not resolve Nico broadcaster name:", target.userId, error);
+      }
+    }
+  }
+
+  if (!resolvedName) resolvedName = "ユーザー " + target.userId;
+  if (resolvedName !== target.name) {
+    const updated = getMonitorSettings();
+    const match = updated.targets.find((item) => item.userId === target.userId);
+    if (match) {
+      match.name = resolvedName.slice(0, 80);
+      writeAppSettings({ monitor: updated });
+    }
+  }
+  return resolvedName.slice(0, 80);
 }
 
 async function checkMonitoredUsers() {
@@ -541,12 +705,13 @@ async function checkMonitoredUsers() {
               isFollowerOnly: followedProgram.isFollowerOnly
             }
           : result.live;
+        const displayName = await resolveMonitorUserName(target, followedProgram, result && result.latest);
         const checkedAt = result ? result.checkedAt : new Date().toISOString();
         const latest = result ? result.latest : null;
         const source = followedProgram ? "フォロー中番組API" : "公開放送履歴API";
         const status = {
           userId: target.userId,
-          name: target.name,
+          name: displayName,
           isLive: Boolean(live),
           liveId: live ? live.liveId : "",
           title: live ? live.title : (latest ? latest.title : ""),
@@ -568,7 +733,9 @@ async function checkMonitoredUsers() {
           }
           send("monitor:live-detected", {
             userId: target.userId,
-            name: target.name,
+            name: displayName,
+            displayName,
+            broadcasterId: target.userId,
             liveId: live.liveId,
             title: live.title,
             source,
@@ -769,11 +936,33 @@ async function finalizeStreamlinkRecording(exit) {
     });
   }
 
+  if (hasOutput && finalPath && streamlinkLiveId) {
+    try {
+      const finalDirectory = path.join(dataRoot(), "videos",
+        broadcasterFolderName(streamlinkBroadcasterName || currentBroadcasterName, streamlinkBroadcasterId || currentBroadcasterId));
+      fs.mkdirSync(finalDirectory, { recursive: true });
+      if (path.resolve(path.dirname(finalPath)) !== path.resolve(finalDirectory)) {
+        let organizedPath = path.join(finalDirectory, path.basename(finalPath));
+        if (fs.existsSync(organizedPath)) {
+          organizedPath = path.join(finalDirectory,
+            path.basename(finalPath, path.extname(finalPath)) + "_" + stamp() + path.extname(finalPath));
+        }
+        await fs.promises.rename(finalPath, organizedPath);
+        finalPath = organizedPath;
+      }
+    } catch (error) {
+      send("app:error", "配信者フォルダーへの整理に失敗しました。元の保存先に残しています: " + error.message);
+    }
+  }
+
   const runtimeDirectory = streamlinkRuntimeDirectory;
   streamlinkProcess = null;
   streamlinkFinalizePromise = null;
   streamlinkRuntimeDirectory = "";
   streamlinkOutputPath = "";
+  streamlinkLiveId = "";
+  streamlinkBroadcasterName = "";
+  streamlinkBroadcasterId = "";
   streamlinkFfmpegPath = "";
   if (runtimeDirectory) {
     await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
@@ -799,7 +988,7 @@ async function finalizeStreamlinkRecording(exit) {
 
 ipcMain.handle("video:tools-status", async () => getVideoToolStatus());
 
-ipcMain.handle("video:start", async (_event, value, quality) => {
+async function startVideoInternal(value, quality, displayName = "", broadcasterId = "") {
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
   const liveId = safeLiveId(value);
   const toolStatus = getVideoToolStatus();
@@ -813,7 +1002,9 @@ ipcMain.handle("video:start", async (_event, value, quality) => {
   const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
   const userSession = cookies.find((cookie) => cookie.name === "user_session")?.value || "";
   const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
-  const directory = path.join(dataRoot(), "videos");
+  if (displayName) currentBroadcasterName = String(displayName).slice(0, 80);
+  if (broadcasterId) currentBroadcasterId = String(broadcasterId);
+  const directory = path.join(dataRoot(), "videos", broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
   const outputPath = path.join(directory, liveId + "_" + stamp() + ".ts");
   const args = buildStreamlinkArgs({
@@ -839,6 +1030,9 @@ ipcMain.handle("video:start", async (_event, value, quality) => {
   streamlinkProcess = child;
   streamlinkRuntimeDirectory = runtime.runtimeDirectory;
   streamlinkOutputPath = outputPath;
+  streamlinkLiveId = liveId;
+  streamlinkBroadcasterName = currentBroadcasterName;
+  streamlinkBroadcasterId = currentBroadcasterId;
   streamlinkFfmpegPath = ffmpegPath || "";
   streamlinkStopRequested = false;
   if (child.stderr) child.stderr.on("data", () => {});
@@ -877,6 +1071,63 @@ ipcMain.handle("video:start", async (_event, value, quality) => {
     startedAt,
     ffmpegAvailable: Boolean(ffmpegPath)
   };
+}
+
+ipcMain.handle("video:start", (_event, value, quality, options = {}) =>
+  startVideoInternal(value, quality, options && options.displayName, options && options.broadcasterId));
+
+ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => {
+  const liveId = safeLiveId(value);
+  if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
+
+  const requestedName = String(options && options.displayName || "").trim().slice(0, 80);
+  const requestedId = String(options && options.broadcasterId || "").trim();
+  const reuseComments = currentLiveId === liveId && Boolean(provider && commentWriter);
+
+  if (reuseComments) {
+    if (requestedName) currentBroadcasterName = requestedName;
+    if (requestedId) currentBroadcasterId = requestedId;
+  } else {
+    await prepareCommentSession(liveId, requestedName, requestedId);
+  }
+
+  // Both operations are launched in the same main-process turn. The JSONL
+  // session marker exists before Streamlink can write its videoStart marker.
+  const commentTask = reuseComments
+    ? Promise.resolve({ liveId, commentFile: commentFilePath, reused: true })
+    : connectPreparedCommentSession(liveId);
+  const videoTask = startVideoInternal(liveId, quality, requestedName, requestedId);
+  const [comments, video] = await Promise.allSettled([commentTask, videoTask]);
+
+  if (video.status === "rejected") {
+    const message = video.reason && video.reason.message ? video.reason.message : String(video.reason);
+    send("capture:state", {
+      liveId,
+      commentsConnected: comments.status === "fulfilled",
+      recording: false,
+      commentError: comments.status === "rejected"
+        ? String(comments.reason && comments.reason.message || comments.reason) : "",
+      videoError: message
+    });
+    throw new Error(message);
+  }
+
+  const commentError = comments.status === "rejected"
+    ? String(comments.reason && comments.reason.message || comments.reason) : "";
+  const result = {
+    liveId,
+    comment: comments.status === "fulfilled" ? comments.value : null,
+    video: video.value,
+    commentsConnected: comments.status === "fulfilled",
+    commentError
+  };
+  send("capture:state", {
+    liveId,
+    commentsConnected: result.commentsConnected,
+    recording: true,
+    commentError
+  });
+  return result;
 });
 
 async function stopStreamlinkRecording() {
@@ -969,39 +1220,35 @@ ipcMain.handle("comments:export-csv", async () => {
   let source = commentFilePath;
   if (!source || !fs.existsSync(source)) {
     const directory = path.join(dataRoot(), "comments");
-    const candidates = fs.existsSync(directory)
-      ? fs.readdirSync(directory).filter((name) => name.endsWith(".jsonl")).sort()
-      : [];
-    if (candidates.length === 0) throw new Error("保存済みコメントファイルがありません。");
-    source = path.join(directory, candidates[candidates.length - 1]);
+    const candidates = [];
+    const walk = (folder) => {
+      if (!fs.existsSync(folder)) return;
+      for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+        const fullPath = path.join(folder, entry.name);
+        if (entry.isDirectory()) walk(fullPath);
+        else if (entry.isFile() && entry.name.endsWith(".jsonl")) candidates.push(fullPath);
+      }
+    };
+    walk(directory);
+    candidates.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+    if (!candidates.length) throw new Error("保存済みコメントファイルがありません。");
+    source = candidates[candidates.length - 1];
   }
-
   if (commentWriter) {
     await new Promise((resolve, reject) => {
       commentWriter.write("", (error) => error ? reject(error) : resolve());
     });
   }
-
-  const rows = fs.readFileSync(source, "utf8").split(/\r?\n/).filter(Boolean);
-  const quote = (value) => '"' + String(value === undefined || value === null ? "" : value).replace(/"/g, '""') + '"';
-  const output = ["種別,日時,ユーザー名,ユーザーID,内容"];
-  for (const line of rows) {
-    try {
-      const row = JSON.parse(line);
-      output.push([
-        row.type, row.timestamp, row.userName || row.name || "",
-        row.userId || "", row.content || row.message || row.itemName || row.id || ""
-      ].map(quote).join(","));
-    } catch (_) {}
-  }
-
+  const records = fs.readFileSync(source, "utf8").split(/\\r?\\n/).filter(Boolean)
+    .map((line) => { try { return JSON.parse(line); } catch (_) { return null; } })
+    .filter(Boolean);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "コメントCSVを書き出す",
-    defaultPath: source.replace(/\.jsonl$/i, ".csv"),
+    defaultPath: source.replace(/\\.jsonl$/i, ".csv"),
     filters: [{ name: "CSVファイル", extensions: ["csv"] }]
   });
   if (result.canceled || !result.filePath) return { cancelled: true };
-  fs.writeFileSync(result.filePath, "\uFEFF" + output.join("\r\n"), "utf8");
+  fs.writeFileSync(result.filePath, recordsToCsv(records), "utf8");
   return { path: result.filePath };
 });
 
