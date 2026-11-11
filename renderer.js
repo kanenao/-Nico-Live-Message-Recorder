@@ -920,18 +920,30 @@ function reserveOverlayLane(lanes, startMs, durationMs, gapMs) {
   return window.nicoCommentComposition.reserveLane(lanes, startMs, durationMs, gapMs);
 }
 
-function createCommentOverlaySchedule(comments, context, width, height) {
-  const baseSize = Math.max(24, Math.min(58, Math.round(height * 0.045)));
-  const scrollLanes = Array(18).fill(0);
+function createCommentOverlaySchedule(comments, context, width, height, options = {}) {
+  const fontScale = Math.min(2, Math.max(0.5, Number(options.fontScale) || 1));
+  const speed = Math.min(2, Math.max(0.5, Number(options.speed) || 1));
+  const marginPercent = Math.min(25, Math.max(4, Number(options.marginPercent) || 7));
+  const displayMode = ["all", "scroll", "fixed"].includes(options.displayMode) ? options.displayMode : "all";
+  const colorMode = ["original", "white", "green"].includes(options.colorMode) ? options.colorMode : "original";
+  const baseSize = Math.max(12, Math.min(110, Math.round(height * 0.045 * fontScale)));
+  const scrollLaneCount = Math.max(1, Math.min(24, Math.floor(height / Math.max(24, baseSize * 1.3))));
+  const scrollLanes = Array(scrollLaneCount).fill(0);
   const topLanes = Array(5).fill(0);
   const bottomLanes = Array(5).fill(0);
   const schedule = [];
 
   for (const comment of comments) {
     const commands = compositionCommands(comment.mail);
+    const isTop = commands.includes("ue") || commands.includes("top");
+    const isBottom = commands.includes("shita") || commands.includes("bottom");
+    const isFixed = isTop || isBottom;
+    if (displayMode === "scroll" && isFixed) continue;
+    if (displayMode === "fixed" && !isFixed) continue;
+
     let fontSize = baseSize;
-    if (commands.includes("big")) fontSize = Math.min(76, baseSize + 12);
-    if (commands.includes("small")) fontSize = Math.max(20, baseSize - 10);
+    if (commands.includes("big")) fontSize = Math.min(120, Math.round(baseSize * 1.22));
+    if (commands.includes("small")) fontSize = Math.max(10, Math.round(baseSize * 0.78));
 
     const colorMap = {
       red: "#ff5050",
@@ -943,21 +955,22 @@ function createCommentOverlaySchedule(comments, context, width, height) {
       orange: "#ffad58",
       white: "#ffffff"
     };
-    const color = commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
+    const originalColor = commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
+    const color = colorMode === "green" ? "#55e58a" :
+      colorMode === "white" ? "#ffffff" : originalColor;
     context.font = "bold " + fontSize + "px Meiryo, Yu Gothic, sans-serif";
     const textWidth = Math.ceil(context.measureText(comment.text).width) + 20;
-    const isTop = commands.includes("ue") || commands.includes("top");
-    const isBottom = commands.includes("shita") || commands.includes("bottom");
     const startMs = comment.timeMs;
 
-    if (isTop || isBottom) {
+    if (isFixed) {
       const lanes = isTop ? topLanes : bottomLanes;
-      const durationMs = 5000;
+      const durationMs = Math.max(1500, Math.round(5000 / speed));
       const reservation = reserveOverlayLane(lanes, startMs, durationMs, 150);
       const lane = reservation.lane;
+      const edge = Math.round(height * (marginPercent / 100));
       const y = isTop
-        ? Math.round(height * 0.06) + lane * Math.round(fontSize * 1.16)
-        : height - Math.round(height * 0.07) - lane * Math.round(fontSize * 1.16);
+        ? edge + lane * Math.round(fontSize * 1.16)
+        : height - edge - lane * Math.round(fontSize * 1.16);
       schedule.push({
         ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
         textWidth, mode: isTop ? "top" : "bottom", y
@@ -965,11 +978,11 @@ function createCommentOverlaySchedule(comments, context, width, height) {
       continue;
     }
 
-    const durationMs = Math.max(4000, Math.min(16000,
-      ((width + textWidth) / 330) * 1000));
+    const durationMs = Math.max(1500, Math.min(32000,
+      (((width + textWidth) / 330) * 1000) / speed));
     const reservation = reserveOverlayLane(scrollLanes, startMs, durationMs, 180);
     const lane = reservation.lane;
-    const y = Math.round(height * 0.07) + lane * Math.round(fontSize * 1.18);
+    const y = Math.round(height * (marginPercent / 100)) + lane * Math.round(fontSize * 1.18);
     schedule.push({
       ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
       textWidth, mode: "scroll", y
@@ -979,20 +992,22 @@ function createCommentOverlaySchedule(comments, context, width, height) {
   return schedule.sort((a, b) => a.startMs - b.startMs);
 }
 
-function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, width, height) {
+function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, width, height, options = {}) {
   // The base video frame has already been drawn to this canvas. Do not clear it:
   // clearing here used to erase the video and leave only a black background + comments.
+  context.globalAlpha = Math.min(1, Math.max(0.2, Number(options.opacity) || 1));
+  const shadow = options.shadow !== false;
   for (const comment of activeComments) {
     if (videoTimeMs < comment.startMs || videoTimeMs > comment.endMs) continue;
     const elapsed = videoTimeMs - comment.startMs;
     context.font = "bold " + comment.fontSize + "px Meiryo, Yu Gothic, sans-serif";
     context.textBaseline = "middle";
     context.lineJoin = "round";
-    context.lineWidth = Math.max(3, comment.fontSize * 0.11);
+    context.lineWidth = shadow ? Math.max(2, comment.fontSize * 0.11) : 0;
     context.strokeStyle = "rgba(0, 0, 0, 0.92)";
     context.fillStyle = comment.color;
-    context.shadowColor = "rgba(0, 0, 0, 0.65)";
-    context.shadowBlur = 3;
+    context.shadowColor = shadow ? "rgba(0, 0, 0, 0.65)" : "transparent";
+    context.shadowBlur = shadow ? 3 : 0;
 
     let x;
     if (comment.mode === "scroll") {
@@ -1004,10 +1019,13 @@ function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, widt
       context.textAlign = "center";
     }
 
-    context.strokeText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
+    if (shadow) {
+      context.strokeText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
+    }
     context.fillText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
   }
   context.shadowBlur = 0;
+  context.globalAlpha = 1;
 }
 
 function setCompositionProgress(value, label) {
@@ -1048,6 +1066,7 @@ async function composeCommentVideo() {
     return;
   }
 
+  const composeOptions = getCompositionEditorOptions();
   const composeButton = byId("compose-button");
   const cancelButton = byId("compose-cancel-button");
   composeButton.disabled = true;
@@ -1137,15 +1156,21 @@ async function composeCommentVideo() {
     }
 
     const canvas = document.createElement("canvas");
-    canvas.width = videoElement.videoWidth || 1920;
-    canvas.height = videoElement.videoHeight || 1080;
+    const sourceWidth = videoElement.videoWidth || 1920;
+    const sourceHeight = videoElement.videoHeight || 1080;
+    const targetHeight = composeOptions.resolution === "original"
+      ? sourceHeight : Number(composeOptions.resolution);
+    const resolutionScale = Math.min(1, targetHeight / sourceHeight);
+    canvas.width = Math.max(2, Math.round(sourceWidth * resolutionScale / 2) * 2);
+    canvas.height = Math.max(2, Math.round(sourceHeight * resolutionScale / 2) * 2);
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("動画合成用キャンバスを作成できません。");
     const schedule = createCommentOverlaySchedule(
-      timeline.comments, context, canvas.width, canvas.height
+      timeline.comments, context, canvas.width, canvas.height, composeOptions
     );
+    if (!schedule.length) throw new Error("現在の表示設定に一致するコメントがありません。");
 
-    canvasStream = canvas.captureStream(30);
+    canvasStream = canvas.captureStream(composeOptions.fps);
     const audioTracks = [];
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) {
@@ -1206,7 +1231,7 @@ async function composeCommentVideo() {
         nextCommentIndex += 1;
       }
       activeComments = activeComments.filter((comment) => comment.endMs >= currentMs);
-      drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height);
+      drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height, composeOptions);
 
       const now = Date.now();
       if (now - lastProgressUpdate >= 250) {
@@ -1219,7 +1244,7 @@ async function composeCommentVideo() {
       }
     };
 
-    const recorderOptions = { mimeType, videoBitsPerSecond: 6000000 };
+    const recorderOptions = { mimeType, videoBitsPerSecond: composeOptions.bitrate };
     if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
     recorder = new MediaRecorder(finalStream, recorderOptions);
     recorder.ondataavailable = (event) => {
@@ -1296,6 +1321,11 @@ async function composeCommentVideo() {
     await cleanup();
   }
 }
+
+for (const id of ["compose-font-scale", "compose-speed", "compose-position", "compose-opacity"]) {
+  byId(id).addEventListener("input", updateCompositionEditorLabels);
+}
+updateCompositionEditorLabels();
 
 byId("compose-video-input").addEventListener("change", (event) => {
   const file = event.target.files[0];
