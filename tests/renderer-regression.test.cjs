@@ -38,6 +38,7 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
   assert.match(main, /ipcMain\.handle\("monitor:add-target"/);
   assert.match(main, /ipcMain\.handle\("monitor:start"/);
   assert.match(main, /ipcMain\.handle\("monitor:stop"/);
+  assert.match(main, /ipcMain\.handle\("monitor:retry-target"/);
 });
 
 test("saved monitor user IDs are validated with a numeric pattern", () => {
@@ -50,4 +51,5 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.match(renderer, /const monitorAutoQueue = \[\]/);
   assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
+  assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
