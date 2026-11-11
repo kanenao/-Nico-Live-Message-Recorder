@@ -581,7 +581,7 @@ function saveMonitorSettings(nextSettings) {
   const candidate = { ...current, ...(nextSettings || {}) };
   const intervalSeconds = Number(candidate.intervalSeconds);
   if (![15, 30, 60, 120, 300].includes(intervalSeconds)) {
-    throw new Error("監視間隔は30秒・1分・2分・5分から選択してください。");
+    throw new Error("監視間隔は15秒・30秒・1分・2分・5分から選択してください。");
   }
   const normalized = {
     intervalSeconds,
