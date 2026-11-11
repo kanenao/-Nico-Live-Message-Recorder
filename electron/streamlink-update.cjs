@@ -35,7 +35,7 @@ function selectWindowsPortableAsset(release) {
     item &&
     typeof item.name === "string" &&
     item.name.startsWith("streamlink-" + version + "-py") &&
-    /^streamlink-\\d+\\.\\d+\\.\\d+-\\d+-py\\d+-x86_64\\.zip$/.test(item.name) &&
+    /^streamlink-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-py[0-9]+-x86_64\.zip$/.test(item.name) &&
     /^sha256:[0-9a-f]{64}$/i.test(String(item.digest || "")) &&
     /^https:\/\/github\.com\/streamlink\/windows-builds\/releases\/download\//.test(String(item.browser_download_url || ""))
   );
