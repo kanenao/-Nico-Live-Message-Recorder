@@ -21,7 +21,15 @@ if (Test-Path $runtimeRoot) {
 Write-Host "Downloading official Streamlink Windows portable package $version..."
 Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
 
-$actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+$fileStream = [System.IO.File]::OpenRead($archivePath)
+try {
+    $actualSha256 = [System.BitConverter]::ToString($sha256.ComputeHash($fileStream)).Replace("-", "").ToLowerInvariant()
+}
+finally {
+    $fileStream.Dispose()
+    $sha256.Dispose()
+}
 if ($actualSha256 -ne $expectedSha256) {
     Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
     throw "Streamlink archive SHA-256 mismatch. Expected $expectedSha256 but received $actualSha256."
@@ -55,4 +63,5 @@ if ($LASTEXITCODE -ne 0) {
     throw "The bundled FFmpeg executable failed its version check."
 }
 
+Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
 Write-Host "Streamlink $version and FFmpeg are ready in $runtimeRoot"
