@@ -27,10 +27,16 @@ test("auto-update is enabled only for the registered NSIS install location", () 
   assert.equal(packageJson.build.nsis.include, "installer.nsh");
   const installerScript = fs.readFileSync(path.join(__dirname, "..", "build", "installer.nsh"), "utf8");
   const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
-  assert.match(installerScript, /WriteRegStr HKCU .*InstallLocation/);
-  assert.match(installerScript, /DeleteRegKey HKCU/);
+  assert.match(installerScript, /WriteRegStr SHELL_CONTEXT .*InstallLocation/);
+  assert.match(installerScript, /WriteRegStr SHELL_CONTEXT .*InstallType.*NSIS/);
+  assert.match(installerScript, /DeleteRegKey SHELL_CONTEXT/);
+  assert.equal(packageJson.build.nsis.include, "build/installer.nsh");
   assert.ok(mainProcess.includes("function isNsisInstalled()"));
   assert.ok(mainProcess.includes("return isNsisInstalled()"));
+  assert.match(mainProcess, /HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall/);
+  assert.match(mainProcess, /HKLM\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall/);
+  assert.match(mainProcess, /UninstallString/);
+  assert.match(mainProcess, /isExecutableInsideInstallDirectory/);
 });
 
 test("main and renderer JavaScript files pass Node syntax checks", () => {
