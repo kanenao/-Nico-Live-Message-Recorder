@@ -233,7 +233,7 @@ async function fetchNicoUserName(userId, options = {}) {
       url: "https://ext.nicovideo.jp/thumb_user/" + encodeURIComponent(normalizedId),
       parse: async (response) => {
         const html = await response.text();
-        const match = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);
+                const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
         if (!match) return "";
         return decodeHtmlText(match[1])
           .replace(/さんのプロフィール.*$/u, "")
