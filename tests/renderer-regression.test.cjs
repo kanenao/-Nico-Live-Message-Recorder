@@ -227,6 +227,19 @@ test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time",
 });
 
 
+test("LIVE dashboard cards can start synchronized recording for their selected broadcaster", () => {
+  assert.match(renderer, /async function startVideoRecording\(target = null\)/);
+  assert.match(renderer, /startVideoRecording\(\{\s*liveId: status\.liveId/);
+  assert.match(renderer, /api\.startCapture\(liveId, quality, selectedTarget \? \{/);
+  assert.match(renderer, /displayName: selectedTarget\.name/);
+  assert.match(renderer, /broadcasterId: selectedTarget\.userId/);
+  assert.match(renderer, /recordButton\.disabled \|\| recordStartedAt \|\| monitorAutoProcessing/);
+  assert.match(renderer, /live-broadcast-record-button/);
+  assert.match(css, /\.live-broadcast-actions/);
+  assert.match(html, /LIVE一覧から録画も直接開始できます/);
+  assert.match(renderer, /renderLiveBroadcasts\(\);\s*if \(monitorAutoQueue\.length > 0/);
+});
+
 test("dashboard timestamps accept numeric and ISO dates and display a full start date", () => {
   assert.match(monitor, /function normalizeMonitorDate\(/);
   assert.match(monitor, /Array\.from\(raw\)\.every/);
@@ -235,5 +248,5 @@ test("dashboard timestamps accept numeric and ISO dates and display a full start
   assert.match(main, /normalizeMonitorDate, fetchUserBroadcastStatus/);
   assert.match(css, /--accent: #53df9b/);
   assert.match(css, /\.live-broadcast-card/);
-  assert.match(html, /0\.1\.0-beta\.20/);
+  assert.match(html, /0\.1\.0-beta\.21/);
 });

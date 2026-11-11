@@ -431,3 +431,31 @@ input:focus, select:focus {
   border-color: rgba(83, 223, 155, .32);
   background: linear-gradient(115deg, rgba(28, 54, 40, .42), rgba(28, 32, 39, .96) 68%);
 }
+
+
+/* beta.21: quick recording action on LIVE dashboard cards */
+.live-broadcast-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+.live-broadcast-actions .button { white-space: nowrap; }
+.live-broadcast-record-button {
+  border: 1px solid rgba(83, 223, 155, .34);
+  background: rgba(83, 223, 155, .14);
+  color: #8ce8b5;
+}
+.live-broadcast-record-button:hover:not(:disabled) {
+  background: rgba(83, 223, 155, .24);
+}
+.live-broadcast-record-button:disabled {
+  opacity: .62;
+  cursor: not-allowed;
+}
+.live-broadcast-footer { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .live-broadcast-footer { align-items: flex-start; }
+  .live-broadcast-actions { width: 100%; justify-content: flex-start; }
+}
