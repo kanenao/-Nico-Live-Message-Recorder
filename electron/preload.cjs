@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   getCaptureLibrary: () => ipcRenderer.invoke("library:list"),
   openLibraryItem: (filePath) => ipcRenderer.invoke("library:open-item", filePath),
   showLibraryItem: (filePath) => ipcRenderer.invoke("library:show-item", filePath),
+  deleteLibraryVideo: (filePath) => ipcRenderer.invoke("library:delete-video", filePath),
   startVideo: (liveId, quality, options) => ipcRenderer.invoke("video:start", liveId, quality, options),
   startCapture: (liveId, quality, options) => ipcRenderer.invoke("capture:start", liveId, quality, options),
   stopVideo: () => ipcRenderer.invoke("video:stop"),

@@ -15,7 +15,9 @@
     "dist:win:release": "npm run prepare:streamlink && electron-builder --win nsis zip --publish always"
   },
   "dependencies": {
+    "@n-air-app/nicolive-comment-protobuf": "github:Segu-g/nicolive-comment-protobuf#v2025.602.163750-segument",
     "nicomget": "github:Segu-g/nicomget",
+    "ws": "^8.18.0",
     "electron-updater": "6.8.12"
   },
   "devDependencies": {

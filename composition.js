@@ -23,7 +23,10 @@
     const videoStart = records.find((record) => record && record.type === "videoStart");
     const sessionStart = records.find((record) => record && record.type === "sessionStart");
     const videoStop = records.find((record) => record && record.type === "videoStop");
-    let origin = timestampMs(videoStart && (videoStart.videoStartedAt || videoStart.timestamp));
+    const timeshiftOrigin = records.find((record) => record && record.type === "timeshiftOrigin");
+    let origin = timestampMs(videoStart && videoStart.videoOriginAt) ??
+      timestampMs(timeshiftOrigin && timeshiftOrigin.originAt) ??
+      timestampMs(videoStart && (videoStart.videoStartedAt || videoStart.timestamp));
 
     if (origin === null) {
       const firstCommentTime = records

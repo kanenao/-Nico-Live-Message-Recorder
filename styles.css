@@ -459,3 +459,33 @@ input:focus, select:focus {
   .live-broadcast-footer { align-items: flex-start; }
   .live-broadcast-actions { width: 100%; justify-content: flex-start; }
 }
+
+
+/* beta.22: library deletion and reliable text selection */
+.library-actions { flex-wrap: wrap; }
+.library-actions .button-danger {
+  padding: 6px 8px;
+  border: 1px solid rgba(242, 104, 119, .35);
+  background: rgba(242, 82, 103, .12);
+  color: #ff9aa7;
+  font-size: 9px;
+}
+.library-actions .button-danger:hover:not(:disabled) {
+  background: rgba(242, 82, 103, .24);
+}
+.library-list-header, .library-row {
+  grid-template-columns: minmax(130px, 1.65fr) minmax(85px, .95fr) 105px 116px 60px 178px;
+}
+@media (max-width: 1200px) {
+  .library-list-header, .library-row {
+    grid-template-columns: minmax(150px, 1.5fr) minmax(100px, 1fr) 115px 122px 70px 180px;
+  }
+}
+input, textarea, select, .comment-row, .library-row, .library-file-name, .live-broadcast-card {
+  -webkit-user-select: text;
+  user-select: text;
+}
+button, .button {
+  -webkit-user-select: none;
+  user-select: none;
+}

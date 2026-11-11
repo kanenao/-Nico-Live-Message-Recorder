@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, session } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu } = require("electron");
 const { spawn, execFileSync } = require("node:child_process");
 const {
   findStreamlinkExecutable,
@@ -9,6 +9,7 @@ const {
   buildStreamlinkArgs
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
+const { fetchTimeshiftProgramPage, fetchTimeshiftArchive } = require("./timeshift-comments.cjs");
 const { autoUpdater } = require("electron-updater");
 const { normalizeNicoUserId, normalizeMonitorDate, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
 const {
@@ -30,6 +31,7 @@ let loginWindow = null;
 let livePreviewWindow = null;
 let livePreviewId = "";
 let provider = null;
+let timeshiftCommentFetchActive = false;
 let currentLiveId = "";
 let commentWriter = null;
 let commentFilePath = "";
@@ -452,6 +454,39 @@ function makeWindow() {
     }
   });
 
+  const contents = mainWindow.webContents;
+  contents.on("context-menu", (_event, params) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const flags = params.editFlags || {};
+    const template = [];
+    if (params.isEditable) {
+      template.push({ label: "元に戻す", role: "undo", enabled: Boolean(flags.canUndo) });
+      template.push({ label: "やり直す", role: "redo", enabled: Boolean(flags.canRedo) });
+      template.push({ type: "separator" });
+      template.push({ label: "切り取り", role: "cut", enabled: Boolean(flags.canCut) });
+      template.push({ label: "コピー", role: "copy", enabled: Boolean(flags.canCopy) });
+      template.push({ label: "貼り付け", role: "paste", enabled: Boolean(flags.canPaste) });
+      template.push({ label: "削除", role: "delete", enabled: Boolean(flags.canDelete) });
+      template.push({ type: "separator" });
+      template.push({ label: "すべて選択", role: "selectAll", enabled: Boolean(flags.canSelectAll) });
+    } else {
+      if (flags.canCopy) template.push({ label: "コピー", role: "copy" });
+      if (flags.canSelectAll) template.push({ label: "すべて選択", role: "selectAll" });
+    }
+    if (template.length) Menu.buildFromTemplate(template).popup({ window: mainWindow });
+  });
+  contents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.alt) return;
+    const modified = process.platform === "darwin" ? input.meta : input.control;
+    if (!modified) return;
+    const key = String(input.key || "").toLowerCase();
+    const actions = { x: "cut", c: "copy", v: "paste", z: input.shift ? "redo" : "undo", y: "redo" };
+    const action = actions[key];
+    if (!action || typeof contents[action] !== "function") return;
+    event.preventDefault();
+    contents[action]();
+  });
+
   mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -668,6 +703,9 @@ async function connectPreparedCommentSession(liveId) {
 }
 
 ipcMain.handle("live:connect", async (_event, value, options = {}) => {
+  if (timeshiftCommentFetchActive) {
+    throw new Error("過去配信のコメント取得中です。完了後にコメント接続を開始してください。");
+  }
   const liveId = safeLiveId(value);
   await prepareCommentSession(liveId,
     options && options.displayName || "",
@@ -675,6 +713,9 @@ ipcMain.handle("live:connect", async (_event, value, options = {}) => {
   return connectPreparedCommentSession(liveId);
 });
 ipcMain.handle("live:disconnect", async () => {
+  if (timeshiftCommentFetchActive) {
+    throw new Error("過去配信のコメント取得中は切断できません。");
+  }
   if (provider) {
     try { provider.disconnect(); } catch (_) {}
     provider = null;
@@ -1269,11 +1310,6 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
   const liveId = safeLiveId(value);
   const timeshift = Boolean(options && options.timeshift);
-  if (timeshift) {
-    // Past broadcasts may not provide live comment transport; keep this path video-only.
-    currentBroadcasterName = "";
-    currentBroadcasterId = "";
-  }
   const toolStatus = getVideoToolStatus();
   const streamlinkPath = toolStatus.streamlinkPath;
   if (!streamlinkPath) {
@@ -1338,6 +1374,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   if (currentLiveId === liveId) {
     appendMarker("videoStart", {
       videoStartedAt: startedAt,
+      videoOriginAt: options && options.timeshiftOriginAt || undefined,
       videoFile: ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath,
       streamlinkPath
     });
@@ -1357,8 +1394,113 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   };
 }
 
-ipcMain.handle("video:start", (_event, value, quality, options = {}) =>
-  startVideoInternal(value, quality, options && options.displayName, options && options.broadcasterId, options));
+ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
+  if (!(options && options.timeshift)) {
+    return startVideoInternal(value, quality, options && options.displayName, options && options.broadcasterId, options);
+  }
+
+  const liveId = safeLiveId(value);
+  let page = null;
+  let commentError = "";
+  const cookieHeader = await getNicoCookieHeader();
+  try {
+    page = await fetchTimeshiftProgramPage(liveId, cookieHeader);
+    if (!page.webSocketUrl) {
+      commentError = "このタイムシフトでは過去コメント用の接続情報を取得できませんでした。映像録画のみ実行します。";
+    }
+  } catch (error) {
+    commentError = "過去番組のコメント情報を取得できませんでした: " +
+      (error && error.message ? error.message : String(error));
+  }
+
+  if (!page || !page.webSocketUrl) {
+    const video = await startVideoInternal(
+      liveId, quality, page && page.broadcasterName || "", page && page.broadcasterId || "",
+      { ...options, timeshift: true, timeshiftOriginAt: page && page.beginAt || "" }
+    );
+    return {
+      ...video,
+      commentCount: 0,
+      commentsFetched: false,
+      commentError
+    };
+  }
+
+  let video = null;
+  let commentCount = 0;
+  let commentsTruncated = false;
+  let finalCommentFile = "";
+  timeshiftCommentFetchActive = true;
+  try {
+    await prepareCommentSession(liveId, page.broadcasterName, page.broadcasterId);
+    video = await startVideoInternal(
+      liveId,
+      quality,
+      page.broadcasterName,
+      page.broadcasterId,
+      { ...options, timeshift: true, timeshiftOriginAt: page.beginAt || "" }
+    );
+
+    try {
+      const archive = await fetchTimeshiftArchive(page.webSocketUrl, cookieHeader, {
+        onProgress: (progress) => send("timeshift:comments-progress", {
+          liveId,
+          segmentsFetched: progress.segmentsFetched,
+          eventCount: progress.eventCount,
+          phase: progress.phase
+        })
+      });
+      const originAt = page.beginAt ||
+        (archive.events[0] && archive.events[0].timestamp) || video.startedAt;
+      appendMarker("timeshiftOrigin", {
+        originAt,
+        source: page.beginAt ? "program.beginTime" : "firstComment"
+      });
+
+      for (const event of archive.events) {
+        if (!commentWriter) throw new Error("過去コメントの保存先が閉じられました。");
+        const record = normalizeEvent(event.type, event);
+        record.timestamp = event.timestamp;
+        record.receivedAt = event.receivedAt || new Date().toISOString();
+        record.isHistory = true;
+        if (!commentWriter.write(JSON.stringify(record) + "\n")) {
+          await new Promise((resolve, reject) => {
+            commentWriter.once("drain", resolve);
+            commentWriter.once("error", reject);
+          });
+        }
+      }
+      commentCount = archive.commentCount;
+      commentsTruncated = archive.truncated;
+      if (!commentCount) commentError = "過去コメントAPIから保存可能なコメントが見つかりませんでした。";
+      if (commentsTruncated) {
+        const note = "コメント取得上限に達したため、一部のみ保存しました。";
+        commentError = commentError ? commentError + " " + note : note;
+      }
+    } catch (error) {
+      commentError = "映像録画は継続しますが、過去コメントの取得に失敗しました: " +
+        (error && error.message ? error.message : String(error));
+    }
+
+    await closeCommentWriter();
+    finalCommentFile = commentFilePath;
+    send("live:state", { state: "disconnected" });
+    return {
+      ...video,
+      commentFile: finalCommentFile,
+      commentCount,
+      commentsFetched: commentCount > 0,
+      commentsTruncated,
+      commentError
+    };
+  } catch (error) {
+    if (commentWriter) await closeCommentWriter();
+    send("live:state", { state: "error" });
+    throw error;
+  } finally {
+    timeshiftCommentFetchActive = false;
+  }
+});
 
 ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => {
   const liveId = safeLiveId(value);
@@ -1598,6 +1740,37 @@ ipcMain.handle("library:show-item", (_event, value) => {
   const target = resolveLibraryItemPath(value);
   shell.showItemInFolder(target);
   return { shown: true };
+});
+ipcMain.handle("library:delete-video", async (_event, value) => {
+  const target = resolveLibraryItemPath(value);
+  const videosRoot = path.resolve(dataRoot(), "videos");
+  const relative = path.relative(videosRoot, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("録画動画フォルダー内のファイルだけ削除できます。コメントログは削除できません。");
+  }
+  const extension = path.extname(target).toLowerCase();
+  if (!LIBRARY_VIDEO_EXTENSIONS.has(extension)) {
+    throw new Error("対応していない動画ファイル形式です。");
+  }
+  if (streamlinkOutputPath && path.resolve(streamlinkOutputPath) === path.resolve(target) &&
+      (streamlinkProcess || streamlinkFinalizePromise)) {
+    throw new Error("録画中またはファイル確定中の動画は削除できません。録画停止後に再試行してください。");
+  }
+
+  const confirmation = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "録画動画を削除",
+    message: "この動画ファイルを完全に削除しますか？",
+    detail: path.basename(target) + "\n\n削除した動画は元に戻せません。対応するコメントログは削除されません。",
+    buttons: ["削除する", "キャンセル"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  });
+  if (confirmation.response !== 0) return { cancelled: true };
+
+  await fs.promises.unlink(target);
+  return { deleted: true, fileName: path.basename(target) };
 });
 
 ipcMain.handle("comments:export-csv", async () => {

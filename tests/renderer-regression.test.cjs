@@ -8,6 +8,8 @@ const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const monitor = fs.readFileSync(path.join(root, "electron", "monitor.cjs"), "utf8");
+const composition = fs.readFileSync(path.join(root, "composition.js"), "utf8");
+const ass = fs.readFileSync(path.join(root, "electron", "ass.cjs"), "utf8");
 const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
@@ -91,17 +93,21 @@ test("broadcast connection and direct video/audio recording share one integrated
   assert.match(main, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
   assert.match(main, /connectPreparedCommentSession\(liveId\)/);
   assert.match(main, /startVideoInternal\(liveId, quality/);
-  assert.match(renderer, /api\.startCapture\(liveId, quality, \{\}\)/);
+  assert.match(renderer, /api\.startCapture\(liveId, quality, selectedTarget \? \{/);
   assert.match(renderer, /currentLiveId = liveId;\s*liveInput\.value = liveId/);
 });
 
-test("past broadcasts have an explicit timeshift video-only recording mode", () => {
+test("past broadcasts support timeshift video and archived comments", () => {
   assert.match(html, /id="record-mode"/);
-  assert.match(html, /過去配信（タイムシフト映像のみ）/);
+  assert.match(html, /過去配信（タイムシフト映像＋コメント）/);
   assert.match(renderer, /api\.startVideo\(liveId, quality, \{ timeshift: true \}\)/);
-  assert.match(renderer, /タイムシフトの映像・音声録画を開始しました/);
+  assert.match(renderer, /archive\.commentCount/);
+  assert.match(renderer, /過去コメント /);
+  assert.match(renderer, /件の保存を開始しました/);
   assert.match(main, /const timeshift = Boolean\(options && options\.timeshift\)/);
-  assert.match(main, /timeshift\s*$/m);
+  assert.match(main, /fetchTimeshiftArchive\(page\.webSocketUrl, cookieHeader/);
+  assert.match(main, /videoOriginAt: options && options\.timeshiftOriginAt/);
+  assert.match(preload, /deleteLibraryVideo/);
 });
 
 test("videos and comments are organized by broadcaster display name", () => {
@@ -188,7 +194,7 @@ test("successful main-branch Windows builds automatically publish a beta update 
   assert.match(releaseWorkflow, /workflow_run:/);
   assert.match(releaseWorkflow, /Build Nico Live Message Recorder/);
   assert.match(releaseWorkflow, /conclusion == 'success'/);
-  assert.match(releaseWorkflow, /gh release view/);
+  assert.match(releaseWorkflow, /Invoke-RestMethod/);
   assert.match(releaseWorkflow, /dist:win:release/);
   assert.match(releaseWorkflow, /beta update metadata/);
 });
@@ -231,7 +237,7 @@ test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time",
   assert.match(main, /startedAt,\s*endedAt,/);
   assert.match(main, /watchPageUrl:/);
   assert.match(main, /normalizeMonitorDate\(live\.beginTime/);
-  assert.match(html, /配信者名・配信タイトル・開始時刻・経過時間・放送ID/);
+  assert.match(html, /LIVE一覧から録画も直接開始できます/);
 });
 
 
@@ -256,5 +262,37 @@ test("dashboard timestamps accept numeric and ISO dates and display a full start
   assert.match(main, /normalizeMonitorDate, fetchUserBroadcastStatus/);
   assert.match(css, /--accent: #53df9b/);
   assert.match(css, /\.live-broadcast-card/);
-  assert.match(html, /0\.1\.0-beta\.21/);
+  assert.match(html, /0\.1\.0-beta\.22/);
+});
+
+
+test("video deletion is limited to saved videos and requires a native confirmation", () => {
+  assert.match(main, /ipcMain\\.handle\\("library:delete-video"/);
+  assert.match(main, /const videosRoot = path\\.resolve\\(dataRoot\\(\\), "videos"\\)/);
+  assert.match(main, /streamlinkOutputPath/);
+  assert.match(main, /streamlinkProcess \\|\\| streamlinkFinalizePromise/);
+  assert.match(main, /dialog\\.showMessageBox\\(mainWindow/);
+  assert.match(main, /削除した動画は元に戻せません/);
+  assert.match(preload, /deleteLibraryVideo:.*ipcRenderer\\.invoke\\("library:delete-video"/);
+  assert.match(renderer, /api\\.deleteLibraryVideo\\(item\\.path\\)/);
+  assert.match(renderer, /deleteButton\\.textContent = "削除"/);
+});
+
+test("past timeshift comments are fetched through NDGR previous and backward segments and aligned to archive start", () => {
+  assert.match(main, /fetchTimeshiftArchive\\(page\\.webSocketUrl, cookieHeader/);
+  assert.match(main, /appendMarker\\("timeshiftOrigin"/);
+  assert.match(main, /record\\.isHistory = true/);
+  assert.match(composition, /videoOriginAt/);
+  assert.match(composition, /timeshiftOrigin && timeshiftOrigin\\.originAt/);
+  assert.match(ass, /timeshiftOrigin && timeshiftOrigin\\.originAt/);
+  assert.match(renderer, /過去コメント取得中/);
+  assert.match(html, /タイムシフト映像＋コメント/);
+});
+
+test("editing menus and clipboard shortcuts support cut copy and paste", () => {
+  assert.match(main, /contents\\.on\\("context-menu"/);
+  assert.match(main, /contents\\.on\\("before-input-event"/);
+  assert.match(main, /actions = \\{ x: "cut", c: "copy", v: "paste"/);
+  assert.match(main, /Menu\\.buildFromTemplate\\(template\\)/);
+  assert.match(css, /user-select:\\s*text/);
 });

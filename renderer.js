@@ -296,12 +296,23 @@ async function startVideoRecording(target = null) {
   try {
     const quality = byId("record-quality")?.value || "best";
     const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
-    const result = timeshift
-      ? { video: await api.startVideo(liveId, quality, { timeshift: true }) }
-      : await api.startCapture(liveId, quality, selectedTarget ? {
-          displayName: selectedTarget.name || "",
-          broadcasterId: selectedTarget.userId || ""
-        } : {});
+    let result;
+    if (timeshift) {
+      const archive = await api.startVideo(liveId, quality, { timeshift: true });
+      result = {
+        video: archive,
+        comment: archive.commentFile ? { commentFile: archive.commentFile } : null,
+        commentCount: Number(archive.commentCount) || 0,
+        commentsFetched: Boolean(archive.commentsFetched),
+        commentsTruncated: Boolean(archive.commentsTruncated),
+        commentError: archive.commentError || ""
+      };
+    } else {
+      result = await api.startCapture(liveId, quality, selectedTarget ? {
+        displayName: selectedTarget.name || "",
+        broadcasterId: selectedTarget.userId || ""
+      } : {});
+    }
     if (result.comment && result.comment.metadata) updateMetadata(result.comment.metadata);
     if (result.comment && result.comment.commentFile) {
       byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
@@ -317,8 +328,16 @@ async function startVideoRecording(target = null) {
     recordStartedAt = video.startedAt ? new Date(video.startedAt).getTime() : Date.now();
     setVideoState(true);
     startRecordClock();
-    if (timeshift) {
-      showToast("タイムシフトの映像・音声録画を開始しました。コメントは保存されません。");
+    if (timeshift && result.commentCount > 0) {
+      showToast("タイムシフトの映像・音声録画と過去コメント " +
+        result.commentCount.toLocaleString("ja-JP") + "件の保存を開始しました。");
+      if (result.commentsTruncated) {
+        showToast("過去コメントは取得上限に達したため一部のみ保存しました。", true);
+      }
+    } else if (timeshift && result.commentError) {
+      showToast("映像録画は開始しましたが、過去コメントを取得できませんでした: " + result.commentError, true);
+    } else if (timeshift) {
+      showToast("タイムシフトの映像・音声録画を開始しました。過去コメントは見つかりませんでした。", true);
     } else if (result.commentError) {
       showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
     } else {
@@ -1054,6 +1073,27 @@ function renderCaptureLibrary() {
       catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
     });
     actions.append(openButton, showButton);
+    if (item.type === "video") {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "button button-danger button-small";
+      deleteButton.textContent = "削除";
+      deleteButton.title = "確認後にこの動画ファイルだけを削除します。コメントログは残ります。";
+      deleteButton.addEventListener("click", async () => {
+        deleteButton.disabled = true;
+        try {
+          const result = await api.deleteLibraryVideo(item.path);
+          if (result && result.cancelled) return;
+          showToast("動画を削除しました: " + (result.fileName || item.fileName));
+          await loadCaptureLibrary();
+        } catch (error) {
+          showToast(error.message || "動画を削除できませんでした。", true);
+        } finally {
+          deleteButton.disabled = false;
+        }
+      });
+      actions.appendChild(deleteButton);
+    }
     row.appendChild(actions);
     list.appendChild(row);
   }
@@ -1223,6 +1263,13 @@ api.onEvent(({ channel, payload }) => {
   if (channel === "capture:state" && payload && payload.commentError) {
     byId("capture-status-detail").textContent = "映像録画は開始しましたが、コメント取得に失敗しました: " + payload.commentError;
   }
+  if (channel === "timeshift:comments-progress" && payload) {
+    const count = Number(payload.eventCount) || 0;
+    const segments = Number(payload.segmentsFetched) || 0;
+    byId("live-meta").textContent = "過去コメント取得中：" + count.toLocaleString("ja-JP") +
+      "件 / " + segments + "セグメント";
+    byId("capture-status-detail").textContent = "タイムシフトの映像録画を継続しながら、過去コメントを取得しています。";
+  }
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
     addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
   }
@@ -1248,10 +1295,10 @@ recordButton.addEventListener("click", startVideoRecording);
 byId("record-mode").addEventListener("change", () => {
   const timeshift = byId("record-mode").value === "timeshift";
   byId("record-mode-hint").textContent = timeshift
-    ? "視聴期限内で、ログイン中アカウントに視聴権限があるタイムシフトを最初から映像・音声のみ保存します。コメントは取得しません。"
+    ? "視聴期限内で、ログイン中アカウントに視聴権限があるタイムシフトを最初から映像・音声と過去コメントを取得します。コメントAPIが利用できない場合も映像録画は継続します。"
     : "配信中の放送は映像・音声とコメントを同時に保存します。コメントだけ保存する場合は「コメントのみ接続」を選んでください。";
   recordButton.textContent = timeshift
-    ? "● 過去配信（タイムシフト）を録画"
+    ? "● 過去配信（映像＋コメント）を録画"
     : "● 接続して映像・音声＋コメントを録画";
 });
 stopRecordButton.addEventListener("click", stopVideoRecording);

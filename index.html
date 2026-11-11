@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.21</span>
+        <span class="version" id="version">v0.1.0-beta.22</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -34,7 +34,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.21</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.22</span></div>
         </div>
       </aside>
 
@@ -114,7 +114,7 @@
           <div class="library-list" id="library-list">
             <div class="library-empty">保存ファイルを読み込んでいます…</div>
           </div>
-          <p class="hint">動画はWindowsの既定のプレーヤーで再生します。元ファイルはこの画面から変更・削除しません。</p>
+          <p class="hint">動画はWindowsの既定のプレーヤーで再生します。「削除」は確認後に動画ファイルだけを削除します。関連するコメントログは残ります。</p>
         </section>
 
         <section class="panel update-panel" id="update-panel" aria-live="polite" hidden>
@@ -192,7 +192,7 @@
                 <span>録画対象</span>
                 <select id="record-mode">
                   <option value="live" selected>配信中の放送（映像＋コメント）</option>
-                  <option value="timeshift">過去配信（タイムシフト映像のみ）</option>
+                  <option value="timeshift">過去配信（タイムシフト映像＋コメント）</option>
                 </select>
               </label>
               <div class="button-row session-actions">
@@ -200,7 +200,7 @@
                 <button class="button button-primary" id="connect-button" type="button">コメントのみ接続</button>
                 <button class="button button-outline" id="disconnect-button" type="button" disabled>コメント切断</button>
               </div>
-              <p class="hint" id="record-mode-hint">配信中の放送は映像・音声とコメントを同時に保存します。過去配信を選ぶと、視聴可能なタイムシフトを最初から映像・音声のみ保存します。過去配信のコメント取得には対応していません。</p>
+              <p class="hint" id="record-mode-hint">配信中の放送は映像・音声とコメントを同時に保存します。過去配信モードでは、視聴できるタイムシフトの映像・音声と取得可能な過去コメントを保存します。</p>
               <div class="file-line"><span class="dot dot-green"></span><span id="comment-file">コメント保存先：接続後に表示</span></div>
               <div class="file-line"><span class="dot dot-blue"></span><span id="video-file">映像・音声保存先：録画開始後に表示</span></div>
             </div>
@@ -396,7 +396,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.21</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.22</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

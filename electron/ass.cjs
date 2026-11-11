@@ -67,8 +67,11 @@ function generateAssFromRecords(records, options = {}) {
   const videoMarker = records.find((record) => record && record.type === "videoStart");
   const sessionMarker = records.find((record) => record && record.type === "sessionStart");
   const videoStopMarker = records.find((record) => record && record.type === "videoStop");
+  const timeshiftOrigin = records.find((record) => record && record.type === "timeshiftOrigin");
   const stopAt = parseTimestamp(videoStopMarker && (videoStopMarker.videoStoppedAt || videoStopMarker.timestamp));
   const origin =
+    parseTimestamp(videoMarker && videoMarker.videoOriginAt) ??
+    parseTimestamp(timeshiftOrigin && timeshiftOrigin.originAt) ??
     parseTimestamp(videoMarker && (videoMarker.videoStartedAt || videoMarker.timestamp)) ??
     parseTimestamp(sessionMarker && (sessionMarker.sessionStartedAt || sessionMarker.timestamp)) ??
     comments[0].timestamp;
