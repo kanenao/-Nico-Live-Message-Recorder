@@ -176,6 +176,14 @@ test("comment video composer exposes timing, layout, appearance and quality cont
 });
 
 
+test("release preflight treats an HTTP 404 as unpublished and surfaces other GitHub API errors", () => {
+  assert.match(releaseWorkflow, /Invoke-RestMethod/);
+  assert.match(releaseWorkflow, /StatusCode/);
+  assert.match(releaseWorkflow, /statusCode -eq 404/);
+  assert.match(releaseWorkflow, /Unable to check GitHub Release/);
+  assert.doesNotMatch(releaseWorkflow, /gh release view/);
+});
+
 test("successful main-branch Windows builds automatically publish a beta update once", () => {
   assert.match(releaseWorkflow, /workflow_run:/);
   assert.match(releaseWorkflow, /Build Nico Live Message Recorder/);

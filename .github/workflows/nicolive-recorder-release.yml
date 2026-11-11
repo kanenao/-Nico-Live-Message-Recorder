@@ -42,14 +42,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not read package.json version."
+          }
           $tag = "v$version"
-          gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
+          $releaseUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            Authorization = "Bearer $env:GH_TOKEN"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+
+          try {
+            $null = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -Method Get
             "already_published=true" >> $env:GITHUB_OUTPUT
             Write-Host "$tag is already published; skip duplicate release."
-          } else {
-            "already_published=false" >> $env:GITHUB_OUTPUT
-            Write-Host "$tag is not published; create beta release."
+          } catch {
+            $statusCode = 0
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+              $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -eq 404) {
+              "already_published=false" >> $env:GITHUB_OUTPUT
+              Write-Host "$tag is not published; create beta release."
+            } else {
+              throw "Unable to check GitHub Release for $tag (HTTP $statusCode): $($_.Exception.Message)"
+            }
           }
       - name: Verify release tag matches package version
         if: github.ref_type == 'tag' && steps.release-check.outputs.already_published != 'true'
