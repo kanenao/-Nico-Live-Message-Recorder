@@ -42,3 +42,10 @@ jobs:
         run: npm run dist:win:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify beta update metadata
+        shell: pwsh
+        run: |
+          $metadata = Join-Path "dist" "beta.yml"
+          if (-not (Test-Path $metadata)) {
+            throw "dist/beta.yml was not generated. The beta auto-update feed cannot work."
+          }
