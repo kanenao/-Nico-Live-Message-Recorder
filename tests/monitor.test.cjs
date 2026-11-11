@@ -4,7 +4,8 @@ const {
   normalizeNicoUserId,
   extractUserBroadcasts,
   fetchUserBroadcastStatus,
-  fetchFollowingOnAirPrograms
+  fetchFollowingOnAirPrograms,
+  fetchNicoUserName
 } = require("../electron/monitor.cjs");
 
 test("normalizes a numeric user id and public user page URL", () => {
@@ -208,4 +209,35 @@ test("follow-list API failures can be handled without hiding public-history fall
     })
   });
   assert.equal(result.isLive, true);
+});
+
+test("fetches the broadcaster display name from the public profile API", async () => {
+  const result = await fetchNicoUserName("48495285", {
+    fetchImpl: async (url) => {
+      assert.match(String(url), /api\\.ce\\.nicovideo\\.jp\\/api\\/v1\\/user\\.info/);
+      return {
+        ok: true,
+        json: async () => ({
+          nicovideo_user_response: { user: { nickname: "テスト配信者" } }
+        })
+      };
+    }
+  });
+  assert.equal(result, "テスト配信者");
+});
+
+test("falls back to the public user profile title when the JSON endpoint has no nickname", async () => {
+  let calls = 0;
+  const result = await fetchNicoUserName("48495285", {
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) return { ok: true, json: async () => ({ nicovideo_user_response: {} }) };
+      return {
+        ok: true,
+        text: async () => "<html><title>かなちんさんのプロフィール - ニコニコ</title></html>"
+      };
+    }
+  });
+  assert.equal(result, "かなちん");
+  assert.equal(calls, 2);
 });
