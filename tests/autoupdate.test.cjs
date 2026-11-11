@@ -24,7 +24,7 @@ test("release build explicitly publishes Windows NSIS update assets", () => {
 });
 
 test("auto-update is enabled only for the registered NSIS install location", () => {
-  assert.equal(packageJson.build.nsis.include, "build/installer.nsh");
+  assert.equal(packageJson.build.nsis.include, "installer.nsh");
   const installerScript = fs.readFileSync(path.join(__dirname, "..", "build", "installer.nsh"), "utf8");
   const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
   assert.match(installerScript, /WriteRegStr HKCU .*InstallLocation/);
