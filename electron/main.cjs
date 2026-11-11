@@ -31,6 +31,8 @@ let streamlinkFfmpegPath = "";
 let streamlinkStopRequested = false;
 let composeWriter = null;
 let composeFilePath = "";
+let shutdownPromise = null;
+let shutdownComplete = false;
 
 function dataRoot() {
   const root = path.join(app.getPath("videos"), "NicoLiveRecorder");
@@ -470,23 +472,28 @@ ipcMain.handle("video:start", async (_event, value, quality) => {
   };
 });
 
-ipcMain.handle("video:stop", async () => {
+async function stopStreamlinkRecording() {
   const child = streamlinkProcess;
   const finalizePromise = streamlinkFinalizePromise;
   if (!child || !finalizePromise) return { path: null };
+
   streamlinkStopRequested = true;
   try { child.kill("SIGINT"); } catch (_) {}
+
   const forcedStop = setTimeout(() => {
     if (streamlinkProcess === child && child.exitCode === null && child.signalCode === null) {
       try { child.kill(); } catch (_) {}
     }
   }, 8000);
+
   try {
     return await finalizePromise;
   } finally {
     clearTimeout(forcedStop);
   }
-});
+}
+
+ipcMain.handle("video:stop", () => stopStreamlinkRecording());
 
 ipcMain.handle("compose:start", async () => {
   if (composeWriter) throw new Error("動画生成はすでに実行中です。");
@@ -630,20 +637,64 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => {
+async function shutdownGracefully() {
+  // Stop the live stream first so the TS file can be finalized and remuxed to MP4.
+  try {
+    await stopStreamlinkRecording();
+  } catch (error) {
+    console.error("Streamlink shutdown failed:", error);
+  }
+
   if (provider) {
-    try { provider.disconnect(); } catch (_) {}
+    try { await provider.disconnect(); } catch (error) {
+      console.error("Comment provider shutdown failed:", error);
+    }
+    provider = null;
   }
-  if (commentWriter) commentWriter.end();
-  if (streamlinkProcess) {
-    try { streamlinkProcess.kill(); } catch (_) {}
+
+  try {
+    await closeCommentWriter();
+  } catch (error) {
+    console.error("Comment log shutdown failed:", error);
   }
-  // Remove the short-lived config file that contains the session cookie on app exit.
+
+  // An interrupted WebM composition is incomplete; close and remove it instead of
+  // leaving a partial file that looks like a completed export.
+  const writer = composeWriter;
+  const partialComposePath = composeFilePath;
+  composeWriter = null;
+  composeFilePath = "";
+  if (writer) {
+    await new Promise((resolve) => {
+      writer.once("error", resolve);
+      writer.end(resolve);
+    });
+  }
+  if (partialComposePath) {
+    await fs.promises.unlink(partialComposePath).catch(() => {});
+  }
+
+  // The temporary config may contain the logged-in session token.
   if (streamlinkRuntimeDirectory) {
-    try { fs.rmSync(streamlinkRuntimeDirectory, { recursive: true, force: true }); } catch (_) {}
+    await fs.promises.rm(streamlinkRuntimeDirectory, { recursive: true, force: true }).catch(() => {});
     streamlinkRuntimeDirectory = "";
   }
-  if (composeWriter) composeWriter.end();
+}
+
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownPromise) return;
+
+  shutdownPromise = (async () => {
+    await shutdownGracefully();
+    shutdownComplete = true;
+    app.quit();
+  })().catch((error) => {
+    console.error("Application shutdown failed:", error);
+    shutdownComplete = true;
+    app.quit();
+  });
 });
 
 app.on("window-all-closed", () => {
