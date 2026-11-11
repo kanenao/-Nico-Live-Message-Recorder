@@ -12,6 +12,8 @@ let connected = false;
 let recordStartedAt = 0;
 let recordClock = null;
 let currentLiveId = "";
+let commentCaptureState = "disconnected";
+let videoCaptureState = "idle";
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
@@ -20,6 +22,7 @@ let monitorSettings = {
   autoRecord: true,
   autoStart: true,
   quality: "best",
+  commentFormat: "jsonl",
   targets: []
 };
 const monitorStatuses = new Map();
@@ -36,10 +39,71 @@ function showToast(message, isError) {
   }, 4200);
 }
 
+function updateCaptureIndicators() {
+  const commentDot = byId("capture-comment-dot");
+  const commentText = byId("capture-comment-state");
+  const videoDot = byId("capture-video-dot");
+  const videoText = byId("capture-video-state");
+  const commentPanel = commentDot && commentDot.parentElement;
+  const videoPanel = videoDot && videoDot.parentElement;
+
+  const commentLabels = {
+    connected: "取得中・自動保存中",
+    connecting: "接続中…",
+    error: "接続エラー",
+    disconnected: "停止中"
+  };
+  if (commentText) commentText.textContent = commentLabels[commentCaptureState] || "状態確認中";
+  if (commentDot) {
+    commentDot.classList.toggle("is-active", commentCaptureState === "connected");
+    commentDot.classList.toggle("is-busy", commentCaptureState === "connecting");
+    commentDot.classList.toggle("is-error", commentCaptureState === "error");
+  }
+  if (commentPanel) {
+    commentPanel.classList.toggle("is-active", commentCaptureState === "connected");
+    commentPanel.classList.toggle("is-error", commentCaptureState === "error");
+  }
+
+  const videoLabels = {
+    recording: "録画中・ファイルへ書き込み中",
+    stopping: "停止・ファイル確定中…",
+    idle: "停止中"
+  };
+  if (videoText) videoText.textContent = videoLabels[videoCaptureState] || "状態確認中";
+  if (videoDot) {
+    videoDot.classList.toggle("is-active", videoCaptureState === "recording");
+    videoDot.classList.toggle("is-busy", videoCaptureState === "stopping");
+    videoDot.classList.toggle("is-error", false);
+  }
+  if (videoPanel) videoPanel.classList.toggle("is-active", videoCaptureState === "recording");
+
+  const detail = byId("capture-status-detail");
+  if (detail) {
+    const parts = [];
+    const videoPath = byId("video-file")?.textContent || "";
+    const commentPath = byId("comment-file")?.textContent || "";
+    if (videoPath && !videoPath.includes("開始後に表示")) parts.push(videoPath);
+    if (commentPath && !commentPath.includes("接続後に表示")) parts.push(commentPath);
+    detail.textContent = parts.length ? parts.join(" ／ ") : "録画・コメントの開始状態をここに表示します。";
+  }
+
+  const saveStatus = byId("comment-save-status");
+  if (saveStatus) {
+    saveStatus.innerHTML = commentCaptureState === "connected"
+      ? '<span class="dot dot-green"></span> コメント自動保存中'
+      : commentCaptureState === "connecting"
+        ? '<span class="dot dot-blue"></span> コメント接続中'
+        : commentCaptureState === "error"
+          ? '<span class="dot" style="background:#ff647d"></span> コメント取得エラー'
+          : '<span class="dot"></span> コメント保存停止中';
+  }
+}
+
 function setConnection(state, label) {
   const badge = byId("connection-badge");
   const text = byId("connection-label");
   badge.classList.remove("online", "busy", "failed");
+  commentCaptureState = ["connected", "connecting", "error"].includes(state) ? state : "disconnected";
   if (state === "connected") {
     badge.classList.add("online");
     text.textContent = "コメント受信中";
@@ -58,6 +122,7 @@ function setConnection(state, label) {
   }
   connectButton.disabled = state === "connecting" || state === "connected";
   disconnectButton.disabled = state !== "connected" && state !== "connecting";
+  updateCaptureIndicators();
 }
 
 function normalizeId(value) {
@@ -210,17 +275,34 @@ async function startVideoRecording() {
   }
 
   recordButton.disabled = true;
+  if (!(connected && currentLiveId === liveId)) setConnection("connecting");
   try {
     const quality = byId("record-quality")?.value || "best";
-    const result = await api.startVideo(liveId, quality);
-    byId("video-file").textContent = "保存先：" + result.path;
-    recordStartedAt = result.startedAt ? new Date(result.startedAt).getTime() : Date.now();
+    const result = await api.startCapture(liveId, quality, {});
+    if (result.comment && result.comment.metadata) updateMetadata(result.comment.metadata);
+    if (result.comment && result.comment.commentFile) {
+      byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
+    }
+    if (result.commentsConnected) {
+      setConnection("connected");
+    } else {
+      setConnection("error");
+    }
+
+    const video = result.video || {};
+    byId("video-file").textContent = "保存先：" + (video.path || "");
+    recordStartedAt = video.startedAt ? new Date(video.startedAt).getTime() : Date.now();
     setVideoState(true);
     startRecordClock();
-    showToast("配信ストリームの直接録画を開始しました。");
+    if (result.commentError) {
+      showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
+    } else {
+      showToast("映像録画とコメント取得を同時に開始しました。");
+    }
   } catch (error) {
     setVideoState(false);
-    showToast(error.message || "直接録画を開始できませんでした。", true);
+    if (!connected) setConnection("error");
+    showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
   }
   processMonitorAutoQueue();
 }
@@ -241,12 +323,14 @@ function clearRecordClock() {
 }
 
 function setVideoState(recording, stopping = false) {
+  videoCaptureState = stopping ? "stopping" : (recording ? "recording" : "idle");
   byId("record-indicator").classList.toggle("recording", recording);
   byId("record-status").textContent = stopping
     ? "録画停止中…"
     : recording ? "録画中（直接取得）" : "録画していません";
   recordButton.disabled = recording || stopping;
   stopRecordButton.disabled = !recording || stopping;
+  updateCaptureIndicators();
 }
 
 async function stopVideoRecording() {
@@ -470,9 +554,42 @@ async function stopMonitor() {
   }
 }
 
+function getCompositionEditorOptions() {
+  const number = (id, fallback, min, max) => {
+    const value = Number(byId(id).value);
+    return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+  };
+  return {
+    fontScale: number("compose-font-scale", 100, 50, 200) / 100,
+    speed: number("compose-speed", 100, 50, 200) / 100,
+    marginPercent: number("compose-position", 7, 4, 25),
+    opacity: number("compose-opacity", 100, 20, 100) / 100,
+    displayMode: byId("compose-display-mode").value,
+    colorMode: byId("compose-color-mode").value,
+    resolution: byId("compose-resolution").value,
+    fps: number("compose-fps", 30, 30, 60),
+    bitrate: number("compose-bitrate", 6000000, 1000000, 20000000),
+    shadow: byId("compose-shadow").checked
+  };
+}
+
+function updateCompositionEditorLabels() {
+  for (const [inputId, outputId, suffix] of [
+    ["compose-font-scale", "compose-font-value", "%"],
+    ["compose-speed", "compose-speed-value", "%"],
+    ["compose-position", "compose-position-value", "%"],
+    ["compose-opacity", "compose-opacity-value", "%"]
+  ]) {
+    const input = byId(inputId);
+    const output = byId(outputId);
+    if (input && output) output.textContent = input.value + suffix;
+  }
+}
+
 function openSettings() {
   byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 60);
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
+  byId("setting-comment-format").value = ["jsonl", "csv", "ass", "all"].includes(monitorSettings.commentFormat) ? monitorSettings.commentFormat : "jsonl";
   byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
   byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
   byId("settings-modal").hidden = false;
@@ -486,6 +603,7 @@ async function saveSettings() {
   const values = {
     intervalSeconds: Number(byId("setting-monitor-interval").value),
     quality: byId("setting-monitor-quality").value,
+    commentFormat: byId("setting-comment-format").value,
     autoRecord: byId("setting-auto-record").checked,
     autoStart: byId("setting-auto-start").checked
   };
@@ -542,18 +660,28 @@ async function processMonitorAutoQueue() {
     byId("live-title").textContent = target.title || "番組情報を取得中…";
     byId("live-meta").textContent = "配信監視から自動録画を開始しています";
 
-    const connectedResult = await api.connectLive(liveId);
-    updateMetadata(connectedResult.metadata);
-    byId("comment-file").textContent = "コメント：" + connectedResult.commentFile;
-    setConnection("connected");
+    setConnection("connecting");
+    const capture = await api.startCapture(liveId, monitorSettings.quality || "best", {
+      displayName: target.displayName || target.name || "",
+      broadcasterId: target.broadcasterId || target.userId || ""
+    });
+    if (capture.comment && capture.comment.metadata) updateMetadata(capture.comment.metadata);
+    if (capture.comment && capture.comment.commentFile) {
+      byId("comment-file").textContent = "コメント：" + capture.comment.commentFile;
+    }
+    setConnection(capture.commentsConnected ? "connected" : "error");
 
-    const result = await api.startVideo(liveId, monitorSettings.quality || "best");
-    byId("video-file").textContent = "保存先：" + result.path;
+    const result = capture.video || {};
+    byId("video-file").textContent = "保存先：" + (result.path || "");
     recordStartedAt = result.startedAt ? new Date(result.startedAt).getTime() : Date.now();
     setVideoState(true);
     startRecordClock();
-    addMonitorActivity(liveId + " の自動録画を開始しました。", "live");
-    showToast("監視対象の録画を自動開始しました：" + liveId);
+    addMonitorActivity(liveId + " の映像・コメント同時取得を開始しました。", "live");
+    if (capture.commentError) {
+      showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + capture.commentError, true);
+    } else {
+      showToast("映像録画とコメント取得を開始しました：" + liveId);
+    }
   } catch (error) {
     setConnection("error");
     await api.retryMonitorTarget({
@@ -672,6 +800,12 @@ api.onEvent(({ channel, payload }) => {
     byId("comment-file").textContent = "コメント：" + payload.path;
   }
   if (channel === "video:state") handleVideoState(payload);
+  if (channel === "capture:state" && payload && payload.commentError) {
+    byId("capture-status-detail").textContent = "映像録画は開始しましたが、コメント取得に失敗しました: " + payload.commentError;
+  }
+  if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
+    addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
+  }
   if (channel === "update:state") renderUpdateState(payload);
   if (channel === "monitor:state") renderMonitorState(payload);
   if (channel === "monitor:target-status") {
