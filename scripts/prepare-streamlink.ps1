@@ -1,10 +1,10 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$version = "8.6.2-1"
-$assetName = "streamlink-8.6.2-1-py314-x86_64.zip"
+$version = "8.6.3-1"
+$assetName = "streamlink-8.6.3-1-py315-x86_64.zip"
 $downloadUrl = "https://github.com/streamlink/windows-builds/releases/download/$version/$assetName"
-$expectedSha256 = "329eb05252a3dbc8d8c5b8b6857b41acf61df4fd818545a8ee322f3740b6caa1"
+$expectedSha256 = "3b1f1470d4b135080a8107ca2917379ca3ff5acadbcdc215568b79eea1450497"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $vendorRoot = Join-Path $repositoryRoot "vendor"
@@ -62,7 +62,6 @@ if ($ffmpegCandidates.Length -eq 0) {
 
 $streamlinkExe = $streamlinkCandidates[0]
 $ffmpegExe = $ffmpegCandidates[0]
-
 $nicoliveCandidates = @(
     Get-ChildItem -Path $runtimeRoot -Filter "nicolive.py" -File -Recurse |
         Where-Object {
@@ -74,22 +73,20 @@ if ($nicoliveCandidates.Count -ne 1) {
     throw ("Expected exactly one Streamlink nicolive.py plugin, found " + $nicoliveCandidates.Count + ".")
 }
 
-$nicolivePlugin = $nicoliveCandidates[0].FullName
 $patchScript = Join-Path $PSScriptRoot "patch-nicolive.cjs"
 if (-not [System.IO.File]::Exists($patchScript)) {
     throw "nicolive.py patch script is missing: $patchScript"
 }
-
 Write-Host "Patching nicolive.py connection timeouts to 30 seconds..."
-& node $patchScript $nicolivePlugin
+& node $patchScript $nicoliveCandidates[0].FullName
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to patch the bundled Streamlink nicolive.py plugin."
 }
 
 Write-Host "Checking Streamlink executable..."
-& $streamlinkExe --version
-if ($LASTEXITCODE -ne 0) {
-    throw "The bundled Streamlink executable failed its version check."
+$streamlinkVersion = (& $streamlinkExe --version | Out-String)
+if ($LASTEXITCODE -ne 0 -or $streamlinkVersion -notmatch "8\.6\.3") {
+    throw "The bundled Streamlink executable failed its 8.6.3 version check."
 }
 
 Write-Host "Checking FFmpeg executable..."
