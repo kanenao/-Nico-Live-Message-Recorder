@@ -655,6 +655,7 @@ async function processMonitorAutoQueue() {
   const target = monitorAutoQueue.shift();
   if (!target || !target.liveId) return;
   monitorAutoProcessing = true;
+  recordButton.disabled = true;
 
   try {
     const liveId = normalizeId(target.liveId);
@@ -702,6 +703,9 @@ async function processMonitorAutoQueue() {
     showToast(error.message || "監視対象の自動録画に失敗しました。", true);
   } finally {
     monitorAutoProcessing = false;
+    if (!recordStartedAt && videoCaptureState !== "recording") {
+      recordButton.disabled = false;
+    }
     if (monitorAutoQueue.length > 0 && !recordButton.disabled) {
       window.setTimeout(processMonitorAutoQueue, 1500);
     }
