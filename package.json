@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "dist:win": "npm run prepare:streamlink && electron-builder --win nsis zip --publish never",
-    "pack": "electron-builder --dir",
+    "pack": "npm run prepare:streamlink && electron-builder --dir",
     "test": "node --test",
     "prepare:streamlink": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-streamlink.ps1"
   },
@@ -33,7 +33,8 @@
       "styles.css",
       "package.json",
       "node_modules/**/*",
-      "composition.js"
+      "composition.js",
+      "THIRD-PARTY-NOTICES.md"
     ],
     "win": {
       "target": [
