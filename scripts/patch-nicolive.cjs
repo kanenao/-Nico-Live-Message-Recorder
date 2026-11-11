@@ -25,9 +25,9 @@ function patchNicoLivePluginSource(source) {
 
     const current = Number(matches[0][2]);
     if (current === 30) continue;
-    if (current !== 6) {
+    if (!Number.isInteger(current) || current < 1 || current > 300) {
       throw new Error(
-        name + " の既定値が想定外です（" + current + "）。安全のため変更を中止しました。"
+        name + " の既定値が安全な範囲外です（" + current + "）。変更を中止しました。"
       );
     }
     patched = patched.replace(pattern, (_match, prefix, _value, suffix) => prefix + "30" + suffix);
