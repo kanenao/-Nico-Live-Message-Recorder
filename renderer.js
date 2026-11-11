@@ -274,6 +274,9 @@ async function startVideoRecording() {
     return;
   }
 
+  if (currentLiveId !== liveId) clearComments();
+  currentLiveId = liveId;
+  liveInput.value = liveId;
   recordButton.disabled = true;
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
   try {
