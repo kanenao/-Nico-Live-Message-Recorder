@@ -11,6 +11,12 @@ const {
 const { generateAssFromRecords } = require("./ass.cjs");
 const { autoUpdater } = require("electron-updater");
 const { normalizeNicoUserId, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
+const {
+  compareReleaseVersions,
+  fetchLatestWindowsRelease,
+  getActiveManagedRuntime,
+  installWindowsPortableRelease
+} = require("./streamlink-update.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -612,6 +618,7 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   autoStart: true,
   quality: "best",
   commentFormat: "jsonl",
+  autoUpdateStreamlink: true,
   targets: []
 });
 
@@ -628,6 +635,7 @@ function getMonitorSettings() {
     autoStart: stored.autoStart !== false,
     quality: stored.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
+    autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
     targets: targets
       .filter((target) => target && /^\d{5,}$/.test(String(target.userId || "")))
       .map((target) => ({
@@ -652,6 +660,7 @@ function saveMonitorSettings(nextSettings) {
     autoStart: candidate.autoStart !== false,
     quality: candidate.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
+    autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
     targets: current.targets
   };
   writeAppSettings({ monitor: normalized });
@@ -915,6 +924,8 @@ ipcMain.handle("monitor:retry-target", (_event, input) => {
 });
 
 function getStreamlinkBundleRoot() {
+  const managedRuntime = getActiveManagedRuntime(app.getPath("userData"));
+  if (managedRuntime) return managedRuntime.root;
   return app.isPackaged
     ? path.join(process.resourcesPath, "streamlink")
     : path.join(__dirname, "..", "vendor", "streamlink");
@@ -922,6 +933,7 @@ function getStreamlinkBundleRoot() {
 
 function getVideoToolStatus() {
   const settings = readAppSettings();
+  const managedRuntime = getActiveManagedRuntime(app.getPath("userData"));
   const bundleRoot = getStreamlinkBundleRoot();
   const bundledStreamlinkPath = findBundledStreamlinkExecutable(bundleRoot);
   const bundledFfmpegPath = findBundledFfmpegExecutable(bundleRoot);
@@ -936,7 +948,8 @@ function getVideoToolStatus() {
     streamlinkAvailable: Boolean(streamlinkPath),
     streamlinkPath,
     streamlinkBundled: Boolean(bundledStreamlinkPath),
-    streamlinkVersion: bundledStreamlinkPath ? "8.6.2" : null,
+    streamlinkVersion: managedRuntime ? managedRuntime.version : (bundledStreamlinkPath ? "8.6.3-1" : null),
+    streamlinkManaged: Boolean(managedRuntime),
     ffmpegAvailable: Boolean(ffmpegPath),
     ffmpegPath,
     ffmpegBundled: Boolean(bundledFfmpegPath)
@@ -1051,6 +1064,84 @@ async function finalizeStreamlinkRecording(exit) {
 }
 
 ipcMain.handle("video:tools-status", async () => getVideoToolStatus());
+
+let streamlinkUpdateCheckPromise = null;
+
+function sendStreamlinkUpdateState(state, details = {}) {
+  send("streamlink:update-state", { state, ...details });
+}
+
+async function installLatestStreamlinkRuntime(releaseInfo) {
+  const info = releaseInfo || await fetchLatestWindowsRelease();
+  const currentVersion = getVideoToolStatus().streamlinkVersion || "0.0.0-0";
+  if (compareReleaseVersions(info.asset.version, currentVersion) <= 0) {
+    sendStreamlinkUpdateState("current", { version: currentVersion });
+    return { updated: false, currentVersion };
+  }
+  const installed = await installWindowsPortableRelease({
+    userDataDirectory: app.getPath("userData"),
+    release: info.release,
+    asset: info.asset,
+    onProgress: (progress) => sendStreamlinkUpdateState(progress.state, progress)
+  });
+  const status = getVideoToolStatus();
+  sendStreamlinkUpdateState("updated", {
+    version: installed.version,
+    path: status.streamlinkPath,
+    message: "Streamlinkを更新しました。次回の録画から新しいバージョンを使用します。"
+  });
+  return { updated: true, version: installed.version, status };
+}
+
+function checkStreamlinkUpdateNow(options = {}) {
+  if (process.platform !== "win32") {
+    const result = { supported: false, message: "Streamlinkの自動更新はWindows版で利用できます。" };
+    sendStreamlinkUpdateState("unsupported", result);
+    return Promise.resolve(result);
+  }
+  if (streamlinkUpdateCheckPromise) return streamlinkUpdateCheckPromise;
+  sendStreamlinkUpdateState("checking");
+  streamlinkUpdateCheckPromise = (async () => {
+    const latest = await fetchLatestWindowsRelease();
+    const currentVersion = getVideoToolStatus().streamlinkVersion || "0.0.0-0";
+    const updateAvailable = compareReleaseVersions(latest.asset.version, currentVersion) > 0;
+    if (!updateAvailable) {
+      sendStreamlinkUpdateState("current", { version: currentVersion });
+      return { supported: true, updateAvailable: false, currentVersion };
+    }
+    sendStreamlinkUpdateState("available", {
+      version: latest.asset.version,
+      currentVersion,
+      message: "Streamlink " + latest.asset.version + " が公開されています。"
+    });
+    if (options.autoInstall && getMonitorSettings().autoUpdateStreamlink !== false) {
+      return {
+        supported: true,
+        updateAvailable: true,
+        ...(await installLatestStreamlinkRuntime(latest))
+      };
+    }
+    return {
+      supported: true,
+      updateAvailable: true,
+      currentVersion,
+      version: latest.asset.version
+    };
+  })().catch((error) => {
+    sendStreamlinkUpdateState("error", {
+      message: error && error.message ? error.message : String(error)
+    });
+    if (options.silent) return { supported: true, error: error.message || String(error) };
+    throw error;
+  }).finally(() => {
+    streamlinkUpdateCheckPromise = null;
+  });
+  return streamlinkUpdateCheckPromise;
+}
+
+ipcMain.handle("streamlink:update-check", () => checkStreamlinkUpdateNow({ autoInstall: false }));
+ipcMain.handle("streamlink:update-install", () => installLatestStreamlinkRuntime());
+
 
 async function startVideoInternal(value, quality, displayName = "", broadcasterId = "") {
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
@@ -1291,6 +1382,95 @@ ipcMain.handle("data:open-folder", async () => {
   return { error: result || "" };
 });
 
+const LIBRARY_VIDEO_EXTENSIONS = new Set([".mp4", ".ts", ".mkv", ".webm", ".mov"]);
+const LIBRARY_COMMENT_EXTENSIONS = new Set([".jsonl", ".csv", ".ass"]);
+
+function listCaptureLibrary() {
+  const root = dataRoot();
+  const items = [];
+  for (const category of [
+    { folder: "videos", type: "video", extensions: LIBRARY_VIDEO_EXTENSIONS },
+    { folder: "comments", type: "comment", extensions: LIBRARY_COMMENT_EXTENSIONS }
+  ]) {
+    const categoryRoot = path.join(root, category.folder);
+    const queue = [categoryRoot];
+    while (queue.length) {
+      const directory = queue.pop();
+      let entries = [];
+      try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch (_) {}
+      for (const entry of entries) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          queue.push(fullPath);
+          continue;
+        }
+        if (!entry.isFile() || !category.extensions.has(path.extname(entry.name).toLowerCase())) continue;
+        try {
+          const stat = fs.statSync(fullPath);
+          const relative = path.relative(root, fullPath);
+          if (relative.startsWith("..") || path.isAbsolute(relative)) continue;
+          const broadcaster = path.basename(path.dirname(fullPath));
+          const liveMatch = entry.name.match(/^(lv\d{5,})/i);
+          items.push({
+            path: fullPath,
+            fileName: entry.name,
+            extension: path.extname(entry.name).slice(1).toUpperCase(),
+            type: category.type,
+            broadcaster,
+            liveId: liveMatch ? liveMatch[1].toLowerCase() : "",
+            sizeBytes: stat.size,
+            modifiedAt: stat.mtime.toISOString()
+          });
+        } catch (_) {
+          // Skip files that disappear while the library is being indexed.
+        }
+      }
+    }
+  }
+  items.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
+  return {
+    root,
+    total: items.length,
+    videoCount: items.filter((item) => item.type === "video").length,
+    commentCount: items.filter((item) => item.type === "comment").length,
+    items: items.slice(0, 5000)
+  };
+}
+
+function resolveLibraryItemPath(value) {
+  const root = path.resolve(dataRoot());
+  const target = path.resolve(String(value || ""));
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("ライブラリ内のファイルを指定してください。");
+  }
+  let realTarget;
+  try {
+    realTarget = fs.realpathSync(target);
+    if (!fs.statSync(realTarget).isFile()) throw new Error("ファイルではありません。");
+  } catch (error) {
+    throw new Error("ファイルが見つかりません: " + error.message);
+  }
+  const realRelative = path.relative(root, realTarget);
+  if (!realRelative || realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
+    throw new Error("保存フォルダー外のファイルは開けません。");
+  }
+  return realTarget;
+}
+
+ipcMain.handle("library:list", () => listCaptureLibrary());
+ipcMain.handle("library:open-item", async (_event, value) => {
+  const target = resolveLibraryItemPath(value);
+  const error = await shell.openPath(target);
+  if (error) throw new Error(error);
+  return { opened: true };
+});
+ipcMain.handle("library:show-item", (_event, value) => {
+  const target = resolveLibraryItemPath(value);
+  shell.showItemInFolder(target);
+  return { shown: true };
+});
+
 ipcMain.handle("comments:export-csv", async () => {
   let source = commentFilePath;
   if (!source || !fs.existsSync(source)) {
@@ -1361,6 +1541,14 @@ ipcMain.handle("comments:export-ass", async () => {
 
 app.whenReady().then(() => {
   makeWindow();
+  if (process.platform === "win32") {
+    setTimeout(() => checkStreamlinkUpdateNow({ autoInstall: true, silent: true }), 12000);
+    const streamlinkUpdateTimer = setInterval(
+      () => checkStreamlinkUpdateNow({ autoInstall: true, silent: true }),
+      24 * 60 * 60 * 1000
+    );
+    if (typeof streamlinkUpdateTimer.unref === "function") streamlinkUpdateTimer.unref();
+  }
   if (configureAutoUpdater()) {
     // Check shortly after startup, then refresh the beta channel every six hours.
     setTimeout(() => checkForUpdatesNow().catch(() => {}), 8000);
