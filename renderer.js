@@ -369,8 +369,10 @@ function renderMonitorTargets() {
       statusLabel.title = status.error;
     } else if (status && status.isLive) {
       statusLabel.classList.add("is-live");
-      statusLabel.textContent = "● 放送中：" + (status.liveId || "");
-      statusLabel.title = status.title || "";
+      statusLabel.textContent = "● 放送中：" + (status.liveId || "") +
+        (status.isFollowerOnly ? " · フォロー限定" : "");
+      statusLabel.title = (status.title || "") +
+        (status.detectionSource ? " / 検知元：" + status.detectionSource : "");
     } else if (status && status.checkedAt) {
       statusLabel.textContent = "待機中";
     } else {
@@ -504,7 +506,9 @@ function handleMonitorLiveDetected(payload) {
   if (!payload || !payload.liveId) return;
   const label = (payload.name || ("ユーザー " + payload.userId)) +
     " の配信開始を検知：" + payload.liveId +
-    (payload.title ? "「" + payload.title + "」" : "");
+    (payload.title ? "「" + payload.title + "」" : "") +
+    (payload.source ? "（" + payload.source + "）" : "") +
+    (payload.isFollowerOnly ? "［フォロー限定］" : "");
   addMonitorActivity(label, "live");
   showToast("配信開始を検知しました：" + payload.liveId);
 
