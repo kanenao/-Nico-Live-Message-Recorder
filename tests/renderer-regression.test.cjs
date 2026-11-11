@@ -92,6 +92,15 @@ test("broadcast connection and direct video/audio recording share one integrated
   assert.match(renderer, /currentLiveId = liveId;\s*liveInput\.value = liveId/);
 });
 
+test("past broadcasts have an explicit timeshift video-only recording mode", () => {
+  assert.match(html, /id="record-mode"/);
+  assert.match(html, /過去配信（タイムシフト映像のみ）/);
+  assert.match(renderer, /api\.startVideo\(liveId, quality, \{ timeshift: true \}\)/);
+  assert.match(renderer, /タイムシフトの映像・音声録画を開始しました/);
+  assert.match(main, /const timeshift = Boolean\(options && options\.timeshift\)/);
+  assert.match(main, /timeshift\s*$/m);
+});
+
 test("videos and comments are organized by broadcaster display name", () => {
   assert.match(main, /function sanitizeFolderSegment/);
   assert.match(main, /function broadcasterFolderName/);
