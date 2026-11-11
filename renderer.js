@@ -296,6 +296,95 @@ async function refreshVideoTools() {
   }
 }
 
+
+function formatUpdateBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function renderUpdateState(payload) {
+  if (!payload) return;
+  const panel = byId("update-panel");
+  const status = byId("update-status");
+  const progress = byId("update-progress");
+  const installButton = byId("install-update-button");
+  const checkButton = byId("check-update-button");
+  panel.hidden = false;
+  progress.hidden = true;
+  installButton.hidden = true;
+  checkButton.disabled = false;
+
+  const version = payload.version ? "v" + payload.version : "";
+  switch (payload.state) {
+    case "checking":
+      status.textContent = "GitHubで新しいバージョンを確認しています…";
+      checkButton.disabled = true;
+      break;
+    case "available":
+      status.textContent = version + " が見つかりました。バックグラウンドでダウンロードしています…";
+      break;
+    case "progress": {
+      const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
+      progress.hidden = false;
+      progress.value = percent;
+      const total = payload.total ? "（" + formatUpdateBytes(payload.transferred) + " / " + formatUpdateBytes(payload.total) + "）" : "";
+      status.textContent = "更新をダウンロード中… " + percent.toFixed(1) + "% " + total;
+      break;
+    }
+    case "downloaded":
+      status.textContent = version + " のダウンロードが完了しました。再起動して更新できます。";
+      progress.hidden = false;
+      progress.value = 100;
+      installButton.hidden = false;
+      break;
+    case "not-available":
+      status.textContent = "最新バージョンです" + (version ? "（" + version + "）" : "。");
+      break;
+    case "unsupported":
+      status.textContent = "自動アップデートはWindowsのインストーラー版で利用できます。";
+      break;
+    case "error":
+      status.textContent = "更新を確認できませんでした: " + (payload.message || "通信エラー");
+      break;
+    default:
+      status.textContent = "更新状態を確認できません。";
+  }
+}
+
+async function checkAppUpdates() {
+  const checkButton = byId("check-update-button");
+  checkButton.disabled = true;
+  renderUpdateState({ state: "checking" });
+  try {
+    const result = await api.checkForUpdates();
+    if (result && result.supported === false) {
+      renderUpdateState({ state: "unsupported" });
+    }
+  } catch (error) {
+    renderUpdateState({
+      state: "error",
+      message: error && error.message ? error.message : "通信エラー"
+    });
+    showToast(error.message || "アップデートを確認できませんでした。", true);
+  } finally {
+    if (!byId("install-update-button").hidden) return;
+    checkButton.disabled = false;
+  }
+}
+
+async function installAppUpdate() {
+  const button = byId("install-update-button");
+  button.disabled = true;
+  try {
+    byId("update-status").textContent = "録画とコメントログを安全に保存してから更新します…";
+    await api.installUpdate();
+  } catch (error) {
+    button.disabled = false;
+    showToast(error.message || "更新をインストールできませんでした。", true);
+  }
+}
+
 api.onEvent(({ channel, payload }) => {
   if (channel === "live:event") renderEvent(payload);
   if (channel === "live:metadata") updateMetadata(payload);
@@ -307,6 +396,7 @@ api.onEvent(({ channel, payload }) => {
     byId("comment-file").textContent = "コメント：" + payload.path;
   }
   if (channel === "video:state") handleVideoState(payload);
+  if (channel === "update:state") renderUpdateState(payload);
   if (channel === "auth:status") refreshAuthStatus();
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
 });
@@ -315,6 +405,8 @@ connectButton.addEventListener("click", connectLive);
 disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 stopRecordButton.addEventListener("click", stopVideoRecording);
+byId("check-update-button").addEventListener("click", checkAppUpdates);
+byId("install-update-button").addEventListener("click", installAppUpdate);
 
 byId("open-watch-button").addEventListener("click", async () => {
   const liveId = normalizeId(liveInput.value);
