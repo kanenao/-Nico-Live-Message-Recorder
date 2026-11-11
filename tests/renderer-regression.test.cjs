@@ -68,8 +68,21 @@ test("monitor prefers the authenticated follow-list API and retains public-histo
 });
 
 
-test("one button starts video and comments together", () => {
-  assert.match(html, /録画＋コメント同時開始/);
+test("broadcast connection and direct video/audio recording share one integrated panel", () => {
+  const panelStart = html.indexOf('<section class="panel session-panel">');
+  const panelEnd = html.indexOf("</section>", panelStart);
+  assert.ok(panelStart >= 0 && panelEnd > panelStart, "integrated session panel must exist");
+  const panel = html.slice(panelStart, panelEnd);
+  for (const id of [
+    "live-id", "open-watch-button", "record-button", "connect-button",
+    "disconnect-button", "stop-record-button", "record-quality",
+    "streamlink-status", "ffmpeg-status", "comment-file", "video-file"
+  ]) {
+    assert.ok(panel.includes('id="' + id + '"'), "missing integrated control: " + id);
+  }
+  assert.match(panel, /接続して映像・音声＋コメントを録画/);
+  assert.match(panel, /コメントのみ接続/);
+  assert.match(panel, /コメント切断/);
   assert.match(preload, /startCapture:.*ipcRenderer\.invoke\("capture:start"/);
   assert.match(main, /ipcMain\.handle\("capture:start"/);
   assert.match(main, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
