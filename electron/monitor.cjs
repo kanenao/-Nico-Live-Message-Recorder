@@ -237,7 +237,7 @@ async function fetchNicoUserName(userId, options = {}) {
         if (!match) return "";
         return decodeHtmlText(match[1])
           .replace(/さんのプロフィール.*$/u, "")
-          .replace(/\\s*[-|｜].*ニコニコ.*$/u, "")
+          .replace(/\s*[-|｜].*ニコニコ.*$/u, "")
           .trim();
       }
     }
