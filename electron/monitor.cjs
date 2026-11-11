@@ -43,8 +43,9 @@ function normalizeProgram(entry) {
     providerName: String((program.provider && program.provider.name) || (program.programProvider && program.programProvider.name) || entry.providerName || ""),
     status,
     isLive,
-    beginTime: schedule.beginTime || schedule.begin || program.beginTime || null,
-    endTime: schedule.endTime || schedule.end || program.endTime || null
+    beginTime: schedule.beginTime || schedule.begin || program.beginTime || program.beginAt || entry.beginTime || entry.beginAt || null,
+    endTime: schedule.endTime || schedule.end || program.endTime || program.endAt || entry.endTime || entry.endAt || null,
+    isFollowerOnly: program.isFollowerOnly === true || entry.isFollowerOnly === true
   };
 }
 
