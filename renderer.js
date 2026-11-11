@@ -542,7 +542,8 @@ function createCommentOverlaySchedule(comments, context, width, height) {
 }
 
 function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, width, height) {
-  context.clearRect(0, 0, width, height);
+  // The base video frame has already been drawn to this canvas. Do not clear it:
+  // clearing here used to erase the video and leave only a black background + comments.
   for (const comment of activeComments) {
     if (videoTimeMs < comment.startMs || videoTimeMs > comment.endMs) continue;
     const elapsed = videoTimeMs - comment.startMs;
