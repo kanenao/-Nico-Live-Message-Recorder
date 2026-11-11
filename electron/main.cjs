@@ -1071,26 +1071,34 @@ function sendStreamlinkUpdateState(state, details = {}) {
   send("streamlink:update-state", { state, ...details });
 }
 
-async function installLatestStreamlinkRuntime(releaseInfo) {
-  const info = releaseInfo || await fetchLatestWindowsRelease();
-  const currentVersion = getVideoToolStatus().streamlinkVersion || "0.0.0-0";
-  if (compareReleaseVersions(info.asset.version, currentVersion) <= 0) {
-    sendStreamlinkUpdateState("current", { version: currentVersion });
-    return { updated: false, currentVersion };
-  }
-  const installed = await installWindowsPortableRelease({
-    userDataDirectory: app.getPath("userData"),
-    release: info.release,
-    asset: info.asset,
-    onProgress: (progress) => sendStreamlinkUpdateState(progress.state, progress)
+let streamlinkUpdateInstallPromise = null;
+
+function installLatestStreamlinkRuntime(releaseInfo) {
+  if (streamlinkUpdateInstallPromise) return streamlinkUpdateInstallPromise;
+  streamlinkUpdateInstallPromise = (async () => {
+    const info = releaseInfo || await fetchLatestWindowsRelease();
+    const currentVersion = getVideoToolStatus().streamlinkVersion || "0.0.0-0";
+    if (compareReleaseVersions(info.asset.version, currentVersion) <= 0) {
+      sendStreamlinkUpdateState("current", { version: currentVersion });
+      return { updated: false, currentVersion };
+    }
+    const installed = await installWindowsPortableRelease({
+      userDataDirectory: app.getPath("userData"),
+      release: info.release,
+      asset: info.asset,
+      onProgress: (progress) => sendStreamlinkUpdateState(progress.state, progress)
+    });
+    const status = getVideoToolStatus();
+    sendStreamlinkUpdateState("updated", {
+      version: installed.version,
+      path: status.streamlinkPath,
+      message: "Streamlinkを更新しました。次回の録画から新しいバージョンを使用します。"
+    });
+    return { updated: true, version: installed.version, status };
+  })().finally(() => {
+    streamlinkUpdateInstallPromise = null;
   });
-  const status = getVideoToolStatus();
-  sendStreamlinkUpdateState("updated", {
-    version: installed.version,
-    path: status.streamlinkPath,
-    message: "Streamlinkを更新しました。次回の録画から新しいバージョンを使用します。"
-  });
-  return { updated: true, version: installed.version, status };
+  return streamlinkUpdateInstallPromise;
 }
 
 function checkStreamlinkUpdateNow(options = {}) {
@@ -1542,9 +1550,13 @@ ipcMain.handle("comments:export-ass", async () => {
 app.whenReady().then(() => {
   makeWindow();
   if (process.platform === "win32") {
-    setTimeout(() => checkStreamlinkUpdateNow({ autoInstall: true, silent: true }), 12000);
+    const runAutomaticStreamlinkUpdate = () => {
+      if (getMonitorSettings().autoUpdateStreamlink === false) return;
+      checkStreamlinkUpdateNow({ autoInstall: true, silent: true });
+    };
+    setTimeout(runAutomaticStreamlinkUpdate, 12000);
     const streamlinkUpdateTimer = setInterval(
-      () => checkStreamlinkUpdateNow({ autoInstall: true, silent: true }),
+      runAutomaticStreamlinkUpdate,
       24 * 60 * 60 * 1000
     );
     if (typeof streamlinkUpdateTimer.unref === "function") streamlinkUpdateTimer.unref();
