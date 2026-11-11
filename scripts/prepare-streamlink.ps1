@@ -65,31 +65,21 @@ $ffmpegExe = $ffmpegCandidates[0]
 
 $nicoliveCandidates = @(
     Get-ChildItem -Path $runtimeRoot -Filter "nicolive.py" -File -Recurse |
-        Where-Object { $_.FullName -match '[\\/]streamlink[\\/]plugins[\\/]nicolive\.py
-Write-Host "Checking Streamlink executable..."
-& $streamlinkExe --version
-if ($LASTEXITCODE -ne 0) {
-    throw "The bundled Streamlink executable failed its version check."
-}
-
-Write-Host "Checking FFmpeg executable..."
-& $ffmpegExe -version | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "The bundled FFmpeg executable failed its version check."
-}
-
-if ([System.IO.File]::Exists($archivePath)) { [System.IO.File]::Delete($archivePath) }
-Write-Host "Streamlink $version, patched nicolive.py, and FFmpeg are ready in $runtimeRoot"
- }
+        Where-Object {
+            $_.Directory.Name -ieq "plugins" -and
+            $_.Directory.Parent.Name -ieq "streamlink"
+        }
 )
 if ($nicoliveCandidates.Count -ne 1) {
-    throw "Expected exactly one Streamlink nicolive.py plugin, found $($nicoliveCandidates.Count)."
+    throw ("Expected exactly one Streamlink nicolive.py plugin, found " + $nicoliveCandidates.Count + ".")
 }
+
 $nicolivePlugin = $nicoliveCandidates[0].FullName
 $patchScript = Join-Path $PSScriptRoot "patch-nicolive.cjs"
 if (-not [System.IO.File]::Exists($patchScript)) {
     throw "nicolive.py patch script is missing: $patchScript"
 }
+
 Write-Host "Patching nicolive.py connection timeouts to 30 seconds..."
 & node $patchScript $nicolivePlugin
 if ($LASTEXITCODE -ne 0) {
@@ -109,4 +99,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ([System.IO.File]::Exists($archivePath)) { [System.IO.File]::Delete($archivePath) }
-Write-Host "Streamlink $version and FFmpeg are ready in $runtimeRoot"
+Write-Host "Streamlink $version, patched nicolive.py, and FFmpeg are ready in $runtimeRoot"
