@@ -198,8 +198,8 @@ async function fetchFollowingOnAirPrograms(cookieHeader, options = {}) {
 
 function decodeHtmlText(value) {
   return String(value || "")
-    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([\\da-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
