@@ -117,6 +117,31 @@ test("comment output format and separate capture indicators are selectable", () 
   assert.match(renderer, /commentCaptureState = \["connected", "connecting", "error"\]/);
 });
 
+test("recording library and Streamlink runtime updater controls are exposed", () => {
+  for (const id of [
+    "dashboard-nav-button", "open-folder-button", "library-panel", "library-search",
+    "library-filter", "library-list", "library-refresh-button", "library-open-folder-button",
+    "library-total", "library-video-count", "library-comment-count",
+    "streamlink-update-status", "streamlink-update-check-button",
+    "streamlink-update-install-button", "setting-auto-update-streamlink"
+  ]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing library or updater UI: " + id);
+  }
+  assert.match(preload, /getCaptureLibrary:.*ipcRenderer\.invoke\("library:list"/);
+  assert.match(preload, /openLibraryItem:.*ipcRenderer\.invoke\("library:open-item"/);
+  assert.match(preload, /showLibraryItem:.*ipcRenderer\.invoke\("library:show-item"/);
+  assert.match(preload, /checkStreamlinkUpdate:.*ipcRenderer\.invoke\("streamlink:update-check"/);
+  assert.match(main, /ipcMain\.handle\("library:list"/);
+  assert.match(main, /function listCaptureLibrary\(/);
+  assert.match(main, /function resolveLibraryItemPath\(/);
+  assert.match(main, /ipcMain\.handle\("streamlink:update-check"/);
+  assert.match(main, /checkStreamlinkUpdateNow\(\{ autoInstall: true, silent: true \}\)/);
+  assert.match(main, /24 \* 60 \* 60 \* 1000/);
+  assert.match(renderer, /function setLibraryView\(/);
+  assert.match(renderer, /function renderCaptureLibrary\(/);
+  assert.match(renderer, /function renderStreamlinkUpdateState\(/);
+});
+
 test("comment video composer exposes timing, layout, appearance and quality controls", () => {
   for (const id of [
     "compose-font-scale", "compose-speed", "compose-offset", "compose-position",
