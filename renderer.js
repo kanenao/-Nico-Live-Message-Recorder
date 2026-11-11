@@ -509,6 +509,10 @@ function handleMonitorLiveDetected(payload) {
   showToast("配信開始を検知しました：" + payload.liveId);
 
   if (!monitorSettings.autoRecord) return;
+  if (
+    payload.liveId === currentLiveId &&
+    (recordStartedAt || recordButton.disabled || monitorAutoProcessing)
+  ) return;
   if (monitorAutoQueue.some((item) => item.liveId === payload.liveId)) return;
   monitorAutoQueue.push(payload);
   processMonitorAutoQueue();
