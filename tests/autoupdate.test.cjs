@@ -29,8 +29,16 @@ test("auto-update is enabled only for the registered NSIS install location", () 
   const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
   assert.match(installerScript, /WriteRegStr HKCU .*InstallLocation/);
   assert.match(installerScript, /DeleteRegKey HKCU/);
-  assert.match(mainProcess, /function isNsisInstalled\\(\\)/);
-  assert.match(mainProcess, /return isNsisInstalled\\(\\)/);
+  assert.ok(mainProcess.includes("function isNsisInstalled()"));
+  assert.ok(mainProcess.includes("return isNsisInstalled()"));
+});
+
+test("main and renderer JavaScript files pass Node syntax checks", () => {
+  const { execFileSync } = require("node:child_process");
+  for (const file of ["electron/main.cjs", "electron/preload.cjs", "renderer.js"]) {
+    const sourcePath = path.join(__dirname, "..", file);
+    execFileSync(process.execPath, ["--check", sourcePath], { stdio: "pipe" });
+  }
 });
 
 test("release workflow is tag-triggered and can be run manually", () => {
