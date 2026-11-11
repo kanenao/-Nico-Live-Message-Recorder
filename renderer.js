@@ -369,9 +369,6 @@ async function checkAppUpdates() {
       message: error && error.message ? error.message : "通信エラー"
     });
     showToast(error.message || "アップデートを確認できませんでした。", true);
-  } finally {
-    if (!byId("install-update-button").hidden) return;
-    checkButton.disabled = false;
   }
 }
 
