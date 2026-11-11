@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.18</span>
+        <span class="version" id="version">v0.1.0-beta.19</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -34,7 +34,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.18</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.19</span></div>
         </div>
       </aside>
 
@@ -46,6 +46,35 @@
             <p>放送に接続するだけで、配信データの直接録画とコメント保存を一つの画面から操作できます。</p>
           </div>
           <div class="live-badge" id="connection-badge"><span class="pulse"></span><span id="connection-label">未接続</span></div>
+        </section>
+
+        <section class="dashboard-stats" id="dashboard-stats" aria-label="配信状況">
+          <article class="dashboard-stat-card">
+            <span>登録配信者</span><strong id="dashboard-target-count">00</strong><small>監視リスト</small>
+          </article>
+          <article class="dashboard-stat-card dashboard-stat-live">
+            <span>LIVE配信</span><strong id="dashboard-live-count">00</strong><small>現在配信中</small>
+          </article>
+          <article class="dashboard-stat-card">
+            <span>録画中</span><strong id="dashboard-recording-count">00</strong><small>映像ストリーム</small>
+          </article>
+          <article class="dashboard-stat-card">
+            <span>配信者監視</span><strong id="dashboard-monitor-status">停止中</strong><small>自動チェック</small>
+          </article>
+        </section>
+
+        <section class="panel live-broadcast-panel" id="live-broadcast-panel">
+          <div class="panel-heading live-broadcast-heading">
+            <div>
+              <div class="eyebrow">LIVE NOW / FOLLOWED BROADCASTERS</div>
+              <h2>登録配信者のLIVE配信</h2>
+              <p class="session-description">配信者名・配信タイトル・開始時刻・経過時間・放送IDをリアルタイムに表示します。</p>
+            </div>
+            <span class="live-broadcast-count"><strong id="live-broadcast-count">0</strong> 件</span>
+          </div>
+          <div class="live-broadcast-list" id="live-broadcast-list">
+            <div class="live-broadcast-empty">監視を開始すると、登録した配信者のLIVE情報がここに表示されます。</div>
+          </div>
         </section>
 
         <section class="panel library-panel" id="library-panel" hidden>
@@ -153,6 +182,12 @@
                 <input id="live-id" type="text" placeholder="例：lv123456789 または視聴URL" autocomplete="off">
                 <button class="button button-quiet" id="open-watch-button" type="button">視聴ページ</button>
               </div>
+              <div class="live-preview-control-row">
+                <button class="button button-quiet button-small" id="live-preview-open-button" type="button">映像プレビューを開く</button>
+                <button class="button button-outline button-small" id="live-preview-close-button" type="button" disabled>閉じる</button>
+                <span id="live-preview-status" aria-live="polite">見たいときだけ別ウィンドウで映像プレビューを開けます。</span>
+              </div>
+              <p class="hint">プレビューは視聴ページを別ウィンドウで表示します。見ないときは「閉じる」でプレビューだけ終了でき、録画は継続します。</p>
               <label class="record-mode-field" for="record-mode">
                 <span>録画対象</span>
                 <select id="record-mode">
@@ -361,7 +396,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.18</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.19</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
