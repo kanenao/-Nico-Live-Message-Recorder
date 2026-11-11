@@ -323,11 +323,13 @@ function renderUpdateState(payload) {
       break;
     case "available":
       status.textContent = version + " が見つかりました。バックグラウンドでダウンロードしています…";
+      checkButton.disabled = true;
       break;
     case "progress": {
       const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
       progress.hidden = false;
       progress.value = percent;
+      checkButton.disabled = true;
       const total = payload.total ? "（" + formatUpdateBytes(payload.transferred) + " / " + formatUpdateBytes(payload.total) + "）" : "";
       status.textContent = "更新をダウンロード中… " + percent.toFixed(1) + "% " + total;
       break;
