@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("nicoAPI", {
   getVersion: () => ipcRenderer.invoke("app:version"),
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  installUpdate: () => ipcRenderer.invoke("updates:install"),
   openLogin: () => ipcRenderer.invoke("auth:open-login"),
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
   openWatch: (liveId) => ipcRenderer.invoke("live:open-watch", liveId),
