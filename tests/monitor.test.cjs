@@ -3,7 +3,8 @@ const assert = require("node:assert/strict");
 const {
   normalizeNicoUserId,
   extractUserBroadcasts,
-  fetchUserBroadcastStatus
+  fetchUserBroadcastStatus,
+  fetchFollowingOnAirPrograms
 } = require("../electron/monitor.cjs");
 
 test("normalizes a numeric user id and public user page URL", () => {
@@ -132,4 +133,79 @@ test("reports the last HTTP failure when both history endpoints fail", async () 
     }),
     /HTTP 503/
   );
+});
+
+
+test("fetches on-air programs from the authenticated follow list", async () => {
+  let requestedUrl;
+  let requestedInit;
+  const programs = await fetchFollowingOnAirPrograms("user_session=secret", {
+    fetchImpl: async (url, init) => {
+      requestedUrl = new URL(url);
+      requestedInit = init;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            programs: [
+              {
+                id: "lv123456789",
+                title: "フォロー限定配信",
+                programProvider: { id: 48495285, name: "配信者" },
+                socialGroup: { id: "co123", name: "コミュニティ" },
+                beginAt: 1794400000000,
+                isFollowerOnly: true
+              },
+              { title: "IDがない項目" },
+              null
+            ]
+          }
+        })
+      };
+    }
+  });
+
+  assert.equal(requestedUrl.pathname, "/front/api/pages/follow/v1/programs");
+  assert.equal(requestedUrl.searchParams.get("status"), "onair");
+  assert.equal(requestedInit.headers.cookie, "user_session=secret");
+  assert.equal(programs.length, 1);
+  assert.equal(programs[0].liveId, "lv123456789");
+  assert.equal(programs[0].providerId, "48495285");
+  assert.equal(programs[0].isFollowerOnly, true);
+  assert.equal(programs[0].title, "フォロー限定配信");
+});
+
+test("follow-list API authentication failures are distinguishable", async () => {
+  for (const status of [401, 403, 302]) {
+    await assert.rejects(
+      fetchFollowingOnAirPrograms("user_session=secret", {
+        fetchImpl: async () => ({ ok: false, status })
+      }),
+      (error) => error.name === "NotAuthenticatedError"
+    );
+  }
+});
+
+test("follow-list API failures can be handled without hiding public-history fallback", async () => {
+  await assert.rejects(
+    fetchFollowingOnAirPrograms("user_session=secret", {
+      fetchImpl: async () => ({ ok: false, status: 503 })
+    }),
+    /HTTP 503/
+  );
+  const result = await fetchUserBroadcastStatus("48495285", {
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          programsList: [{
+            id: { value: "lv123456789" },
+            program: { title: "公開配信", schedule: { status: "ON_AIR" } }
+          }]
+        }
+      })
+    })
+  });
+  assert.equal(result.isLive, true);
 });
