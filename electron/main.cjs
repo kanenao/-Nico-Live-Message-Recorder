@@ -652,7 +652,7 @@ async function resolveMonitorUserName(target, followedProgram, latestProgram) {
   }
 
   if (!resolvedName) resolvedName = "ユーザー " + target.userId;
-  if (resolvedName && resolvedName !== target.name && !/^ユーザー \\d+$/.test(resolvedName)) {
+  if (resolvedName && resolvedName !== target.name && !/^ユーザー \d+$/.test(resolvedName)) {
     const updated = getMonitorSettings();
     const match = updated.targets.find((item) => item.userId === target.userId);
     if (match) {
