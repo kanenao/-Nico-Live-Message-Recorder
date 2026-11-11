@@ -1102,9 +1102,20 @@ ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => 
 
   if (video.status === "rejected") {
     const message = video.reason && video.reason.message ? video.reason.message : String(video.reason);
+    // If this one-click operation opened a new comment session but video could
+    // not start, do not leave a comment-only session running unexpectedly.
+    if (!reuseComments && comments.status === "fulfilled") {
+      if (provider) {
+        try { provider.disconnect(); } catch (_) {}
+        provider = null;
+      }
+      await closeCommentWriter();
+      currentLiveId = "";
+      send("live:state", { state: "disconnected" });
+    }
     send("capture:state", {
       liveId,
-      commentsConnected: comments.status === "fulfilled",
+      commentsConnected: reuseComments && comments.status === "fulfilled",
       recording: false,
       commentError: comments.status === "rejected"
         ? String(comments.reason && comments.reason.message || comments.reason) : "",
