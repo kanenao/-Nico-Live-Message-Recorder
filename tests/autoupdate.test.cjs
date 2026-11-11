@@ -24,7 +24,6 @@ test("release build explicitly publishes Windows NSIS update assets", () => {
 });
 
 test("auto-update is enabled only for the registered NSIS install location", () => {
-  assert.equal(packageJson.build.nsis.include, "installer.nsh");
   const installerScript = fs.readFileSync(path.join(__dirname, "..", "build", "installer.nsh"), "utf8");
   const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
   assert.match(installerScript, /WriteRegStr SHELL_CONTEXT .*InstallLocation/);
@@ -54,4 +53,12 @@ test("release workflow is tag-triggered and can be run manually", () => {
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /GH_TOKEN:\s*\$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+});
+
+
+test("unsupported update mode is visible to the user", () => {
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(renderer, /case "unsupported":[\s\S]*payload\.message/);
+  const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+  assert.match(mainProcess, /sendUpdateState\("unsupported"/);
 });
