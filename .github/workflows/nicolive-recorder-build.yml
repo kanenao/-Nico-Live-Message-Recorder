@@ -33,6 +33,10 @@ on:
       - ".github/workflows/nicolive-recorder-build.yml"
   workflow_dispatch:
 
+concurrency:
+  group: nicolive-recorder-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
