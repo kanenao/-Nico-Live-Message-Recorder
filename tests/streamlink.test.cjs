@@ -1,10 +1,10 @@
 const test = require("node:test");
-const { patchNicoLivePluginSource } = require("../scripts/patch-nicolive.cjs");
-const preparationScript = fs.readFileSync(path.join(__dirname, "..", "scripts", "prepare-streamlink.ps1"), "utf8");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { patchNicoLivePluginSource } = require("../scripts/patch-nicolive.cjs");
+const preparationScript = fs.readFileSync(path.join(__dirname, "..", "scripts", "prepare-streamlink.ps1"), "utf8");
 const {
   normalizeLiveId,
   normalizeQuality,
