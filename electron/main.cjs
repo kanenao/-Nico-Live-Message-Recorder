@@ -10,6 +10,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { autoUpdater } = require("electron-updater");
+const { normalizeNicoUserId, fetchUserBroadcastStatus } = require("./monitor.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -36,6 +37,11 @@ let shutdownPromise = null;
 let shutdownComplete = false;
 let updateCheckPromise = null;
 let downloadedUpdateInfo = null;
+let monitorTimer = null;
+let monitorRunning = false;
+let monitorChecking = false;
+let monitorLastCheckAt = null;
+const monitorTargetStatuses = new Map();
 
 function dataRoot() {
   const root = path.join(app.getPath("videos"), "NicoLiveRecorder");
@@ -409,6 +415,208 @@ function writeAppSettings(patch) {
   return next;
 }
 
+
+const DEFAULT_MONITOR_SETTINGS = Object.freeze({
+  intervalSeconds: 60,
+  autoRecord: true,
+  autoStart: true,
+  quality: "best",
+  targets: []
+});
+
+function getMonitorSettings() {
+  const stored = readAppSettings().monitor || {};
+  const targets = Array.isArray(stored.targets) ? stored.targets : [];
+  return {
+    ...DEFAULT_MONITOR_SETTINGS,
+    ...stored,
+    intervalSeconds: [30, 60, 120, 300].includes(Number(stored.intervalSeconds))
+      ? Number(stored.intervalSeconds)
+      : DEFAULT_MONITOR_SETTINGS.intervalSeconds,
+    autoRecord: stored.autoRecord !== false,
+    autoStart: stored.autoStart !== false,
+    quality: stored.quality === "worst" ? "worst" : "best",
+    targets: targets
+      .filter((target) => target && /^\\d{5,}$/.test(String(target.userId || "")))
+      .map((target) => ({
+        userId: String(target.userId),
+        name: String(target.name || "").slice(0, 80),
+        enabled: target.enabled !== false,
+        lastProgramId: String(target.lastProgramId || "")
+      }))
+  };
+}
+
+function saveMonitorSettings(nextSettings) {
+  const current = getMonitorSettings();
+  const candidate = { ...current, ...(nextSettings || {}) };
+  const intervalSeconds = Number(candidate.intervalSeconds);
+  if (![30, 60, 120, 300].includes(intervalSeconds)) {
+    throw new Error("監視間隔は30秒・1分・2分・5分から選択してください。");
+  }
+  const normalized = {
+    intervalSeconds,
+    autoRecord: candidate.autoRecord !== false,
+    autoStart: candidate.autoStart !== false,
+    quality: candidate.quality === "worst" ? "worst" : "best",
+    targets: current.targets
+  };
+  writeAppSettings({ monitor: normalized });
+  if (monitorRunning) restartMonitorTimer();
+  return getMonitorState();
+}
+
+function getMonitorState() {
+  return {
+    running: monitorRunning,
+    checking: monitorChecking,
+    lastCheckAt: monitorLastCheckAt,
+    settings: getMonitorSettings(),
+    statuses: Object.fromEntries(monitorTargetStatuses.entries())
+  };
+}
+
+function sendMonitorState(state, details = {}) {
+  send("monitor:state", { running: monitorRunning, state, ...details });
+}
+
+async function checkMonitoredUsers() {
+  if (!monitorRunning || monitorChecking) return;
+  monitorChecking = true;
+  monitorLastCheckAt = new Date().toISOString();
+  sendMonitorState("checking", { checkedAt: monitorLastCheckAt });
+
+  try {
+    const config = getMonitorSettings();
+    for (const target of config.targets.filter((item) => item.enabled)) {
+      if (!monitorRunning) break;
+      try {
+        const result = await fetchUserBroadcastStatus(target.userId);
+        const live = result.live;
+        const status = {
+          userId: target.userId,
+          name: target.name,
+          isLive: Boolean(live),
+          liveId: live ? live.liveId : "",
+          title: live ? live.title : (result.latest ? result.latest.title : ""),
+          programStatus: live ? live.status : (result.latest ? result.latest.status : ""),
+          checkedAt: result.checkedAt,
+          error: ""
+        };
+        monitorTargetStatuses.set(target.userId, status);
+        send("monitor:target-status", status);
+
+        if (live && target.lastProgramId !== live.liveId) {
+          const updated = getMonitorSettings();
+          const match = updated.targets.find((item) => item.userId === target.userId);
+          if (match) {
+            match.lastProgramId = live.liveId;
+            writeAppSettings({ monitor: updated });
+          }
+          send("monitor:live-detected", {
+            userId: target.userId,
+            name: target.name,
+            liveId: live.liveId,
+            title: live.title,
+            detectedAt: result.checkedAt
+          });
+        }
+      } catch (error) {
+        const status = {
+          userId: target.userId,
+          name: target.name,
+          isLive: false,
+          liveId: "",
+          title: "",
+          checkedAt: new Date().toISOString(),
+          error: error && error.message ? error.message : String(error)
+        };
+        monitorTargetStatuses.set(target.userId, status);
+        send("monitor:target-status", status);
+        send("monitor:error", status);
+      }
+    }
+  } finally {
+    monitorChecking = false;
+    if (monitorRunning) {
+      monitorLastCheckAt = new Date().toISOString();
+      sendMonitorState("idle", { checkedAt: monitorLastCheckAt });
+    }
+  }
+}
+
+function restartMonitorTimer() {
+  if (monitorTimer) clearInterval(monitorTimer);
+  monitorTimer = null;
+  if (!monitorRunning) return;
+  const intervalMs = getMonitorSettings().intervalSeconds * 1000;
+  monitorTimer = setInterval(() => {
+    checkMonitoredUsers().catch((error) => {
+      sendMonitorState("error", {
+        message: error && error.message ? error.message : String(error)
+      });
+    });
+  }, intervalMs);
+  if (typeof monitorTimer.unref === "function") monitorTimer.unref();
+}
+
+function startMonitor() {
+  const config = getMonitorSettings();
+  if (!config.targets.some((target) => target.enabled)) {
+    throw new Error("監視するユーザーを先に登録してください。");
+  }
+  monitorRunning = true;
+  restartMonitorTimer();
+  sendMonitorState("running", { checkedAt: monitorLastCheckAt });
+  checkMonitoredUsers().catch((error) => {
+    sendMonitorState("error", {
+      message: error && error.message ? error.message : String(error)
+    });
+  });
+  return getMonitorState();
+}
+
+function stopMonitor() {
+  monitorRunning = false;
+  if (monitorTimer) clearInterval(monitorTimer);
+  monitorTimer = null;
+  sendMonitorState("stopped");
+  return getMonitorState();
+}
+
+ipcMain.handle("monitor:get-state", () => getMonitorState());
+
+ipcMain.handle("monitor:save-settings", (_event, values) => saveMonitorSettings(values));
+
+ipcMain.handle("monitor:add-target", (_event, input) => {
+  const userId = normalizeNicoUserId(input && input.userId);
+  const config = getMonitorSettings();
+  const existing = config.targets.find((target) => target.userId === userId);
+  if (existing) throw new Error("このユーザーはすでに監視リストに登録されています。");
+  config.targets.push({
+    userId,
+    name: String(input && input.name || "").trim().slice(0, 80),
+    enabled: true,
+    lastProgramId: ""
+  });
+  writeAppSettings({ monitor: config });
+  sendMonitorState(monitorRunning ? "running" : "stopped", { settings: getMonitorSettings() });
+  return getMonitorState();
+});
+
+ipcMain.handle("monitor:remove-target", (_event, rawUserId) => {
+  const userId = normalizeNicoUserId(rawUserId);
+  const config = getMonitorSettings();
+  config.targets = config.targets.filter((target) => target.userId !== userId);
+  writeAppSettings({ monitor: config });
+  monitorTargetStatuses.delete(userId);
+  sendMonitorState(monitorRunning ? "running" : "stopped", { settings: getMonitorSettings() });
+  return getMonitorState();
+});
+
+ipcMain.handle("monitor:start", () => startMonitor());
+ipcMain.handle("monitor:stop", () => stopMonitor());
+
 function getStreamlinkBundleRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "streamlink")
@@ -770,6 +978,14 @@ app.whenReady().then(() => {
     setTimeout(() => checkForUpdatesNow().catch(() => {}), 8000);
     const updateTimer = setInterval(() => checkForUpdatesNow().catch(() => {}), 6 * 60 * 60 * 1000);
     if (typeof updateTimer.unref === "function") updateTimer.unref();
+  }
+  const monitorConfig = getMonitorSettings();
+  if (monitorConfig.autoStart && monitorConfig.targets.some((target) => target.enabled)) {
+    setTimeout(() => {
+      try { startMonitor(); } catch (error) {
+        sendMonitorState("error", { message: error.message });
+      }
+    }, 5000);
   }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) makeWindow();
