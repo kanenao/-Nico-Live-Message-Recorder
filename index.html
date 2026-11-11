@@ -153,12 +153,19 @@
                 <input id="live-id" type="text" placeholder="例：lv123456789 または視聴URL" autocomplete="off">
                 <button class="button button-quiet" id="open-watch-button" type="button">視聴ページ</button>
               </div>
+              <label class="record-mode-field" for="record-mode">
+                <span>録画対象</span>
+                <select id="record-mode">
+                  <option value="live" selected>配信中の放送（映像＋コメント）</option>
+                  <option value="timeshift">過去配信（タイムシフト映像のみ）</option>
+                </select>
+              </label>
               <div class="button-row session-actions">
                 <button class="button button-record" id="record-button" type="button">● 接続して映像・音声＋コメントを録画</button>
                 <button class="button button-primary" id="connect-button" type="button">コメントのみ接続</button>
                 <button class="button button-outline" id="disconnect-button" type="button" disabled>コメント切断</button>
               </div>
-              <p class="hint">メインボタンは配信映像・音声を直接保存しながらコメントも取得します。コメントだけ保存する場合は「コメントのみ接続」を選んでください。先にコメントのみ接続した後、同じ放送IDの録画を開始することもできます。</p>
+              <p class="hint" id="record-mode-hint">配信中の放送は映像・音声とコメントを同時に保存します。過去配信を選ぶと、視聴可能なタイムシフトを最初から映像・音声のみ保存します。過去配信のコメント取得には対応していません。</p>
               <div class="file-line"><span class="dot dot-green"></span><span id="comment-file">コメント保存先：接続後に表示</span></div>
               <div class="file-line"><span class="dot dot-blue"></span><span id="video-file">映像・音声保存先：録画開始後に表示</span></div>
             </div>
