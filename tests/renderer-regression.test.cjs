@@ -76,6 +76,7 @@ test("one button starts video and comments together", () => {
   assert.match(main, /connectPreparedCommentSession\(liveId\)/);
   assert.match(main, /startVideoInternal\(liveId, quality/);
   assert.match(renderer, /api\.startCapture\(liveId, quality, \{\}\)/);
+  assert.match(renderer, /currentLiveId = liveId;\s*liveInput\.value = liveId/);
 });
 
 test("videos and comments are organized by broadcaster display name", () => {
