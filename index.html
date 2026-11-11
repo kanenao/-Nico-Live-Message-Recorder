@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.9</span>
+        <span class="version" id="version">v0.1.0-beta.10</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -34,7 +34,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.9</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.10</span></div>
         </div>
       </aside>
 
@@ -94,7 +94,7 @@
           <div class="monitor-activity" id="monitor-activity" aria-live="polite">
             <span>監視ログ：配信開始を検知するとここに表示します。</span>
           </div>
-          <p class="hint">登録したユーザーの公開放送履歴を設定した間隔で確認し、配信開始を検知すると自動録画します。限定公開・視聴権限が必要な番組は、ログイン済みアカウントに視聴権限が必要です。</p>
+          <p class="hint">ログイン中はフォロー中番組APIを優先し、登録ユーザーの公開放送履歴も併用して配信を検知します。フォロー限定番組はログイン中アカウントに表示・視聴権限がある場合のみ対象です。</p>
         </section>
 
         <section class="control-grid">
@@ -250,6 +250,7 @@
           <label class="settings-field">
             <span>配信監視の確認間隔</span>
             <select id="setting-monitor-interval">
+              <option value="15">15秒（最速）</option>
               <option value="30">30秒</option>
               <option value="60" selected>1分（推奨）</option>
               <option value="120">2分</option>
