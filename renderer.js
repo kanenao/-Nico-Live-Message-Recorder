@@ -845,72 +845,38 @@ function formatUpdateBytes(value) {
 function renderStreamlinkUpdateState(payload) {
   if (!payload) return;
   const status = byId("streamlink-update-status");
-  const checkButton = byId("streamlink-update-check-button");
-  const installButton = byId("streamlink-update-install-button");
-  checkButton.disabled = false;
-  installButton.hidden = true;
   switch (payload.state) {
     case "checking":
-      status.textContent = "Streamlink：公式最新版を確認中…";
-      checkButton.disabled = true;
+      status.textContent = "Streamlink自動更新：公式最新版を確認中…";
       break;
     case "available":
-      status.textContent = "Streamlink " + payload.version + " が利用できます（現在 " + (payload.currentVersion || "不明") + "）。";
-      installButton.hidden = false;
+      status.textContent = "Streamlink " + payload.version + " が見つかりました。自動でダウンロード・適用します。";
       break;
     case "downloading":
-      status.textContent = "Streamlink " + payload.version + " をダウンロード・検証中…";
-      checkButton.disabled = true;
-      installButton.disabled = true;
+      status.textContent = "Streamlink " + payload.version + " を自動ダウンロード・SHA-256検証中…";
       break;
     case "extracting":
       status.textContent = "Streamlink " + payload.version + " を展開・動作確認中…";
-      checkButton.disabled = true;
-      installButton.disabled = true;
       break;
     case "updated":
-      status.textContent = payload.message || ("Streamlink " + payload.version + " に更新しました。");
-      installButton.hidden = true;
-      installButton.disabled = false;
+      status.textContent = payload.message || ("Streamlink " + payload.version + " に自動更新しました。");
       refreshVideoTools();
-      showToast("Streamlink " + payload.version + " へ更新しました。");
+      showToast("Streamlink " + payload.version + " へ自動更新しました。次回の録画から使用します。");
       break;
     case "current":
-      status.textContent = "Streamlinkは最新です（" + (payload.version || "確認済み") + "）。";
+      status.textContent = "Streamlinkは最新です（" + (payload.version || "確認済み") + "）。自動更新は有効です。";
+      break;
+    case "disabled":
+      status.textContent = payload.message || "Streamlink自動更新は設定で無効です。";
       break;
     case "unsupported":
-      status.textContent = payload.message || "Streamlinkの自動更新はWindows版のみ対応です。";
+      status.textContent = payload.message || "Streamlink自動更新はWindows版のみ対応です。";
       break;
     case "error":
-      status.textContent = "Streamlink更新エラー：" + (payload.message || "確認できませんでした。");
+      status.textContent = "Streamlink自動更新に失敗しました。次回の確認時に再試行します：" + (payload.message || "通信エラー");
       break;
     default:
-      status.textContent = "Streamlink更新：起動後に確認します";
-  }
-}
-
-async function checkStreamlinkUpdates() {
-  const button = byId("streamlink-update-check-button");
-  button.disabled = true;
-  try {
-    await api.checkStreamlinkUpdate();
-  } catch (error) {
-    renderStreamlinkUpdateState({ state: "error", message: error.message || "通信エラー" });
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function installStreamlinkUpdates() {
-  const button = byId("streamlink-update-install-button");
-  button.disabled = true;
-  try {
-    await api.installStreamlinkUpdate();
-    await refreshVideoTools();
-  } catch (error) {
-    renderStreamlinkUpdateState({ state: "error", message: error.message || "更新に失敗しました。" });
-  } finally {
-    button.disabled = false;
+      status.textContent = "Streamlink自動更新は有効です。アプリ起動時・6時間ごとに確認して自動適用します。";
   }
 }
 
@@ -1045,8 +1011,6 @@ byId("record-mode").addEventListener("change", () => {
 });
 stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
-byId("streamlink-update-check-button").addEventListener("click", checkStreamlinkUpdates);
-byId("streamlink-update-install-button").addEventListener("click", installStreamlinkUpdates);
 byId("install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
