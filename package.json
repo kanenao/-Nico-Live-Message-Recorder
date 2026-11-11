@@ -1,7 +1,7 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.1.0-beta.11",
+  "version": "0.1.0-beta.12",
   "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",
@@ -69,7 +69,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Nico Live Message Recorder",
-      "include": "installer.nsh"
+      "include": "build/installer.nsh"
     },
     "extraResources": [
       {
