@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.10</span>
+        <span class="version" id="version">v0.1.0-beta.11</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -34,7 +34,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.10</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.11</span></div>
         </div>
       </aside>
 
@@ -135,7 +135,7 @@
               </div>
             </div>
             <div class="button-row">
-              <button class="button button-record" id="record-button">● 録画開始</button>
+              <button class="button button-record" id="record-button">● 録画＋コメント同時開始</button>
               <button class="button button-outline" id="stop-record-button" disabled>録画停止</button>
             </div>
             <div class="record-quality-row">
@@ -158,6 +158,19 @@
           </article>
         </section>
 
+
+        <section class="capture-status-panel" aria-live="polite">
+          <div class="capture-status-item">
+            <span class="capture-status-dot" id="capture-video-dot"></span>
+            <div><strong>映像録画</strong><span id="capture-video-state">停止中</span></div>
+          </div>
+          <div class="capture-status-item">
+            <span class="capture-status-dot" id="capture-comment-dot"></span>
+            <div><strong>コメント取得・保存</strong><span id="capture-comment-state">停止中</span></div>
+          </div>
+          <div class="capture-status-path" id="capture-status-detail">録画・コメントの開始状態をここに表示します。</div>
+        </section>
+
         <section class="panel compose-panel">
           <div class="panel-heading">
             <div>
@@ -177,6 +190,73 @@
               <input id="compose-comments-input" type="file" accept=".jsonl,application/x-ndjson,application/json">
               <small id="compose-comments-name">JSONLコメントログを選択</small>
             </label>
+          </div>
+
+          <div class="compose-editor">
+            <div class="compose-editor-title">コメント表示を編集</div>
+            <div class="compose-editor-grid">
+              <label class="compose-editor-field">
+                <span>コメントサイズ <output id="compose-font-value">100%</output></span>
+                <input id="compose-font-scale" type="range" min="50" max="200" step="5" value="100">
+              </label>
+              <label class="compose-editor-field">
+                <span>流れる速度 <output id="compose-speed-value">100%</output></span>
+                <input id="compose-speed" type="range" min="50" max="200" step="5" value="100">
+              </label>
+              <label class="compose-editor-field">
+                <span>上下の余白 <output id="compose-position-value">7%</output></span>
+                <input id="compose-position" type="range" min="4" max="25" step="1" value="7">
+              </label>
+              <label class="compose-editor-field">
+                <span>透明度 <output id="compose-opacity-value">100%</output></span>
+                <input id="compose-opacity" type="range" min="20" max="100" step="5" value="100">
+              </label>
+              <label class="compose-editor-field">
+                <span>表示するコメント</span>
+                <select id="compose-display-mode">
+                  <option value="all">スクロール・固定コメント</option>
+                  <option value="scroll">スクロールのみ</option>
+                  <option value="fixed">上・下固定のみ</option>
+                </select>
+              </label>
+              <label class="compose-editor-field">
+                <span>文字色</span>
+                <select id="compose-color-mode">
+                  <option value="original">コメントの色指定を反映</option>
+                  <option value="white">すべて白</option>
+                  <option value="green">すべて緑</option>
+                </select>
+              </label>
+              <label class="compose-editor-field">
+                <span>出力解像度</span>
+                <select id="compose-resolution">
+                  <option value="original">元動画と同じ</option>
+                  <option value="1080">最大1080p</option>
+                  <option value="720">最大720p</option>
+                  <option value="480">最大480p</option>
+                </select>
+              </label>
+              <label class="compose-editor-field">
+                <span>フレームレート</span>
+                <select id="compose-fps">
+                  <option value="30" selected>30 fps</option>
+                  <option value="60">60 fps</option>
+                </select>
+              </label>
+              <label class="compose-editor-field">
+                <span>動画ビットレート</span>
+                <select id="compose-bitrate">
+                  <option value="3000000">軽量 3 Mbps</option>
+                  <option value="6000000" selected>標準 6 Mbps</option>
+                  <option value="10000000">高画質 10 Mbps</option>
+                </select>
+              </label>
+              <label class="settings-checkbox compose-shadow-option">
+                <input type="checkbox" id="compose-shadow" checked>
+                <span>文字の影・縁取りを付ける</span>
+              </label>
+            </div>
+            <p class="hint">元コメントの ue / shita / big / small / 色コマンドは「元の色を反映」時に利用します。設定は生成時に適用されます。</p>
           </div>
           <div class="button-row compose-actions">
             <button class="button button-primary" id="compose-button">コメントを重ねて動画生成</button>
@@ -214,7 +294,7 @@
               <h2>コメント・イベントログ</h2>
             </div>
             <div class="comments-actions">
-              <span class="live-count"><span class="dot dot-green"></span> 自動保存中</span>
+              <span class="live-count" id="comment-save-status"><span class="dot dot-green"></span> 停止中</span>
               <button class="button button-quiet button-small" id="export-ass-button">ASSに変換</button>
               <button class="button button-quiet button-small" id="export-button">CSVを書き出す</button>
             </div>
@@ -232,7 +312,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.9</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.11</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -262,6 +342,16 @@
             <select id="setting-monitor-quality">
               <option value="best">最高画質</option>
               <option value="worst">低画質（通信量を抑える）</option>
+            </select>
+          </label>
+
+          <label class="settings-field">
+            <span>コメント保存形式</span>
+            <select id="setting-comment-format">
+              <option value="jsonl">JSONL（標準・推奨）</option>
+              <option value="csv">CSVを自動作成</option>
+              <option value="ass">ASS字幕を自動作成</option>
+              <option value="all">JSONL + CSV + ASS</option>
             </select>
           </label>
           <label class="settings-checkbox">
