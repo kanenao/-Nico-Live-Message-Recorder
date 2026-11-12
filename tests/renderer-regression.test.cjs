@@ -571,3 +571,13 @@ test("app settings expose the current version and a synchronized automatic updat
   assert.match(css, /\.app-update-settings/);
   assert.match(css, /\.update-state-badge\[data-state="downloaded"\]/);
 });
+
+
+test("dashboard live count retains registered-target count after manual capture cards are merged", () => {
+  assert.match(renderer, /function renderDashboardStats\(\) \{\s*const targets = Array\.isArray\(monitorSettings\.targets\)/);
+  assert.match(renderer, /record\.title = status\.isRecording[\s\S]*この配信は現在録画中です/);
+});
+
+test("a live article is generated immediately when program metadata is already available", () => {
+  assert.match(main, /if \(currentProgramInfo\.programTitle \|\| currentProgramInfo\.description\) \{\s*void refreshLiveBroadcastArticle\(\);\s*\}/);
+});

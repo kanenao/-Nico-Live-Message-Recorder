@@ -675,6 +675,7 @@ function getLiveBroadcastItems() {
 }
 
 function renderDashboardStats() {
+  const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
   const liveCount = getLiveBroadcastItems().length;
   byId("dashboard-target-count").textContent = String(targets.length).padStart(2, "0");
   byId("dashboard-live-count").textContent = String(liveCount).padStart(2, "0");
@@ -756,9 +757,11 @@ function renderLiveBroadcasts() {
     record.textContent = status.isRecording
       ? "録画中" : videoCaptureState === "stopping"
         ? "停止中…" : recordingBusy ? "録画準備中…" : "録画開始";
-    record.title = recordingBusy
-      ? "現在の録画が終了してから開始できます。"
-      : "この配信の映像・音声とコメントを同時に保存します。";
+    record.title = status.isRecording
+      ? "この配信は現在録画中です。"
+      : recordingBusy
+        ? "現在の録画が終了してから開始できます。"
+        : "この配信の映像・音声とコメントを同時に保存します。";
     record.addEventListener("click", () => startVideoRecording({
       liveId: status.liveId,
       title: status.title,

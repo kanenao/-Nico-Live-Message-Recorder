@@ -551,6 +551,9 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
     void refreshLiveBroadcastArticle();
   }, 60 * 1000);
   if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
+  if (currentProgramInfo.programTitle || currentProgramInfo.description) {
+    void refreshLiveBroadcastArticle();
+  }
 }
 
 function updateCurrentBroadcaster(metadata, liveId) {
