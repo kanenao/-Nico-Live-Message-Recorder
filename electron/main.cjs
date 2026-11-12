@@ -51,6 +51,8 @@ let timeshiftCommentFetchActive = false;
 let currentLiveId = "";
 let commentWriter = null;
 let commentFilePath = "";
+let articleUpdateTimer = null;
+let articleUpdateInProgress = false;
 let currentBroadcasterName = "";
 let currentBroadcasterId = "";
 let currentProgramInfo = {};
@@ -541,6 +543,28 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
     ...currentProgramInfo
   });
   send("comments:file", { path: commentFilePath });
+  if (articleUpdateTimer) clearInterval(articleUpdateTimer);
+  articleUpdateTimer = setInterval(async () => {
+    if (!commentWriter || !commentFilePath || articleUpdateInProgress) return;
+    articleUpdateInProgress = true;
+    try {
+      await new Promise((resolve, reject) => {
+        commentWriter.write("", error => error ? reject(error) : resolve());
+      });
+      await createAndSaveBroadcastArticle(commentFilePath, {
+        ...currentProgramInfo,
+        liveId: currentLiveId,
+        broadcasterName: currentBroadcasterName,
+        broadcasterId: currentBroadcasterId,
+        liveUpdate: true
+      });
+    } catch (error) {
+      send("articles:ai-fallback", { liveId: currentLiveId, reason: "配信中の記事更新に失敗しました: " + error.message });
+    } finally {
+      articleUpdateInProgress = false;
+    }
+  }, 3 * 60 * 1000);
+  if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
 }
 
 function updateCurrentBroadcaster(metadata, liveId) {
@@ -616,6 +640,7 @@ function closeCommentWriter() {
       resolve();
       return;
     }
+    if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
     const writer = commentWriter;
     const oldPath = commentFilePath;
     const articleContext = {
