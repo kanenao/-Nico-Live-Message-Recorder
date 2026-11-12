@@ -56,6 +56,7 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
   assert.match(main, /prevent-app-suspension/);
   assert.match(main, /scheduleNextMonitorCheck/);
   assert.match(main, /mapWithConcurrency\(historyTargets, 4/);
+  assert.match(main, /isLegacyMonitorSettings && storedIntervalSeconds === 60/);
   assert.match(html, /<option value="10">10秒（最速・推奨）<\/option>/);
 });
 
