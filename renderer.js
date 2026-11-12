@@ -888,6 +888,32 @@ function updateCompositionEditorLabels() {
   }
 }
 
+async function checkOllamaStatus() {
+  const badge = byId("ollama-status-badge");
+  const message = byId("ollama-status-message");
+  const button = byId("ollama-check-button");
+  if (badge) { badge.textContent = "確認中…"; badge.dataset.state = "checking"; }
+  if (message) message.textContent = "Ollamaへ接続しています…";
+  if (button) button.disabled = true;
+  try {
+    const status = await api.getOllamaStatus();
+    if (badge) {
+      badge.textContent = status.connected ? "接続済み" : "未接続";
+      badge.dataset.state = status.connected ? "downloaded" : "error";
+    }
+    if (message) {
+      message.textContent = status.connected
+        ? "接続先：" + status.baseUrl + " ／ インストール済みモデル：" + (status.models.length ? status.models.map(item => item.name).join("、") : "なし")
+        : (status.message || "Ollamaに接続できません。");
+    }
+  } catch (error) {
+    if (badge) { badge.textContent = "未接続"; badge.dataset.state = "error"; }
+    if (message) message.textContent = error.message || "Ollamaに接続できません。";
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function openSettings() {
   byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 10);
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
@@ -899,6 +925,9 @@ function openSettings() {
   byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("setting-notify-on-live").checked = monitorSettings.notifyOnLive !== false;
+  byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
+  byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
+  void checkOllamaStatus();
   byId("settings-modal").hidden = false;
 }
 
@@ -917,7 +946,9 @@ async function saveSettings() {
     closeToTray: byId("setting-close-to-tray").checked,
     keepAwake: byId("setting-keep-awake").checked,
     autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked,
-    notifyOnLive: byId("setting-notify-on-live").checked
+    notifyOnLive: byId("setting-notify-on-live").checked,
+    aiArticleEnabled: byId("setting-ai-article-enabled").checked,
+    aiArticleModel: byId("setting-ai-article-model").value.trim() || "qwen2.5:3b"
   };
   const button = byId("save-settings-button");
   button.disabled = true;
@@ -1577,6 +1608,7 @@ byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
 byId("save-settings-button").addEventListener("click", saveSettings);
+byId("ollama-check-button").addEventListener("click", () => void checkOllamaStatus());
 byId("settings-modal").addEventListener("click", (event) => {
   if (event.target === byId("settings-modal")) closeSettings();
 });
