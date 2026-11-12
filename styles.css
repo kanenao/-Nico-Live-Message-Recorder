@@ -261,6 +261,12 @@ input::placeholder { color: #5f6c88; }
 .compose-editor-field output { color: #9a91ff; font: 10px Consolas, monospace; }
 .compose-editor-field select { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid rgba(155,175,220,.18); border-radius: 7px; background: #0d1526; color: #edf2ff; font-size: 10px; }
 .compose-editor-field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.compose-editor-field input[type="number"], .compose-editor-field textarea {
+  width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid rgba(155,175,220,.18);
+  border-radius: 7px; background: #0d1526; color: #edf2ff; font-size: 10px;
+}
+.compose-editor-field textarea { resize: vertical; min-height: 62px; line-height: 1.5; }
+.compose-editor-field-full { grid-column: 1 / -1; }
 .compose-shadow-option { align-self: end; min-height: 33px; }
 @media (max-width: 1100px) {
   .session-grid { grid-template-columns: 1fr; gap: 14px; }

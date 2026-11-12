@@ -9,6 +9,11 @@ const {
   buildStreamlinkArgs
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
+const {
+  normalizeCompositionFormat,
+  normalizeCompositionQuality,
+  buildMp4TranscodeArgs
+} = require("./composition-export.cjs");
 const { fetchTimeshiftProgramPage, fetchTimeshiftArchive } = require("./timeshift-comments.cjs");
 const { autoUpdater } = require("electron-updater");
 const { normalizeNicoUserId, normalizeMonitorDate, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
@@ -50,6 +55,10 @@ let streamlinkFfmpegPath = "";
 let streamlinkStopRequested = false;
 let composeWriter = null;
 let composeFilePath = "";
+let composeFinalFilePath = "";
+let composeOutputFormat = "webm";
+let composeOutputQuality = "standard";
+let composeFinalizePromise = null;
 let shutdownPromise = null;
 let shutdownComplete = false;
 let updateCheckPromise = null;
@@ -1630,25 +1639,70 @@ async function stopStreamlinkRecording() {
 
 ipcMain.handle("video:stop", () => stopStreamlinkRecording());
 
-ipcMain.handle("compose:start", async () => {
-  if (composeWriter) throw new Error("動画生成はすでに実行中です。");
+function transcodeCompositionToMp4(inputPath, outputPath, quality) {
+  const ffmpegPath = getVideoToolStatus().ffmpegPath;
+  if (!ffmpegPath) {
+    return Promise.reject(new Error("MP4変換に使えるFFmpegが見つかりません。WebM形式で保存します。"));
+  }
+  const args = buildMp4TranscodeArgs(inputPath, outputPath, quality);
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(ffmpegPath, args, { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    } catch (error) {
+      reject(new Error("FFmpegを起動できません: " + error.message));
+      return;
+    }
+    let stderr = "";
+    if (child.stderr) child.stderr.on("data", (chunk) => { stderr = (stderr + chunk.toString("utf8")).slice(-2400); });
+    child.once("error", (error) => reject(new Error("MP4変換を開始できません: " + error.message)));
+    child.once("close", (code) => {
+      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) resolve(outputPath);
+      else reject(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
+    });
+  });
+}
+
+function makeWebmFallbackPath(mp4Path) {
+  const directory = path.dirname(mp4Path);
+  const stem = path.basename(mp4Path, path.extname(mp4Path));
+  const candidate = path.join(directory, stem + "_WebM.webm");
+  return fs.existsSync(candidate)
+    ? path.join(directory, stem + "_WebM_" + stamp() + ".webm")
+    : candidate;
+}
+
+ipcMain.handle("compose:start", async (_event, options = {}) => {
+  if (composeWriter || composeFinalizePromise) throw new Error("動画生成または保存処理がすでに実行中です。");
+  const format = normalizeCompositionFormat(options && options.format);
+  const quality = normalizeCompositionQuality(options && options.quality);
+  const extension = "." + format;
   const saveResult = await dialog.showSaveDialog(mainWindow, {
     title: "コメント付き動画を書き出す",
-    defaultPath: "NicoLiveMessage_" + stamp() + ".webm",
-    filters: [{ name: "WebM動画", extensions: ["webm"] }]
+    defaultPath: "NicoLiveMessage_" + stamp() + extension,
+    filters: format === "mp4"
+      ? [{ name: "MP4動画（H.264 / AAC）", extensions: ["mp4"] }]
+      : [{ name: "WebM動画（VP9 / VP8）", extensions: ["webm"] }]
   });
   if (saveResult.canceled || !saveResult.filePath) return { cancelled: true };
 
-  composeFilePath = saveResult.filePath;
+  let finalPath = saveResult.filePath;
+  if (path.extname(finalPath).toLowerCase() !== extension) {
+    finalPath = path.join(path.dirname(finalPath), path.basename(finalPath, path.extname(finalPath)) + extension);
+  }
+  const workingPath = format === "mp4" ? finalPath + ".partial.webm" : finalPath;
+  if (format === "mp4") await fs.promises.unlink(workingPath).catch(() => {});
+  composeFilePath = workingPath;
+  composeFinalFilePath = finalPath;
+  composeOutputFormat = format;
+  composeOutputQuality = quality;
   composeWriter = fs.createWriteStream(composeFilePath, { flags: "w" });
   await new Promise((resolve, reject) => {
     composeWriter.once("open", resolve);
     composeWriter.once("error", reject);
   });
-  composeWriter.on("error", (error) => {
-    send("app:error", "合成動画の保存に失敗しました: " + error.message);
-  });
-  return { path: composeFilePath };
+  composeWriter.on("error", (error) => send("app:error", "合成動画の保存に失敗しました: " + error.message));
+  return { path: composeFilePath, outputPath: finalPath, format, quality };
 });
 
 ipcMain.handle("compose:chunk", async (_event, arrayBuffer) => {
@@ -1660,31 +1714,71 @@ ipcMain.handle("compose:chunk", async (_event, arrayBuffer) => {
 });
 
 ipcMain.handle("compose:finish", async () => {
+  if (composeFinalizePromise) return composeFinalizePromise;
   if (!composeWriter) return { path: null };
   const writer = composeWriter;
   const savedPath = composeFilePath;
+  const finalPath = composeFinalFilePath || savedPath;
+  const format = composeOutputFormat;
+  const quality = composeOutputQuality;
   composeWriter = null;
   composeFilePath = "";
-  await new Promise((resolve, reject) => {
-    writer.once("error", reject);
-    writer.end(resolve);
-  });
-  return { path: savedPath };
+
+  composeFinalizePromise = (async () => {
+    await new Promise((resolve, reject) => {
+      writer.once("error", reject);
+      writer.end(resolve);
+    });
+    if (format !== "mp4") {
+      composeFinalFilePath = "";
+      composeOutputFormat = "webm";
+      composeOutputQuality = "standard";
+      return { path: savedPath, format: "webm", converted: false };
+    }
+
+    send("compose:status", { state: "converting", message: "FFmpegでMP4（H.264 / AAC）へ変換しています。" });
+    try {
+      await transcodeCompositionToMp4(savedPath, finalPath, quality);
+      await fs.promises.unlink(savedPath).catch(() => {});
+      send("compose:status", { state: "complete", message: "MP4変換が完了しました。" });
+      composeFinalFilePath = "";
+      composeOutputFormat = "webm";
+      composeOutputQuality = "standard";
+      return { path: finalPath, format: "mp4", converted: true };
+    } catch (error) {
+      await fs.promises.unlink(finalPath).catch(() => {});
+      let fallbackPath = savedPath;
+      try {
+        fallbackPath = makeWebmFallbackPath(finalPath);
+        await fs.promises.rename(savedPath, fallbackPath);
+      } catch (_) { fallbackPath = savedPath; }
+      const warning = (error && error.message ? error.message : String(error)) + " 代わりにWebMを保存しました。";
+      send("compose:status", { state: "fallback", message: warning, path: fallbackPath });
+      composeFinalFilePath = "";
+      composeOutputFormat = "webm";
+      composeOutputQuality = "standard";
+      return { path: fallbackPath, format: "webm", converted: false, warning };
+    }
+  })();
+
+  try {
+    return await composeFinalizePromise;
+  } finally {
+    composeFinalizePromise = null;
+  }
 });
 
 ipcMain.handle("compose:cancel", async () => {
+  if (composeFinalizePromise) throw new Error("動画の保存・変換を確定中です。完了するまでお待ちください。");
   const writer = composeWriter;
   const savedPath = composeFilePath;
   composeWriter = null;
   composeFilePath = "";
-  if (writer) {
-    await new Promise((resolve) => {
-      writer.end(resolve);
-    });
-  }
-  if (savedPath && fs.existsSync(savedPath)) {
-    await fs.promises.unlink(savedPath).catch(() => {});
-  }
+  composeFinalFilePath = "";
+  composeOutputFormat = "webm";
+  composeOutputQuality = "standard";
+  if (writer) await new Promise((resolve) => writer.end(resolve));
+  if (savedPath && fs.existsSync(savedPath)) await fs.promises.unlink(savedPath).catch(() => {});
   return { cancelled: true };
 });
 
@@ -1957,10 +2051,14 @@ async function shutdownGracefully() {
 
   // An interrupted WebM composition is incomplete; close and remove it instead of
   // leaving a partial file that looks like a completed export.
+  if (composeFinalizePromise) await composeFinalizePromise.catch((error) => console.error("Composition finalization failed:", error));
   const writer = composeWriter;
   const partialComposePath = composeFilePath;
   composeWriter = null;
   composeFilePath = "";
+  composeFinalFilePath = "";
+  composeOutputFormat = "webm";
+  composeOutputQuality = "standard";
   if (writer) {
     await new Promise((resolve) => {
       writer.once("error", resolve);

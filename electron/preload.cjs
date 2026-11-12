@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
   exportCsv: () => ipcRenderer.invoke("comments:export-csv"),
   exportAss: () => ipcRenderer.invoke("comments:export-ass"),
-  startCompose: () => ipcRenderer.invoke("compose:start"),
+  startCompose: (options) => ipcRenderer.invoke("compose:start", options),
   writeComposeChunk: (chunk) => ipcRenderer.invoke("compose:chunk", chunk),
   finishCompose: () => ipcRenderer.invoke("compose:finish"),
   cancelCompose: () => ipcRenderer.invoke("compose:cancel"),

@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.22</span>
+        <span class="version" id="version">v0.1.0-beta.23</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -34,7 +34,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.22</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.23</span></div>
         </div>
       </aside>
 
@@ -280,6 +280,27 @@
                 <span>流れる速度 <output id="compose-speed-value">100%</output></span>
                 <input id="compose-speed" type="range" min="50" max="200" step="5" value="100">
               </label>
+              <label class="compose-editor-field">
+                <span>コメントの最大行数</span>
+                <input id="compose-row-limit" type="number" min="1" max="24" step="1" value="12">
+              </label>
+              <label class="compose-editor-field">
+                <span>画面上の表示時間</span>
+                <select id="compose-duration">
+                  <option value="auto" selected>自動（文字幅・速度で調整）</option>
+                  <option value="3">3秒</option><option value="5">5秒</option><option value="8">8秒</option>
+                  <option value="10">10秒</option><option value="15">15秒</option>
+                </select>
+              </label>
+              <label class="compose-editor-field">
+                <span>フォント</span>
+                <select id="compose-font-family">
+                  <option value="Meiryo" selected>メイリオ</option>
+                  <option value="Yu Gothic UI">游ゴシック UI</option>
+                  <option value="BIZ UDPGothic">BIZ UDPゴシック</option>
+                  <option value="Arial">Arial</option>
+                </select>
+              </label>
 
               <label class="compose-editor-field">
                 <span>コメント同期の微調整 <output id="compose-offset-value">0 ms</output></span>
@@ -335,12 +356,47 @@
                   <option value="10000000">高画質 10 Mbps</option>
                 </select>
               </label>
+              <label class="compose-editor-field">
+                <span>文字の縁取り <output id="compose-outline-value">4 px</output></span>
+                <input id="compose-outline" type="range" min="0" max="12" step="1" value="4">
+              </label>
               <label class="settings-checkbox compose-shadow-option">
                 <input type="checkbox" id="compose-shadow" checked>
-                <span>文字の影・縁取りを付ける</span>
+                <span>文字に影を付ける</span>
+              </label>
+              <label class="compose-editor-field compose-editor-field-full">
+                <span>除外ワード（1行に1つ）</span>
+                <textarea id="compose-ng-words" rows="3" placeholder="動画に表示したくない言葉を入力&#10;例：ネタバレ&#10;例：テストコメント"></textarea>
+              </label>
+              <label class="compose-editor-field">
+                <span>出力幅（px / 0は自動）</span>
+                <input id="compose-width" type="number" min="0" max="7680" step="2" value="0">
+              </label>
+              <label class="compose-editor-field">
+                <span>出力高さ（px / 0は自動）</span>
+                <input id="compose-height" type="number" min="0" max="4320" step="2" value="0">
+              </label>
+              <label class="settings-checkbox compose-shadow-option">
+                <input type="checkbox" id="compose-keep-aspect" checked>
+                <span>縦横比を維持して指定サイズ内へ収める</span>
+              </label>
+              <label class="compose-editor-field">
+                <span>出力形式</span>
+                <select id="compose-output-format">
+                  <option value="webm" selected>WebM（標準・高速生成）</option>
+                  <option value="mp4">MP4（H.264 / AAC）</option>
+                </select>
+              </label>
+              <label class="compose-editor-field">
+                <span>MP4画質プリセット</span>
+                <select id="compose-output-quality">
+                  <option value="fast">高速（容量やや大きめ）</option>
+                  <option value="standard" selected>標準</option>
+                  <option value="high">高画質（変換に時間）</option>
+                </select>
               </label>
             </div>
-            <p class="hint">元コメントの ue / shita / big / small / 色コマンドは「元の色を反映」時に利用します。設定は生成時に適用されます。</p>
+            <p class="hint">NicoConvAssを参考に、行数・表示秒数・フォント・縁取り・除外ワードを設定できます。元コメントの ue / shita / big / small / 色コマンドは「元の色を反映」時に利用します。</p>
           </div>
           <div class="button-row compose-actions">
             <button class="button button-primary" id="compose-button">コメントを重ねて動画生成</button>
@@ -350,7 +406,7 @@
             <progress id="compose-progress" max="100" value="0"></progress>
             <span id="compose-progress-label">待機中</span>
           </div>
-          <div class="hint">文字サイズ・速度・表示位置・透明度・同期ずれ・表示種類・色・解像度・fps・画質を調整してWebM形式で保存します。音声がある動画は音声も引き継ぎます。元動画とコメントログは変更しません。</div>
+          <div class="hint">WebMはそのまま保存し、MP4を選ぶと内蔵FFmpegでH.264 / AACへ変換します。MP4変換に失敗した場合も中間WebMを残して保存結果を案内します。元動画とコメントログは変更しません。</div>
         </section>
 
         <section class="stats-grid">
@@ -396,7 +452,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.22</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.23</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

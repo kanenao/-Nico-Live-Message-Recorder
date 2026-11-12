@@ -845,6 +845,16 @@ function getCompositionEditorOptions() {
     resolution: byId("compose-resolution").value,
     fps: number("compose-fps", 30, 30, 60),
     bitrate: number("compose-bitrate", 6000000, 1000000, 20000000),
+    rowLimit: number("compose-row-limit", 12, 1, 24),
+    durationSeconds: byId("compose-duration").value === "auto" ? 0 : number("compose-duration", 5, 1, 30),
+    outlineWidth: number("compose-outline", 4, 0, 12),
+    fontFamily: byId("compose-font-family").value,
+    ngWords: String(byId("compose-ng-words").value || "").split(/\r?\n/).map((word) => word.trim().toLocaleLowerCase("ja-JP")).filter(Boolean),
+    outputWidth: number("compose-width", 0, 0, 7680),
+    outputHeight: number("compose-height", 0, 0, 4320),
+    keepAspect: byId("compose-keep-aspect").checked,
+    outputFormat: byId("compose-output-format").value,
+    outputQuality: byId("compose-output-quality").value,
     shadow: byId("compose-shadow").checked
   };
 }
@@ -860,6 +870,9 @@ function updateCompositionEditorLabels() {
     const output = byId(outputId);
     if (input && output) output.textContent = input.value + suffix;
   }
+  const outline = byId("compose-outline");
+  const outlineOutput = byId("compose-outline-value");
+  if (outline && outlineOutput) outlineOutput.textContent = outline.value + " px";
   const offset = byId("compose-offset");
   const offsetOutput = byId("compose-offset-value");
   if (offset && offsetOutput) {
@@ -1267,6 +1280,12 @@ api.onEvent(({ channel, payload }) => {
   if (channel === "capture:state" && payload && payload.commentError) {
     byId("capture-status-detail").textContent = "映像録画は開始しましたが、コメント取得に失敗しました: " + payload.commentError;
   }
+  if (channel === "compose:status" && payload) {
+    setCompositionProgress(
+      payload.state === "converting" ? 100 : Number(byId("compose-progress").value),
+      payload.message || (payload.state === "converting" ? "MP4変換中…" : "")
+    );
+  }
   if (channel === "timeshift:comments-progress" && payload) {
     const count = Number(payload.eventCount) || 0;
     const segments = Number(payload.segmentsFetched) || 0;
@@ -1420,10 +1439,15 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
   const displayMode = ["all", "scroll", "fixed", "top", "bottom"].includes(options.displayMode) ? options.displayMode : "all";
   const colorMode = ["original", "white", "green"].includes(options.colorMode) ? options.colorMode : "original";
   const baseSize = Math.max(12, Math.min(110, Math.round(height * 0.045 * fontScale)));
-  const scrollLaneCount = Math.max(1, Math.min(24, Math.floor(height / Math.max(24, baseSize * 1.3))));
+  const rowLimit = Math.max(1, Math.min(24, Math.floor(Number(options.rowLimit) || 12)));
+  const scrollLaneCount = Math.max(1, Math.min(rowLimit, Math.floor(height / Math.max(24, baseSize * 1.3))));
+  const fixedLaneCount = Math.max(1, Math.min(rowLimit, Math.floor(height / Math.max(24, baseSize * 1.16) / 2)));
   const scrollLanes = Array(scrollLaneCount).fill(0);
-  const topLanes = Array(5).fill(0);
-  const bottomLanes = Array(5).fill(0);
+  const topLanes = Array(fixedLaneCount).fill(0);
+  const bottomLanes = Array(fixedLaneCount).fill(0);
+  const fixedDurationMs = Number(options.durationSeconds) > 0
+    ? Math.max(1000, Math.min(30000, Number(options.durationSeconds) * 1000))
+    : 0;
   const schedule = [];
 
   for (const comment of comments) {
@@ -1453,13 +1477,15 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     const originalColor = commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
     const color = colorMode === "green" ? "#55e58a" :
       colorMode === "white" ? "#ffffff" : originalColor;
-    context.font = "bold " + fontSize + "px Meiryo, Yu Gothic, sans-serif";
+    const fontFamily = ["Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
+      ? options.fontFamily : "Meiryo";
+    context.font = "bold " + fontSize + "px \"" + fontFamily + "\", sans-serif";
     const textWidth = Math.ceil(context.measureText(comment.text).width) + 20;
     const startMs = comment.timeMs;
 
     if (isFixed) {
       const lanes = isTop ? topLanes : bottomLanes;
-      const durationMs = Math.max(1500, Math.round(5000 / speed));
+      const durationMs = fixedDurationMs || Math.max(1500, Math.round(5000 / speed));
       const reservation = reserveOverlayLane(lanes, startMs, durationMs, 150);
       const lane = reservation.lane;
       const edge = Math.round(height * (marginPercent / 100));
@@ -1473,7 +1499,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
       continue;
     }
 
-    const durationMs = Math.max(1500, Math.min(32000,
+    const durationMs = fixedDurationMs || Math.max(1500, Math.min(32000,
       (((width + textWidth) / 330) * 1000) / speed));
     const reservation = reserveOverlayLane(scrollLanes, startMs, durationMs, 180);
     const lane = reservation.lane;
@@ -1492,13 +1518,14 @@ function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, widt
   // clearing here used to erase the video and leave only a black background + comments.
   context.globalAlpha = Math.min(1, Math.max(0.2, Number(options.opacity) || 1));
   const shadow = options.shadow !== false;
+  const outlineWidth = Math.max(0, Math.min(12, Number(options.outlineWidth) || 0));
   for (const comment of activeComments) {
     if (videoTimeMs < comment.startMs || videoTimeMs > comment.endMs) continue;
     const elapsed = videoTimeMs - comment.startMs;
     context.font = "bold " + comment.fontSize + "px Meiryo, Yu Gothic, sans-serif";
     context.textBaseline = "middle";
     context.lineJoin = "round";
-    context.lineWidth = shadow ? Math.max(2, comment.fontSize * 0.11) : 0;
+    context.lineWidth = outlineWidth;
     context.strokeStyle = "rgba(0, 0, 0, 0.92)";
     context.fillStyle = comment.color;
     context.shadowColor = shadow ? "rgba(0, 0, 0, 0.65)" : "transparent";
@@ -1514,7 +1541,7 @@ function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, widt
       context.textAlign = "center";
     }
 
-    if (shadow) {
+    if (outlineWidth > 0) {
       context.strokeText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
     }
     context.fillText(comment.text, x, comment.y, Math.max(width * 2, comment.textWidth + 40));
@@ -1653,17 +1680,37 @@ async function composeCommentVideo() {
     const canvas = document.createElement("canvas");
     const sourceWidth = videoElement.videoWidth || 1920;
     const sourceHeight = videoElement.videoHeight || 1080;
-    const targetHeight = composeOptions.resolution === "original"
-      ? sourceHeight : Number(composeOptions.resolution);
-    const resolutionScale = Math.min(1, targetHeight / sourceHeight);
-    canvas.width = Math.max(2, Math.round(sourceWidth * resolutionScale / 2) * 2);
-    canvas.height = Math.max(2, Math.round(sourceHeight * resolutionScale / 2) * 2);
+    const customWidth = composeOptions.outputWidth;
+    const customHeight = composeOptions.outputHeight;
+    if (customWidth > 0 || customHeight > 0) {
+      const requestedWidth = customWidth > 0 ? customWidth : sourceWidth;
+      const requestedHeight = customHeight > 0 ? customHeight : sourceHeight;
+      if (composeOptions.keepAspect) {
+        const scale = Math.min(requestedWidth / sourceWidth, requestedHeight / sourceHeight);
+        canvas.width = Math.max(2, Math.round(sourceWidth * scale / 2) * 2);
+        canvas.height = Math.max(2, Math.round(sourceHeight * scale / 2) * 2);
+      } else {
+        canvas.width = Math.max(2, Math.round(requestedWidth / 2) * 2);
+        canvas.height = Math.max(2, Math.round(requestedHeight / 2) * 2);
+      }
+    } else {
+      const targetHeight = composeOptions.resolution === "original"
+        ? sourceHeight : Number(composeOptions.resolution);
+      const resolutionScale = Math.min(1, targetHeight / sourceHeight);
+      canvas.width = Math.max(2, Math.round(sourceWidth * resolutionScale / 2) * 2);
+      canvas.height = Math.max(2, Math.round(sourceHeight * resolutionScale / 2) * 2);
+    }
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("動画合成用キャンバスを作成できません。");
+    const ngWords = composeOptions.ngWords;
     const adjustedComments = timeline.comments.map((comment) => ({
       ...comment,
       timeMs: comment.timeMs + composeOptions.offsetMs
-    })).filter((comment) => comment.timeMs <= durationMs);
+    })).filter((comment) => {
+      if (comment.timeMs > durationMs) return false;
+      const text = String(comment.text || "").toLocaleLowerCase("ja-JP");
+      return !ngWords.some((word) => word && text.includes(word));
+    });
     const schedule = createCommentOverlaySchedule(
       adjustedComments, context, canvas.width, canvas.height, composeOptions
     );
@@ -1705,7 +1752,10 @@ async function composeCommentVideo() {
     const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported(type));
     if (!mimeType) throw new Error("この環境で利用できるWebMエンコーダーがありません。");
 
-    const output = await api.startCompose();
+    const output = await api.startCompose({
+      format: composeOptions.outputFormat,
+      quality: composeOptions.outputQuality
+    });
     if (output.cancelled) {
       setCompositionProgress(0, "保存先の選択をキャンセルしました");
       await cleanup();
@@ -1761,6 +1811,7 @@ async function composeCommentVideo() {
     const stopResultPromise = new Promise((resolve) => {
       recorder.onstop = async () => {
         if (animationFrame) cancelAnimationFrame(animationFrame);
+        cancelButton.disabled = true;
         try {
           await chunkQueue;
           if (writeError) throw writeError;
@@ -1769,7 +1820,7 @@ async function composeCommentVideo() {
             resolve({ cancelled: true });
           } else {
             const saved = await api.finishCompose();
-            resolve({ path: saved.path });
+            resolve(saved);
           }
         } catch (error) {
           try { await api.cancelCompose(); } catch (_) {}
@@ -1801,9 +1852,12 @@ async function composeCommentVideo() {
     if (stopResult.cancelled) {
       setCompositionProgress(0, "生成をキャンセルしました");
       showToast("コメント付き動画の生成をキャンセルしました。");
+    } else if (stopResult.warning) {
+      setCompositionProgress(100, "WebMで保存（MP4変換不可）");
+      showToast("MP4変換ができなかったためWebMで保存しました: " + stopResult.path, true);
     } else {
-      setCompositionProgress(100, "生成完了");
-      showToast("コメント付き動画を保存しました: " + stopResult.path);
+      setCompositionProgress(100, stopResult.format === "mp4" ? "MP4生成完了" : "WebM生成完了");
+      showToast((stopResult.format === "mp4" ? "MP4" : "WebM") + "のコメント付き動画を保存しました: " + stopResult.path);
     }
   } catch (error) {
     if (recorder && recorder.state !== "inactive") {
@@ -1821,7 +1875,7 @@ async function composeCommentVideo() {
   }
 }
 
-for (const id of ["compose-font-scale", "compose-speed", "compose-position", "compose-opacity", "compose-offset"]) {
+for (const id of ["compose-font-scale", "compose-speed", "compose-position", "compose-opacity", "compose-offset", "compose-outline"]) {
   byId(id).addEventListener("input", updateCompositionEditorLabels);
 }
 updateCompositionEditorLabels();
