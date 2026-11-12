@@ -77,7 +77,7 @@ test("monitor prefers the authenticated follow-list API and retains public-histo
 
 
 test("broadcast connection and direct video/audio recording share one integrated panel", () => {
-  const panelStart = html.indexOf('<section class="panel session-panel">');
+  const panelStart = html.indexOf('<section class="panel session-panel"');
   const panelEnd = html.indexOf("</section>", panelStart);
   assert.ok(panelStart >= 0 && panelEnd > panelStart, "integrated session panel must exist");
   const panel = html.slice(panelStart, panelEnd);
@@ -160,7 +160,7 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.match(main, /if \(!current\.autoUpdateStreamlink && process\.platform === "win32"\)/);
   assert.doesNotMatch(html, /streamlink-update-check-button|streamlink-update-install-button/);
   assert.doesNotMatch(preload, /checkStreamlinkUpdate|installStreamlinkUpdate/);
-  assert.match(renderer, /function setLibraryView\(/);
+  assert.match(renderer, /function setActivePage\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
   assert.match(renderer, /自動ダウンロード・SHA-256検証中/);
