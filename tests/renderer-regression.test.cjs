@@ -603,5 +603,8 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
   assert.match(renderer, /layout\.topLaneYs\[lane\]/);
   assert.match(renderer, /layout\.bottomLaneYs\[lane\]/);
   assert.match(composition, /function calculateCommentLaneLayout\(/);
-  assert.match(composition, /const lineHeight = Math\.max\(24/);\n  assert.match(composition, /function calculateScrollCommentHeadway\(/);\n  assert.match(renderer, /calculateScrollCommentHeadway\(/);\n  assert.match(renderer, /red2: "#cc0033"/);
+  assert.match(composition, /const lineHeight = Math\.max\(24/);
+  assert.match(composition, /function calculateScrollCommentHeadway\(/);
+  assert.match(renderer, /calculateScrollCommentHeadway\(/);
+  assert.match(renderer, /red2: "#cc0033"/);
 });

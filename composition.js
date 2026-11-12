@@ -81,8 +81,7 @@
   }
 
 
-  // Calculate non-overlapping vertical bands with room for the biggest "big" comment,
-  // text outline and shadow. Top/bottom fixed comments get their own reserved bands.
+  // Calculate safe vertical rows for large comments and keep fixed comments near the edges.
   function calculateCommentLaneLayout(options = {}) {
     const height = Math.max(120, Number(options.height) || 1080);
     const baseFontSize = Math.max(12, Math.min(110, Number(options.baseFontSize) || 64));

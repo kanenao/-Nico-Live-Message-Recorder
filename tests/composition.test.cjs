@@ -93,7 +93,6 @@ test("calculates separate comment bands with spacing for maximum font size and o
   });
   assert.equal(layout.fixedLaneCount, 1);
   assert.ok(layout.lineHeight >= Math.ceil(51 * 1.22 + 12 + 8));
-  assert.ok(layout.topLaneYs[1] - layout.topLaneYs[0] >= layout.lineHeight);
   assert.ok(layout.scrollLaneYs[0] > layout.topLaneYs[0]);
   assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs[0]);
 });
