@@ -309,7 +309,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.24");
+  assert.equal(packageConfig.version, "0.1.0-beta.25");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -371,4 +371,15 @@ test("comment video output confirms when the selected extension changes the dest
   assert.match(main, /fs\.existsSync\(finalPath\)/);
   assert.match(main, /変更後の保存先/);
   assert.match(main, /confirmation\.response !== 1/);
+});
+
+
+test("MP4 comment video conversion reports progress and uses a unique intermediate file", () => {
+  assert.ok(main.includes("createMp4IntermediatePath(finalPath, randomUUID())"));
+  assert.ok(main.includes('flags: format === "mp4" ? "wx" : "w"'));
+  assert.ok(!main.includes("unlink(workingPath)"));
+  assert.ok(main.includes("calculateTranscodeProgressPercent(match[1], durationMs)"));
+  assert.ok(main.includes('state: "progress"'));
+  assert.ok(renderer.includes("durationMs"));
+  assert.ok(renderer.includes('payload.state === "progress" ? Number(payload.percent)'));
 });

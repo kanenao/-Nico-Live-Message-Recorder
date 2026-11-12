@@ -27,11 +27,30 @@ function normalizeCompositionOutputPath(filePath, format) {
   return path.join(parsed.dir, baseName + extension);
 }
 
+function createMp4IntermediatePath(outputPath, uniqueToken) {
+  const target = String(outputPath || "").trim();
+  const token = String(uniqueToken || "").trim();
+  if (!target || path.extname(target).toLowerCase() !== ".mp4") {
+    throw new TypeError("MP4の出力先を指定してください。");
+  }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(token)) {
+    throw new TypeError("一時ファイル識別子が正しくありません。");
+  }
+  return target + "." + token + ".partial.webm";
+}
+
+function calculateTranscodeProgressPercent(outTimeMicroseconds, durationMilliseconds) {
+  const elapsed = Number(outTimeMicroseconds);
+  const duration = Number(durationMilliseconds);
+  if (!Number.isFinite(elapsed) || elapsed <= 0 || !Number.isFinite(duration) || duration <= 0) return 0;
+  return Math.min(99, Math.max(0, (elapsed / 1000 / duration) * 100));
+}
+
 function buildMp4TranscodeArgs(inputPath, outputPath, quality) {
   if (!inputPath || !outputPath) throw new TypeError("変換元と出力先を指定してください。");
   const profile = QUALITY_PROFILES[normalizeCompositionQuality(quality)];
   return [
-    "-hide_banner", "-loglevel", "error", "-y",
+    "-hide_banner", "-loglevel", "error", "-progress", "pipe:2", "-nostats", "-y",
     "-i", String(inputPath),
     "-map", "0:v:0",
     "-map", "0:a:0?",
@@ -51,5 +70,7 @@ module.exports = {
   normalizeCompositionFormat,
   normalizeCompositionQuality,
   normalizeCompositionOutputPath,
+  createMp4IntermediatePath,
+  calculateTranscodeProgressPercent,
   buildMp4TranscodeArgs
 };

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu } = require("electron");
 const { spawn, execFileSync } = require("node:child_process");
+const { randomUUID } = require("node:crypto");
 const {
   findStreamlinkExecutable,
   findFfmpegExecutable,
@@ -13,6 +14,8 @@ const {
   normalizeCompositionFormat,
   normalizeCompositionQuality,
   normalizeCompositionOutputPath,
+  createMp4IntermediatePath,
+  calculateTranscodeProgressPercent,
   buildMp4TranscodeArgs
 } = require("./composition-export.cjs");
 const { fetchTimeshiftProgramPage, fetchTimeshiftArchive } = require("./timeshift-comments.cjs");
@@ -59,6 +62,7 @@ let composeFilePath = "";
 let composeFinalFilePath = "";
 let composeOutputFormat = "webm";
 let composeOutputQuality = "standard";
+let composeOutputDurationMs = 0;
 let composeFinalizePromise = null;
 let shutdownPromise = null;
 let shutdownComplete = false;
@@ -1640,7 +1644,7 @@ async function stopStreamlinkRecording() {
 
 ipcMain.handle("video:stop", () => stopStreamlinkRecording());
 
-function transcodeCompositionToMp4(inputPath, outputPath, quality) {
+function transcodeCompositionToMp4(inputPath, outputPath, quality, durationMs) {
   const ffmpegPath = getVideoToolStatus().ffmpegPath;
   if (!ffmpegPath) {
     return Promise.reject(new Error("MP4変換に使えるFFmpegが見つかりません。WebM形式で保存します。"));
@@ -1655,11 +1659,37 @@ function transcodeCompositionToMp4(inputPath, outputPath, quality) {
       return;
     }
     let stderr = "";
-    if (child.stderr) child.stderr.on("data", (chunk) => { stderr = (stderr + chunk.toString("utf8")).slice(-2400); });
+    let progressBuffer = "";
+    let lastProgress = -1;
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => {
+        const value = chunk.toString("utf8");
+        stderr = (stderr + value).slice(-2400);
+        progressBuffer += value;
+        const lines = progressBuffer.split(/\r?\n/);
+        progressBuffer = lines.pop() || "";
+        for (const line of lines) {
+          const match = line.match(/^out_time_(?:ms|us)=(\d+)$/);
+          if (!match) continue;
+          const percent = calculateTranscodeProgressPercent(match[1], durationMs);
+          if (percent <= lastProgress + 0.25) continue;
+          lastProgress = percent;
+          send("compose:status", {
+            state: "progress",
+            percent,
+            message: "MP4変換中 " + Math.floor(percent) + "%"
+          });
+        }
+      });
+    }
     child.once("error", (error) => reject(new Error("MP4変換を開始できません: " + error.message)));
     child.once("close", (code) => {
-      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) resolve(outputPath);
-      else reject(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
+      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+        send("compose:status", { state: "progress", percent: 100, message: "MP4変換中 100%" });
+        resolve(outputPath);
+      } else {
+        reject(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
+      }
     });
   });
 }
@@ -1689,6 +1719,13 @@ ipcMain.handle("compose:start", async (_event, options = {}) => {
 
   const selectedPath = saveResult.filePath;
   const finalPath = normalizeCompositionOutputPath(selectedPath, format);
+  const requestedDurationMs = Number(options && options.durationMs);
+  if (format === "mp4" && (!Number.isFinite(requestedDurationMs) || requestedDurationMs <= 0)) {
+    throw new Error("MP4変換の進捗計算に必要な動画の長さを取得できませんでした。");
+  }
+  composeOutputDurationMs = format === "mp4"
+    ? Math.min(24 * 60 * 60 * 1000, Math.max(1000, Math.round(requestedDurationMs)))
+    : 0;
   const pathWasNormalized = path.resolve(finalPath) !== path.resolve(selectedPath);
   if (pathWasNormalized) {
     const targetExists = fs.existsSync(finalPath);
@@ -1706,13 +1743,14 @@ ipcMain.handle("compose:start", async (_event, options = {}) => {
     });
     if (confirmation.response !== 1) return { cancelled: true };
   }
-  const workingPath = format === "mp4" ? finalPath + ".partial.webm" : finalPath;
-  if (format === "mp4") await fs.promises.unlink(workingPath).catch(() => {});
+  const workingPath = format === "mp4"
+    ? createMp4IntermediatePath(finalPath, randomUUID())
+    : finalPath;
   composeFilePath = workingPath;
   composeFinalFilePath = finalPath;
   composeOutputFormat = format;
   composeOutputQuality = quality;
-  composeWriter = fs.createWriteStream(composeFilePath, { flags: "w" });
+  composeWriter = fs.createWriteStream(composeFilePath, { flags: format === "mp4" ? "wx" : "w" });
   await new Promise((resolve, reject) => {
     composeWriter.once("open", resolve);
     composeWriter.once("error", reject);
@@ -1737,6 +1775,7 @@ ipcMain.handle("compose:finish", async () => {
   const finalPath = composeFinalFilePath || savedPath;
   const format = composeOutputFormat;
   const quality = composeOutputQuality;
+  const durationMs = composeOutputDurationMs;
   composeWriter = null;
   composeFilePath = "";
 
@@ -1749,17 +1788,19 @@ ipcMain.handle("compose:finish", async () => {
       composeFinalFilePath = "";
       composeOutputFormat = "webm";
       composeOutputQuality = "standard";
+      composeOutputDurationMs = 0;
       return { path: savedPath, format: "webm", converted: false };
     }
 
-    send("compose:status", { state: "converting", message: "FFmpegでMP4（H.264 / AAC）へ変換しています。" });
+    send("compose:status", { state: "converting", percent: 0, message: "FFmpegでMP4（H.264 / AAC）へ変換しています。" });
     try {
-      await transcodeCompositionToMp4(savedPath, finalPath, quality);
+      await transcodeCompositionToMp4(savedPath, finalPath, quality, durationMs);
       await fs.promises.unlink(savedPath).catch(() => {});
       send("compose:status", { state: "complete", message: "MP4変換が完了しました。" });
       composeFinalFilePath = "";
       composeOutputFormat = "webm";
       composeOutputQuality = "standard";
+      composeOutputDurationMs = 0;
       return { path: finalPath, format: "mp4", converted: true };
     } catch (error) {
       await fs.promises.unlink(finalPath).catch(() => {});
@@ -1773,6 +1814,7 @@ ipcMain.handle("compose:finish", async () => {
       composeFinalFilePath = "";
       composeOutputFormat = "webm";
       composeOutputQuality = "standard";
+      composeOutputDurationMs = 0;
       return { path: fallbackPath, format: "webm", converted: false, warning };
     }
   })();
@@ -1793,6 +1835,7 @@ ipcMain.handle("compose:cancel", async () => {
   composeFinalFilePath = "";
   composeOutputFormat = "webm";
   composeOutputQuality = "standard";
+  composeOutputDurationMs = 0;
   if (writer) await new Promise((resolve) => writer.end(resolve));
   if (savedPath && fs.existsSync(savedPath)) await fs.promises.unlink(savedPath).catch(() => {});
   return { cancelled: true };

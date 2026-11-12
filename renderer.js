@@ -1281,8 +1281,11 @@ api.onEvent(({ channel, payload }) => {
     byId("capture-status-detail").textContent = "映像録画は開始しましたが、コメント取得に失敗しました: " + payload.commentError;
   }
   if (channel === "compose:status" && payload) {
+    const progress = payload.state === "converting" ? 0 :
+      payload.state === "progress" ? Number(payload.percent) || 0 :
+      payload.state === "complete" ? 100 : Number(byId("compose-progress").value);
     setCompositionProgress(
-      payload.state === "converting" ? 100 : Number(byId("compose-progress").value),
+      progress,
       payload.message || (payload.state === "converting" ? "MP4変換中…" : "")
     );
   }
@@ -1756,7 +1759,8 @@ async function composeCommentVideo() {
 
     const output = await api.startCompose({
       format: composeOptions.outputFormat,
-      quality: composeOptions.outputQuality
+      quality: composeOptions.outputQuality,
+      durationMs
     });
     if (output.cancelled) {
       setCompositionProgress(0, "保存先の選択をキャンセルしました");
