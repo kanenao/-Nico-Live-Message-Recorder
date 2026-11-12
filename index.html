@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.28</span>
+        <span class="version" id="version">v0.1.0-beta.29</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -67,7 +67,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.28</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.29</span></div>
         </div>
       </aside>
 
@@ -509,7 +509,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.28</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.29</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -596,6 +596,10 @@
 <label class="settings-checkbox">
             <input type="checkbox" id="setting-auto-update-streamlink" checked>
             <span>Streamlinkを起動時・6時間ごとに自動確認し、更新を自動適用する</span>
+          </label>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="setting-notify-on-live" checked>
+            <span>配信開始・自動録画の開始結果をWindows通知で知らせる</span>
           </label>
           </div>
         </section>

@@ -898,6 +898,7 @@ function openSettings() {
   byId("setting-close-to-tray").checked = monitorSettings.closeToTray !== false;
   byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
+  byId("setting-notify-on-live").checked = monitorSettings.notifyOnLive !== false;
   byId("settings-modal").hidden = false;
 }
 
@@ -915,7 +916,8 @@ async function saveSettings() {
     runAtStartup: byId("setting-run-at-startup").checked,
     closeToTray: byId("setting-close-to-tray").checked,
     keepAwake: byId("setting-keep-awake").checked,
-    autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked
+    autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked,
+    notifyOnLive: byId("setting-notify-on-live").checked
   };
   const button = byId("save-settings-button");
   button.disabled = true;
@@ -1000,6 +1002,13 @@ async function processMonitorAutoQueue() {
     } else {
       showToast("映像録画とコメント取得を開始しました：" + liveId);
     }
+    api.notifyMonitorRecordingResult({
+      status: "started",
+      userId: target.userId,
+      name: target.displayName || target.name || "",
+      liveId,
+      commentError: capture.commentError || ""
+    }).catch(() => {});
   } catch (error) {
     setConnection("error");
     monitorHandledDetections.delete(String(target.userId || "") + ":" + String(target.liveId || ""));
@@ -1012,6 +1021,13 @@ async function processMonitorAutoQueue() {
       "error"
     );
     showToast(error.message || "監視対象の自動録画に失敗しました。", true);
+    api.notifyMonitorRecordingResult({
+      status: "failed",
+      userId: target.userId,
+      name: target.displayName || target.name || "",
+      liveId: target.liveId,
+      message: error.message || String(error)
+    }).catch(() => {});
   } finally {
     monitorAutoProcessing = false;
     if (!recordStartedAt && videoCaptureState !== "recording") {

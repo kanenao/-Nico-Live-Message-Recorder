@@ -38,6 +38,7 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
     "setting-run-at-startup",
     "setting-close-to-tray",
     "setting-keep-awake",
+    "setting-notify-on-live",
     "monitor-user-id",
     "monitor-add-button",
     "monitor-start-button",
@@ -321,7 +322,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.27");
+  assert.equal(packageConfig.version, "0.1.0-beta.29");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -458,7 +459,8 @@ test("application settings are grouped by capture, comments, and app behavior", 
   for (const id of [
     "setting-monitor-interval", "setting-monitor-quality", "setting-auto-record",
     "setting-auto-start", "setting-comment-format", "setting-run-at-startup",
-    "setting-close-to-tray", "setting-keep-awake", "setting-auto-update-streamlink"
+    "setting-close-to-tray", "setting-keep-awake", "setting-auto-update-streamlink",
+    "setting-notify-on-live"
   ]) {
     assert.ok(settings.includes('id="' + id + '"'), "settings control not grouped: " + id);
   }
@@ -490,4 +492,22 @@ test("grouped settings explanatory text closes before the dialog actions", () =>
   const afterNote = html.slice(noteEnd + 4).trimStart();
   assert.ok(afterNote.startsWith('<div class="settings-actions">'), "settings actions must follow a balanced note");
   assert.doesNotMatch(html, /<\/p>ログイン中はフォロー中番組API/);
+});
+
+
+test("Windows notifications report detected LIVE and automatic recording results", () => {
+  assert.match(main, /Notification,?\s*\} = require\("electron"\)/);
+  assert.match(main, /app\.setAppUserModelId\("jp\.kanenao\.nicolive\.recorder"\)/);
+  assert.match(main, /function showDesktopNotification\(/);
+  assert.match(main, /Notification\.isSupported\(\)/);
+  assert.match(main, /function queueMonitorDetection\([\s\S]*showDesktopNotification\("配信開始を検知しました"/);
+  assert.match(main, /function notifyMonitorRecordingResult\(/);
+  assert.match(main, /failure-already-notified/);
+  assert.match(main, /ipcMain\.handle\("monitor:notify-recording-result"/);
+  assert.match(preload, /notifyMonitorRecordingResult:.*ipcRenderer\.invoke\("monitor:notify-recording-result"/);
+  assert.match(renderer, /api\.notifyMonitorRecordingResult\(\{\s*status: "started"/);
+  assert.match(renderer, /api\.notifyMonitorRecordingResult\(\{\s*status: "failed"/);
+  assert.match(main, /notifyOnLive: stored\.notifyOnLive !== false/);
+  assert.match(main, /notifyOnLive: candidate\.notifyOnLive !== false/);
+  assert.match(main, /notifyOnLive: true/);
 });

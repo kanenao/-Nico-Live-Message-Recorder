@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   getMonitorState: () => ipcRenderer.invoke("monitor:get-state"),
   saveMonitorSettings: (settings) => ipcRenderer.invoke("monitor:save-settings", settings),
+  notifyMonitorRecordingResult: (result) => ipcRenderer.invoke("monitor:notify-recording-result", result),
   addMonitorTarget: (target) => ipcRenderer.invoke("monitor:add-target", target),
   removeMonitorTarget: (userId) => ipcRenderer.invoke("monitor:remove-target", userId),
   startMonitor: () => ipcRenderer.invoke("monitor:start"),

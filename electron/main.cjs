@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker, Notification } = require("electron");
 const { spawn, execFileSync } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const {
@@ -32,6 +32,8 @@ const path = require("node:path");
 
 // This is a local desktop media-processing app; allow the selected local video to play for composition.
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
+if (process.platform === "win32") app.setAppUserModelId("jp.kanenao.nicolive.recorder");
 
 app.setName("Nico Live Message Recorder");
 
@@ -78,6 +80,8 @@ let monitorLastCheckAt = null;
 const monitorTargetStatuses = new Map();
 const monitorObservedLiveIds = new Map();
 const monitorPendingDetections = [];
+const activeDesktopNotifications = new Set();
+const monitorFailureNotifications = new Set();
 
 function dataRoot() {
   const root = path.join(app.getPath("videos"), "NicoLiveRecorder");
@@ -98,6 +102,28 @@ function stamp() {
 function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("app:event", { channel, payload });
+  }
+}
+
+function showDesktopNotification(title, body) {
+  if (process.platform !== "win32" || !Notification.isSupported()) return false;
+  try {
+    const notification = new Notification({
+      title: String(title || "Nico Live Message Recorder").slice(0, 120),
+      body: String(body || "").slice(0, 900)
+    });
+    activeDesktopNotifications.add(notification);
+    notification.on("click", () => showMainWindow());
+    notification.once("close", () => activeDesktopNotifications.delete(notification));
+    notification.once("failed", (_event, error) => {
+      activeDesktopNotifications.delete(notification);
+      console.warn("Windows notification could not be displayed:", error);
+    });
+    notification.show();
+    return true;
+  } catch (error) {
+    console.warn("Windows notification could not be created:", error);
+    return false;
   }
 }
 
@@ -784,6 +810,7 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   quality: "best",
   commentFormat: "jsonl",
   autoUpdateStreamlink: true,
+  notifyOnLive: true,
   targets: []
 });
 
@@ -809,6 +836,7 @@ function getMonitorSettings() {
     quality: stored.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
     autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
+    notifyOnLive: stored.notifyOnLive !== false,
     targets: targets
       .filter((target) => target && /^\d{5,}$/.test(String(target.userId || "")))
       .map((target) => ({
@@ -837,6 +865,7 @@ function saveMonitorSettings(nextSettings) {
     quality: candidate.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
     autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
+    notifyOnLive: candidate.notifyOnLive !== false,
     targets: current.targets
   };
   writeAppSettings({ monitor: normalized });
@@ -962,7 +991,56 @@ async function createSystemTray() {
 function queueMonitorDetection(payload) {
   monitorPendingDetections.push(payload);
   while (monitorPendingDetections.length > 100) monitorPendingDetections.shift();
+
+  if (getMonitorSettings().notifyOnLive) {
+    const broadcaster = String(payload.displayName || payload.name || ("ユーザー " + payload.userId)).slice(0, 80);
+    const title = payload.title ? String(payload.title).slice(0, 120) : "";
+    const body = broadcaster + " が配信を開始しました。" +
+      (title ? "\n" + title : "") +
+      "\n" + String(payload.liveId || "");
+    showDesktopNotification("配信開始を検知しました", body);
+  }
   send("monitor:live-detected", payload);
+}
+
+function notifyMonitorRecordingResult(result) {
+  const settings = getMonitorSettings();
+  if (!settings.notifyOnLive || !result || !["started", "failed"].includes(result.status)) {
+    return { shown: false, reason: "disabled-or-invalid" };
+  }
+
+  const liveId = String(result.liveId || "").slice(0, 32);
+  if (!/^lv\d{5,}$/.test(liveId)) return { shown: false, reason: "invalid-live-id" };
+  const userId = String(result.userId || "").replace(/\D/g, "").slice(0, 24);
+  const key = (userId || "unknown") + ":" + liveId;
+  const broadcaster = String(result.name || (userId ? "ユーザー " + userId : "配信者")).slice(0, 80);
+  const detail = String(result.message || "").replace(/[\r\n]+/g, " ").slice(0, 220);
+
+  if (result.status === "failed") {
+    // Do not repeat the same failure toast on every automatic retry.
+    if (monitorFailureNotifications.has(key)) return { shown: false, reason: "failure-already-notified" };
+    monitorFailureNotifications.add(key);
+    while (monitorFailureNotifications.size > 500) {
+      monitorFailureNotifications.delete(monitorFailureNotifications.values().next().value);
+    }
+    const body = broadcaster + " / " + liveId +
+      (detail ? "\n" + detail : "") +
+      "\n次回の監視確認で再試行します。";
+    return { shown: showDesktopNotification("自動録画を開始できませんでした", body) };
+  }
+
+  monitorFailureNotifications.delete(key);
+  const commentError = String(result.commentError || "").replace(/[\r\n]+/g, " ").slice(0, 180);
+  const body = broadcaster + " / " + liveId +
+    (commentError
+      ? "\n映像録画：開始済み\nコメント取得：失敗（" + commentError + "）"
+      : "\n映像録画・コメント取得：開始しました。");
+  return {
+    shown: showDesktopNotification(
+      commentError ? "映像録画を開始（コメント取得に失敗）" : "自動録画を開始しました",
+      body
+    )
+  };
 }
 
 async function getNicoCookieHeader() {
@@ -1230,6 +1308,8 @@ function stopMonitor() {
 ipcMain.handle("monitor:get-state", () => getMonitorState());
 
 ipcMain.handle("monitor:save-settings", (_event, values) => saveMonitorSettings(values));
+
+ipcMain.handle("monitor:notify-recording-result", (_event, result) => notifyMonitorRecordingResult(result));
 
 ipcMain.handle("monitor:add-target", (_event, input) => {
   const userId = normalizeNicoUserId(input && input.userId);
