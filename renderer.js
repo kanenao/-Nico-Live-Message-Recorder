@@ -19,6 +19,9 @@ let videoCaptureState = "idle";
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
+let composePreviewUrl = null;
+let composePreviewSchedule = [];
+let composePreviewFrame = 0;
 let monitorSettings = {
   intervalSeconds: 60,
   autoRecord: true,
@@ -2124,6 +2127,67 @@ function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, widt
   context.globalAlpha = 1;
 }
 
+function setComposePreviewStatus(message, isError = false) {
+  const status = byId("compose-preview-status");
+  if (status) {
+    status.textContent = message;
+    status.classList.toggle("is-error", isError);
+  }
+}
+
+function drawComposePreviewFrame() {
+  const video = byId("compose-preview-video");
+  const canvas = byId("compose-preview-canvas");
+  if (!video || !canvas || !video.videoWidth || !video.videoHeight) return;
+  if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+  }
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  const currentMs = video.currentTime * 1000;
+  const active = composePreviewSchedule.filter(comment => comment.startMs <= currentMs && comment.endMs >= currentMs);
+  drawCommentOverlay(context, composePreviewSchedule, active, currentMs, canvas.width, canvas.height, getCompositionEditorOptions());
+}
+
+async function refreshComposePreview() {
+  const video = byId("compose-preview-video");
+  const canvas = byId("compose-preview-canvas");
+  const videoFile = byId("compose-video-input")?.files?.[0];
+  const commentsFile = byId("compose-comments-input")?.files?.[0];
+  composePreviewSchedule = [];
+  if (!videoFile || !commentsFile || !video || !canvas || !video.videoWidth || !video.duration) {
+    if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    setComposePreviewStatus(!videoFile ? "動画を選択してください" : !commentsFile ? "コメントログを選択してください" : "プレビュー準備中");
+    return;
+  }
+  try {
+    const records = parseJsonlFile(await commentsFile.text());
+    const timeline = window.nicoCommentComposition.prepareCommentTimeline(records, video.duration * 1000);
+    const options = getCompositionEditorOptions();
+    const adjusted = timeline.comments.map(comment => ({ ...comment, timeMs: comment.timeMs + options.offsetMs }))
+      .filter(comment => comment.timeMs >= 0 && comment.timeMs <= video.duration * 1000)
+      .filter(comment => !options.ngWords.some(word => word && String(comment.text || "").toLocaleLowerCase("ja-JP").includes(word)));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("プレビュー用キャンバスを作成できません。");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    composePreviewSchedule = createCommentOverlaySchedule(adjusted, context, canvas.width, canvas.height, options)
+      .filter(comment => comment.startMs < video.duration * 1000 && comment.endMs > 0);
+    drawComposePreviewFrame();
+    setComposePreviewStatus(`${composePreviewSchedule.length.toLocaleString("ja-JP")}件のコメントをプレビュー中${timeline.usedFallbackOrigin ? "（開始時刻を推定）" : ""}`);
+  } catch (error) {
+    composePreviewSchedule = [];
+    setComposePreviewStatus(error.message || "プレビューを作成できませんでした。", true);
+  }
+}
+
+function scheduleComposePreviewRefresh() {
+  window.clearTimeout(scheduleComposePreviewRefresh.timer);
+  scheduleComposePreviewRefresh.timer = window.setTimeout(() => { void refreshComposePreview(); }, 120);
+}
+
 function setCompositionProgress(value, label) {
   const progress = byId("compose-progress");
   if (progress) progress.value = Math.max(0, Math.min(100, Number(value) || 0));
@@ -2457,13 +2521,41 @@ updateCompositionEditorLabels();
 
 byId("compose-video-input").addEventListener("change", (event) => {
   const file = event.target.files[0];
+  const video = byId("compose-preview-video");
   byId("compose-video-name").textContent = file ? file.name : "WebM / MP4動画を選択";
+  if (composePreviewUrl) URL.revokeObjectURL(composePreviewUrl);
+  composePreviewUrl = file ? URL.createObjectURL(file) : null;
+  video.pause();
+  video.removeAttribute("src");
+  if (composePreviewUrl) video.src = composePreviewUrl;
+  video.load();
+  byId("compose-preview-empty").hidden = Boolean(file);
+  scheduleComposePreviewRefresh();
 });
 
 byId("compose-comments-input").addEventListener("change", (event) => {
   const file = event.target.files[0];
   byId("compose-comments-name").textContent = file ? file.name : "JSONLコメントログを選択";
+  scheduleComposePreviewRefresh();
 });
+
+byId("compose-preview-video").addEventListener("loadedmetadata", scheduleComposePreviewRefresh);
+byId("compose-preview-video").addEventListener("timeupdate", drawComposePreviewFrame);
+byId("compose-preview-video").addEventListener("seeked", drawComposePreviewFrame);
+byId("compose-preview-video").addEventListener("play", () => {
+  const tick = () => {
+    drawComposePreviewFrame();
+    const video = byId("compose-preview-video");
+    if (video && !video.paused && !video.ended) composePreviewFrame = requestAnimationFrame(tick);
+  };
+  cancelAnimationFrame(composePreviewFrame);
+  composePreviewFrame = requestAnimationFrame(tick);
+});
+byId("compose-preview-video").addEventListener("pause", () => cancelAnimationFrame(composePreviewFrame));
+for (const id of ["compose-font-scale", "compose-font-size", "compose-speed", "compose-position", "compose-opacity", "compose-offset", "compose-outline", "compose-lane-gap", "compose-row-limit", "compose-duration", "compose-display-mode", "compose-font-family", "compose-color-mode", "compose-overlap-protection", "compose-shadow", "compose-ng-words"]) {
+  byId(id).addEventListener("input", scheduleComposePreviewRefresh);
+  byId(id).addEventListener("change", scheduleComposePreviewRefresh);
+}
 
 byId("compose-button").addEventListener("click", composeCommentVideo);
 byId("compose-cancel-button").addEventListener("click", () => {

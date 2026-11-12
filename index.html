@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.36</span>
+        <span class="version" id="version">v0.1.0-beta.37</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -73,7 +73,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.36</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.37</span></div>
         </div>
       </aside>
 
@@ -337,6 +337,18 @@
             </label>
           </div>
 
+          <section class="compose-preview-panel" aria-label="コメント付き動画プレビュー">
+            <div class="compose-preview-heading">
+              <div><strong>リアルタイムプレビュー</strong><small>動画とコメントログを選択すると、設定変更をすぐに反映します。</small></div>
+              <span id="compose-preview-status">素材を選択してください</span>
+            </div>
+            <div class="compose-preview-stage" id="compose-preview-stage">
+              <video id="compose-preview-video" controls playsinline preload="metadata"></video>
+              <canvas id="compose-preview-canvas" aria-hidden="true"></canvas>
+              <div class="compose-preview-empty" id="compose-preview-empty">動画とコメントログを選択するとプレビューが表示されます。</div>
+            </div>
+          </section>
+
           <div class="compose-editor">
             <div class="compose-editor-title">コメント表示・動画出力の設定</div>
             <div class="compose-editor-grid">
@@ -567,7 +579,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.1.0-beta.36</strong>
+              <strong id="app-current-version">v0.1.0-beta.37</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -595,7 +607,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.36</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.37</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

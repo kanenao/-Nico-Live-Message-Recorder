@@ -187,6 +187,7 @@ test("comment video composer exposes timing, layout, appearance and quality cont
     "compose-resolution", "compose-fps", "compose-bitrate", "compose-shadow",
     "compose-row-limit", "compose-duration", "compose-font-family", "compose-outline",
     "compose-ng-words", "compose-width", "compose-height", "compose-keep-aspect",
+    "compose-preview-video", "compose-preview-canvas", "compose-preview-status",
     "compose-output-format", "compose-output-quality"
   ]) {
     assert.ok(html.includes('id="' + id + '"'), "missing composer control: " + id);
@@ -322,7 +323,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.36");
+  assert.equal(packageConfig.version, "0.1.0-beta.37");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -484,6 +485,11 @@ test("comment video generation controls are separated into three clear groups", 
     assert.ok(groups.includes('id="' + id + '"'), "composition control not grouped: " + id);
   }
   assert.match(css, /\.compose-settings-group-grid/);
+  assert.match(renderer, /function refreshComposePreview\(\)/);
+  assert.match(renderer, /drawCommentOverlay\(context, composePreviewSchedule, active/);
+  assert.match(renderer, /scheduleComposePreviewRefresh/);
+  assert.match(html, /リアルタイムプレビュー/);
+  assert.match(css, /\.compose-preview-stage/);
 });
 
 

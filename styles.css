@@ -603,3 +603,17 @@ button, .button {
   .version-update-summary { grid-template-columns: minmax(0, 1fr); }
   .release-history-heading { flex-direction: column; }
 }
+
+
+/* コメント付き動画のリアルタイムプレビュー */
+.compose-preview-panel { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 11px; background: rgba(5,10,20,.28); }
+.compose-preview-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:11px; }
+.compose-preview-heading > div { display:flex; flex-direction:column; gap:5px; }
+.compose-preview-heading strong { color:#e5ecfb; font-size:12px; }
+.compose-preview-heading small, #compose-preview-status { color:#8190ae; font-size:9px; line-height:1.5; }
+#compose-preview-status.is-error { color:#ff8998; }
+.compose-preview-stage { position:relative; display:grid; place-items:center; overflow:hidden; min-height:150px; border:1px solid rgba(155,175,220,.14); border-radius:8px; background:#05070c; }
+#compose-preview-video { display:block; width:100%; max-height:520px; object-fit:contain; }
+#compose-preview-canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; object-fit:contain; }
+.compose-preview-empty { padding:24px 12px; color:#74819b; font-size:10px; text-align:center; }
+.compose-preview-empty[hidden] { display:none; }
