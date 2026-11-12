@@ -430,11 +430,11 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
   }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
   if (article.status === "generated") {
-    const aiSettings = readAppSettings().aiArticle || {};
-    if (aiSettings.enabled !== false) {
+    const aiSettings = getMonitorSettings();
+    if (aiSettings.aiArticleEnabled !== false) {
       const ollamaStatus = await getOllamaStatus({ baseUrl: aiSettings.baseUrl });
       if (ollamaStatus.connected) {
-        const selectedModel = String(aiSettings.model || "qwen2.5:3b");
+        const selectedModel = String(aiSettings.aiArticleModel || "qwen2.5:3b");
         const installedModel = ollamaStatus.models.some(item => item.name === selectedModel || item.name.startsWith(selectedModel + ":"));
         if (installedModel) {
           try {
@@ -977,6 +977,8 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   commentFormat: "jsonl",
   autoUpdateStreamlink: true,
   notifyOnLive: true,
+  aiArticleEnabled: true,
+  aiArticleModel: "qwen2.5:3b",
   targets: []
 });
 
@@ -1003,6 +1005,8 @@ function getMonitorSettings() {
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
     autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
     notifyOnLive: stored.notifyOnLive !== false,
+    aiArticleEnabled: stored.aiArticleEnabled !== false,
+    aiArticleModel: typeof stored.aiArticleModel === "string" && stored.aiArticleModel.trim() ? stored.aiArticleModel.trim().slice(0, 100) : "qwen2.5:3b",
     targets: targets
       .filter((target) => target && /^\d{5,}$/.test(String(target.userId || "")))
       .map((target) => ({
@@ -1032,6 +1036,8 @@ function saveMonitorSettings(nextSettings) {
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
     autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
     notifyOnLive: candidate.notifyOnLive !== false,
+    aiArticleEnabled: candidate.aiArticleEnabled !== false,
+    aiArticleModel: typeof candidate.aiArticleModel === "string" && candidate.aiArticleModel.trim() ? candidate.aiArticleModel.trim().slice(0, 100) : "qwen2.5:3b",
     targets: current.targets
   };
   writeAppSettings({ monitor: normalized });
@@ -1472,6 +1478,7 @@ function stopMonitor() {
 }
 
 ipcMain.handle("monitor:get-state", () => getMonitorState());
+ipcMain.handle("ollama:get-status", () => getOllamaStatus());
 
 ipcMain.handle("monitor:save-settings", (_event, values) => saveMonitorSettings(values));
 
