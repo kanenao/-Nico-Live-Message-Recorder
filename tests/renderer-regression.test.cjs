@@ -290,7 +290,7 @@ test("dashboard timestamps accept numeric and ISO dates and display a full start
   assert.match(main, /normalizeMonitorDate, fetchUserBroadcastStatus/);
   assert.match(css, /--accent: #53df9b/);
   assert.match(css, /\.live-broadcast-card/);
-  assert.match(html, /0\.1\.0-beta\.22/);
+  assert.ok(html.includes(packageConfig.version));
 });
 
 
@@ -309,7 +309,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.23");
+  assert.equal(packageConfig.version, "0.1.0-beta.24");
   assert.ok(html.includes("0.1.0-beta.23"));
   assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-beta23-Windows"));
 });
@@ -356,5 +356,17 @@ test("timeshift without a comment endpoint replaces and closes the previous comm
   assert.match(fallback, /await prepareCommentSession\(/);
   assert.match(fallback, /await startVideoInternal\(/);
   assert.match(fallback, /await closeCommentWriter\(\)/);
-  assert.match(fallback, /timeshiftCommentFetchActive = false/);
+  const handlerStart = main.indexOf('ipcMain.handle("video:start"');
+  const handlerEnd = main.indexOf('ipcMain.handle("capture:start"', handlerStart);
+  const handler = main.slice(handlerStart, handlerEnd);
+  assert.match(handler, /finally\s*\{\s*timeshiftCommentFetchActive = false;\s*\}/);
+});
+
+
+test("comment video output confirms when the selected extension changes the destination", () => {
+  assert.match(main, /normalizeCompositionOutputPath\(selectedPath, format\)/);
+  assert.match(main, /pathWasNormalized/);
+  assert.match(main, /fs\.existsSync\(finalPath\)/);
+  assert.match(main, /変更後の保存先/);
+  assert.match(main, /confirmation\.response !== 1/);
 });

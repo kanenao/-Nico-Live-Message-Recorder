@@ -12,6 +12,7 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const {
   normalizeCompositionFormat,
   normalizeCompositionQuality,
+  normalizeCompositionOutputPath,
   buildMp4TranscodeArgs
 } = require("./composition-export.cjs");
 const { fetchTimeshiftProgramPage, fetchTimeshiftArchive } = require("./timeshift-comments.cjs");
@@ -1686,9 +1687,24 @@ ipcMain.handle("compose:start", async (_event, options = {}) => {
   });
   if (saveResult.canceled || !saveResult.filePath) return { cancelled: true };
 
-  let finalPath = saveResult.filePath;
-  if (path.extname(finalPath).toLowerCase() !== extension) {
-    finalPath = path.join(path.dirname(finalPath), path.basename(finalPath, path.extname(finalPath)) + extension);
+  const selectedPath = saveResult.filePath;
+  const finalPath = normalizeCompositionOutputPath(selectedPath, format);
+  const pathWasNormalized = path.resolve(finalPath) !== path.resolve(selectedPath);
+  if (pathWasNormalized) {
+    const targetExists = fs.existsSync(finalPath);
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: targetExists ? "warning" : "info",
+      title: "保存先の確認",
+      message: "選択したファイル名の拡張子を ." + format + " に変更します。",
+      detail: targetExists
+        ? "変更後の保存先「" + finalPath + "」は既に存在します。上書きしますか？"
+        : "変更後の保存先：" + finalPath,
+      buttons: ["キャンセル", targetExists ? "上書きして保存" : "この保存先で続行"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    });
+    if (confirmation.response !== 1) return { cancelled: true };
   }
   const workingPath = format === "mp4" ? finalPath + ".partial.webm" : finalPath;
   if (format === "mp4") await fs.promises.unlink(workingPath).catch(() => {});

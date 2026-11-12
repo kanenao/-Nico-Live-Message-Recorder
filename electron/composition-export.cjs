@@ -1,5 +1,7 @@
 "use strict";
 
+const path = require("node:path");
+
 const QUALITY_PROFILES = Object.freeze({
   fast: Object.freeze({ preset: "veryfast", crf: 24 }),
   standard: Object.freeze({ preset: "medium", crf: 21 }),
@@ -13,6 +15,16 @@ function normalizeCompositionFormat(value) {
 function normalizeCompositionQuality(value) {
   const key = String(value || "").toLowerCase();
   return Object.prototype.hasOwnProperty.call(QUALITY_PROFILES, key) ? key : "standard";
+}
+
+function normalizeCompositionOutputPath(filePath, format) {
+  const requestedPath = String(filePath || "").trim();
+  if (!requestedPath) throw new TypeError("保存先のファイルパスを指定してください。");
+  const extension = "." + normalizeCompositionFormat(format);
+  const parsed = path.parse(requestedPath);
+  if (parsed.ext.toLowerCase() === extension) return requestedPath;
+  const baseName = parsed.name || parsed.base || "NicoLiveMessage";
+  return path.join(parsed.dir, baseName + extension);
 }
 
 function buildMp4TranscodeArgs(inputPath, outputPath, quality) {
@@ -38,5 +50,6 @@ module.exports = {
   QUALITY_PROFILES,
   normalizeCompositionFormat,
   normalizeCompositionQuality,
+  normalizeCompositionOutputPath,
   buildMp4TranscodeArgs
 };

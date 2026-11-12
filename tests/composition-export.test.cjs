@@ -2,10 +2,12 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const {
   QUALITY_PROFILES,
   normalizeCompositionFormat,
   normalizeCompositionQuality,
+  normalizeCompositionOutputPath,
   buildMp4TranscodeArgs
 } = require("../electron/composition-export.cjs");
 
@@ -34,4 +36,13 @@ test("builds shell-free FFmpeg arguments with optional audio mapping and H.264/A
 
 test("rejects missing input/output paths", () => {
   assert.throws(() => buildMp4TranscodeArgs("", "output.mp4", "fast"), TypeError);
+});
+
+
+test("normalizes the save extension to the selected format", () => {
+  const requestedPath = path.join("videos", "commented.webm");
+  assert.equal(normalizeCompositionOutputPath(requestedPath, "mp4"), path.join("videos", "commented.mp4"));
+  assert.equal(normalizeCompositionOutputPath(path.join("videos", "commented"), "mp4"), path.join("videos", "commented.mp4"));
+  assert.equal(normalizeCompositionOutputPath(path.join("videos", "commented.mp4"), "mp4"), path.join("videos", "commented.mp4"));
+  assert.throws(() => normalizeCompositionOutputPath("", "mp4"), TypeError);
 });
