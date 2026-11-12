@@ -302,8 +302,26 @@ async function fetchNicoUserName(userId, options = {}) {
   return "";
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const values = Array.from(items || []);
+  if (!values.length) return [];
+  if (typeof mapper !== "function") throw new TypeError("mapper must be a function");
+  const limit = Math.max(1, Math.min(values.length, Math.floor(Number(concurrency) || 1)));
+  const results = new Array(values.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: limit }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= values.length) return;
+      results[index] = await mapper(values[index], index);
+    }
+  }));
+  return results;
+}
+
 module.exports = {
   HISTORY_ENDPOINTS,
+  mapWithConcurrency,
   FOLLOWING_ONAIR_ENDPOINT,
   NotAuthenticatedError,
   normalizeFollowingProgram,

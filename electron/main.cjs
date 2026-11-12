@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker } = require("electron");
 const { spawn, execFileSync } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const {
@@ -20,7 +20,7 @@ const {
 } = require("./composition-export.cjs");
 const { fetchTimeshiftProgramPage, fetchTimeshiftArchive } = require("./timeshift-comments.cjs");
 const { autoUpdater } = require("electron-updater");
-const { normalizeNicoUserId, normalizeMonitorDate, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName } = require("./monitor.cjs");
+const { normalizeNicoUserId, normalizeMonitorDate, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName, mapWithConcurrency } = require("./monitor.cjs");
 const {
   compareReleaseVersions,
   fetchLatestWindowsRelease,
@@ -36,6 +36,9 @@ app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.setName("Nico Live Message Recorder");
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
+let monitorPowerSaveBlockerId = null;
 let loginWindow = null;
 let livePreviewWindow = null;
 let livePreviewId = "";
@@ -73,6 +76,8 @@ let monitorRunning = false;
 let monitorChecking = false;
 let monitorLastCheckAt = null;
 const monitorTargetStatuses = new Map();
+const monitorObservedLiveIds = new Map();
+const monitorPendingDetections = [];
 
 function dataRoot() {
   const root = path.join(app.getPath("videos"), "NicoLiveRecorder");
@@ -502,6 +507,13 @@ function makeWindow() {
     contents[action]();
   });
 
+  mainWindow.on("close", (event) => {
+    if (process.platform === "win32" && tray && getMonitorSettings().closeToTray && !isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      updateSystemTrayMenu();
+    }
+  });
   mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -763,9 +775,12 @@ function writeAppSettings(patch) {
 
 
 const DEFAULT_MONITOR_SETTINGS = Object.freeze({
-  intervalSeconds: 60,
+  intervalSeconds: 10,
   autoRecord: true,
   autoStart: true,
+  runAtStartup: true,
+  closeToTray: true,
+  keepAwake: true,
   quality: "best",
   commentFormat: "jsonl",
   autoUpdateStreamlink: true,
@@ -778,11 +793,14 @@ function getMonitorSettings() {
   return {
     ...DEFAULT_MONITOR_SETTINGS,
     ...stored,
-    intervalSeconds: [15, 30, 60, 120, 300].includes(Number(stored.intervalSeconds))
+    intervalSeconds: [10, 15, 30, 60, 120, 300].includes(Number(stored.intervalSeconds))
       ? Number(stored.intervalSeconds)
       : DEFAULT_MONITOR_SETTINGS.intervalSeconds,
     autoRecord: stored.autoRecord !== false,
     autoStart: stored.autoStart !== false,
+    runAtStartup: stored.runAtStartup !== false,
+    closeToTray: stored.closeToTray !== false,
+    keepAwake: stored.keepAwake !== false,
     quality: stored.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
     autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
@@ -801,20 +819,28 @@ function saveMonitorSettings(nextSettings) {
   const current = getMonitorSettings();
   const candidate = { ...current, ...(nextSettings || {}) };
   const intervalSeconds = Number(candidate.intervalSeconds);
-  if (![15, 30, 60, 120, 300].includes(intervalSeconds)) {
-    throw new Error("監視間隔は15秒・30秒・1分・2分・5分から選択してください。");
+  if (![10, 15, 30, 60, 120, 300].includes(intervalSeconds)) {
+    throw new Error("監視間隔は10秒・15秒・30秒・1分・2分・5分から選択してください。");
   }
   const normalized = {
     intervalSeconds,
     autoRecord: candidate.autoRecord !== false,
     autoStart: candidate.autoStart !== false,
+    runAtStartup: candidate.runAtStartup !== false,
+    closeToTray: candidate.closeToTray !== false,
+    keepAwake: candidate.keepAwake !== false,
     quality: candidate.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
     autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
     targets: current.targets
   };
   writeAppSettings({ monitor: normalized });
-  if (monitorRunning) restartMonitorTimer();
+  applyAutoLaunchSetting(normalized.runAtStartup);
+  if (monitorRunning) {
+    syncMonitorPowerSaveBlocker();
+    restartMonitorTimer();
+  }
+  updateSystemTrayMenu();
 
   if (!normalized.autoUpdateStreamlink) {
     sendStreamlinkUpdateState("disabled", {
@@ -836,12 +862,102 @@ function getMonitorState() {
     checking: monitorChecking,
     lastCheckAt: monitorLastCheckAt,
     settings: getMonitorSettings(),
-    statuses: Object.fromEntries(monitorTargetStatuses.entries())
+    statuses: Object.fromEntries(monitorTargetStatuses.entries()),
+    pendingDetections: monitorPendingDetections.splice(0, 100)
   };
 }
 
 function sendMonitorState(state, details = {}) {
   send("monitor:state", { running: monitorRunning, state, ...details });
+  updateSystemTrayMenu();
+}
+
+function applyAutoLaunchSetting(enabled) {
+  if (process.platform !== "win32" || typeof app.setLoginItemSettings !== "function") return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: Boolean(enabled), path: process.execPath, args: [] });
+  } catch (error) {
+    console.warn("Could not update Windows startup setting:", error);
+  }
+}
+
+function syncMonitorPowerSaveBlocker() {
+  const shouldStayAwake = monitorRunning && getMonitorSettings().keepAwake;
+  if (shouldStayAwake && monitorPowerSaveBlockerId === null) {
+    try { monitorPowerSaveBlockerId = powerSaveBlocker.start("prevent-app-suspension"); }
+    catch (error) { console.warn("Could not prevent system suspension during monitoring:", error); }
+  } else if (!shouldStayAwake && monitorPowerSaveBlockerId !== null) {
+    try {
+      if (powerSaveBlocker.isStarted(monitorPowerSaveBlockerId)) {
+        powerSaveBlocker.stop(monitorPowerSaveBlockerId);
+      }
+    } catch (error) {
+      console.warn("Could not release monitor power-save blocker:", error);
+    }
+    monitorPowerSaveBlockerId = null;
+  }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) makeWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function requestAppQuit() {
+  isQuitting = true;
+  app.quit();
+}
+
+function updateSystemTrayMenu() {
+  if (!tray) return;
+  const config = getMonitorSettings();
+  const canStart = !monitorRunning && config.targets.some((target) => target.enabled);
+  tray.setToolTip(monitorRunning
+    ? "Nico Live Message Recorder：24時間監視中"
+    : "Nico Live Message Recorder：待機中");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Nico Live Message Recorder", enabled: false },
+    { type: "separator" },
+    { label: "ウィンドウを表示", click: showMainWindow },
+    { label: monitorRunning ? "配信監視：実行中" : "配信監視：停止中", enabled: false },
+    {
+      label: "監視を開始",
+      enabled: canStart,
+      click: () => {
+        try { startMonitor(); showMainWindow(); }
+        catch (error) { console.error("Could not start monitoring from tray:", error); }
+      }
+    },
+    { label: "監視を停止", enabled: monitorRunning, click: () => stopMonitor() },
+    { type: "separator" },
+    { label: "アプリを終了", click: requestAppQuit }
+  ]));
+}
+
+async function createSystemTray() {
+  if (process.platform !== "win32" || tray) return Boolean(tray);
+  try {
+    const icon = await app.getFileIcon(process.execPath, { size: "small" });
+    if (!icon || icon.isEmpty()) throw new Error("アプリケーションアイコンを取得できませんでした。");
+    tray = new Tray(icon.resize({ width: 16, height: 16 }));
+    tray.on("click", showMainWindow);
+    tray.on("double-click", showMainWindow);
+    updateSystemTrayMenu();
+    return true;
+  } catch (error) {
+    console.warn("System tray could not be initialized; window close will exit normally:", error);
+    tray = null;
+    return false;
+  }
+}
+
+function queueMonitorDetection(payload) {
+  monitorPendingDetections.push(payload);
+  while (monitorPendingDetections.length > 100) monitorPendingDetections.shift();
+  send("monitor:live-detected", payload);
 }
 
 async function getNicoCookieHeader() {
@@ -909,8 +1025,7 @@ async function checkMonitoredUsers() {
     const targetIds = new Set(enabledTargets.map((item) => item.userId));
     const followedLiveByUser = new Map();
 
-    // 参考アプリと同様に、ログイン中のフォロー中番組一覧を先に確認する。
-    // 手動登録されたユーザーだけに絞り、対象外の配信を自動録画しない。
+    // Prefer the authenticated follow-list API so follower-only streams are detected too.
     try {
       const cookieHeader = await getNicoCookieHeader();
       if (cookieHeader) {
@@ -923,15 +1038,28 @@ async function checkMonitoredUsers() {
         }
       }
     } catch (error) {
-      // フォロー中番組APIが使えない場合でも、公開放送履歴で監視を継続する。
       console.warn("Followed-program API unavailable; falling back to public history:", error);
     }
+
+    // Query public history for non-followed targets concurrently, bounded to four requests.
+    // Process the resulting statuses in list order so app-settings writes remain predictable.
+    const historyTargets = enabledTargets.filter((target) => !followedLiveByUser.has(target.userId));
+    const historyResults = await mapWithConcurrency(historyTargets, 4, async (target) => {
+      try {
+        return { userId: target.userId, result: await fetchUserBroadcastStatus(target.userId) };
+      } catch (error) {
+        return { userId: target.userId, error };
+      }
+    });
+    const historyByUser = new Map(historyResults.map((item) => [item.userId, item]));
 
     for (const target of enabledTargets) {
       if (!monitorRunning) break;
       try {
         const followedProgram = followedLiveByUser.get(target.userId);
-        const result = followedProgram ? null : await fetchUserBroadcastStatus(target.userId);
+        const history = followedProgram ? null : historyByUser.get(target.userId);
+        if (history && history.error) throw history.error;
+        const result = history ? history.result : null;
         const live = followedProgram
           ? {
               liveId: followedProgram.liveId,
@@ -969,14 +1097,23 @@ async function checkMonitoredUsers() {
         monitorTargetStatuses.set(target.userId, status);
         send("monitor:target-status", status);
 
-        if (live && target.lastProgramId !== live.liveId) {
+        if (!live) {
+          monitorObservedLiveIds.delete(target.userId);
+          continue;
+        }
+
+        // In-memory observation, not the persisted lastProgramId, gates each live event.
+        // A process restart therefore detects an already-on-air show and resumes auto-capture.
+        const previouslyObservedLiveId = monitorObservedLiveIds.get(target.userId) || "";
+        monitorObservedLiveIds.set(target.userId, live.liveId);
+        if (previouslyObservedLiveId !== live.liveId) {
           const updated = getMonitorSettings();
           const match = updated.targets.find((item) => item.userId === target.userId);
-          if (match) {
+          if (match && match.lastProgramId !== live.liveId) {
             match.lastProgramId = live.liveId;
             writeAppSettings({ monitor: updated });
           }
-          send("monitor:live-detected", {
+          queueMonitorDetection({
             userId: target.userId,
             name: displayName,
             displayName,
@@ -1013,41 +1150,53 @@ async function checkMonitoredUsers() {
     }
   }
 }
-function restartMonitorTimer() {
-  if (monitorTimer) clearInterval(monitorTimer);
+
+function scheduleNextMonitorCheck() {
+  if (monitorTimer) clearTimeout(monitorTimer);
   monitorTimer = null;
   if (!monitorRunning) return;
   const intervalMs = getMonitorSettings().intervalSeconds * 1000;
-  monitorTimer = setInterval(() => {
-    checkMonitoredUsers().catch((error) => {
+  monitorTimer = setTimeout(async () => {
+    monitorTimer = null;
+    try {
+      await checkMonitoredUsers();
+    } catch (error) {
       sendMonitorState("error", {
         message: error && error.message ? error.message : String(error)
       });
-    });
+    } finally {
+      scheduleNextMonitorCheck();
+    }
   }, intervalMs);
-  if (typeof monitorTimer.unref === "function") monitorTimer.unref();
+}
+
+function restartMonitorTimer() {
+  scheduleNextMonitorCheck();
 }
 
 function startMonitor() {
   const config = getMonitorSettings();
+  if (monitorRunning) return getMonitorState();
   if (!config.targets.some((target) => target.enabled)) {
     throw new Error("監視するユーザーを先に登録してください。");
   }
   monitorRunning = true;
-  restartMonitorTimer();
+  syncMonitorPowerSaveBlocker();
   sendMonitorState("running", { checkedAt: monitorLastCheckAt });
   checkMonitoredUsers().catch((error) => {
     sendMonitorState("error", {
       message: error && error.message ? error.message : String(error)
     });
-  });
+  }).finally(() => scheduleNextMonitorCheck());
   return getMonitorState();
 }
 
 function stopMonitor() {
   monitorRunning = false;
-  if (monitorTimer) clearInterval(monitorTimer);
+  if (monitorTimer) clearTimeout(monitorTimer);
   monitorTimer = null;
+  monitorObservedLiveIds.clear();
+  syncMonitorPowerSaveBlocker();
   sendMonitorState("stopped");
   return getMonitorState();
 }
@@ -1078,6 +1227,9 @@ ipcMain.handle("monitor:remove-target", (_event, rawUserId) => {
   config.targets = config.targets.filter((target) => target.userId !== userId);
   writeAppSettings({ monitor: config });
   monitorTargetStatuses.delete(userId);
+  monitorObservedLiveIds.delete(userId);
+  monitorPendingDetections.splice(0, monitorPendingDetections.length,
+    ...monitorPendingDetections.filter((item) => item.userId !== userId));
   sendMonitorState(monitorRunning ? "running" : "stopped", { settings: getMonitorSettings() });
   return getMonitorState();
 });
@@ -1094,6 +1246,7 @@ ipcMain.handle("monitor:retry-target", (_event, input) => {
     target.lastProgramId = "";
     writeAppSettings({ monitor: config });
   }
+  if (target) monitorObservedLiveIds.delete(userId);
   return getMonitorState();
 });
 
@@ -2039,7 +2192,9 @@ ipcMain.handle("comments:export-ass", async () => {
   return { path: saveResult.filePath, commentCount: generated.commentCount };
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  applyAutoLaunchSetting(getMonitorSettings().runAtStartup);
+  await createSystemTray();
   makeWindow();
   if (process.platform === "win32") {
     const runAutomaticStreamlinkUpdate = () => {
@@ -2076,9 +2231,7 @@ app.whenReady().then(() => {
       }
     }, 5000);
   }
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) makeWindow();
-  });
+  app.on("activate", () => showMainWindow());
 });
 
 async function shutdownGracefully() {
@@ -2136,6 +2289,7 @@ async function shutdownGracefully() {
 }
 
 app.on("before-quit", (event) => {
+  isQuitting = true;
   if (shutdownComplete) return;
   event.preventDefault();
   if (shutdownPromise) return;
