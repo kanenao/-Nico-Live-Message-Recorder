@@ -294,7 +294,9 @@ test("past timeshift comments are fetched through NDGR previous and backward seg
   const pageFetchAt = main.indexOf("fetchTimeshiftProgramPage(liveId, cookieHeader)", handlerStart);
   assert.ok(lockAt > handlerStart && lockAt < pageFetchAt, "timeshift lock must be acquired before network requests");
   assert.match(main, /別の過去配信コメントを取得中です/);
-  assert.match(main, /capture:start[\\s\\S]*?timeshiftCommentFetchActive/);
+  const captureStart = main.indexOf('ipcMain.handle("capture:start"');
+  const captureLock = main.indexOf("if (timeshiftCommentFetchActive)", captureStart);
+  assert.ok(captureStart > handlerStart && captureLock > captureStart, "live capture must be blocked during timeshift comment fetch");
   assert.match(main, /fetchTimeshiftArchive\(page\.webSocketUrl, cookieHeader/);
   assert.match(main, /appendMarker\("timeshiftOrigin"/);
   assert.match(main, /record\.isHistory = true/);
