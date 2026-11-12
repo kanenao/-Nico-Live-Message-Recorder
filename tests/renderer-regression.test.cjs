@@ -595,13 +595,13 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
     assert.ok(html.includes('id="' + id + '"'), "missing comment style control: " + id);
   }
   assert.match(html, /<option value="ＭＳ Ｐゴシック" selected>ニコ生風/);
-  assert.match(renderer, /baseFontSize: number\("compose-font-size", 40, 18, 64\)/);
+  assert.match(renderer, /baseFontSize: number\("compose-font-size", 64, 18, 96\)/);
   assert.match(renderer, /overlapProtection: byId\("compose-overlap-protection"\)\.checked/);
-  assert.match(renderer, /laneGapMs: number\("compose-lane-gap", 160, 0, 500\)/);
+  assert.match(renderer, /laneGapMs: number\("compose-lane-gap", 80, 0, 500\)/);
   assert.match(renderer, /calculateCommentLaneLayout\(/);
   assert.match(renderer, /layout\.scrollLaneYs\[lane\]/);
   assert.match(renderer, /layout\.topLaneYs\[lane\]/);
   assert.match(renderer, /layout\.bottomLaneYs\[lane\]/);
   assert.match(composition, /function calculateCommentLaneLayout\(/);
-  assert.match(composition, /const lineHeight = Math\.max\(24/);
+  assert.match(composition, /const lineHeight = Math\.max\(24/);\n  assert.match(composition, /function calculateScrollCommentHeadway\(/);\n  assert.match(renderer, /calculateScrollCommentHeadway\(/);\n  assert.match(renderer, /red2: "#cc0033"/);
 });

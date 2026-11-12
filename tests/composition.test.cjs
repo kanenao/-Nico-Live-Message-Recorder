@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { prepareCommentTimeline, timestampMs, reserveLane, calculateCommentLaneLayout } = require("../composition.js");
+const { prepareCommentTimeline, timestampMs, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway } = require("../composition.js");
 
 test("aligns comments to videoStart rather than sessionStart", () => {
   const result = prepareCommentTimeline([
@@ -91,12 +91,11 @@ test("calculates separate comment bands with spacing for maximum font size and o
     marginPercent: 7,
     rowLimit: 12
   });
-  assert.equal(layout.fixedLaneCount, 2);
+  assert.equal(layout.fixedLaneCount, 1);
   assert.ok(layout.lineHeight >= Math.ceil(51 * 1.22 + 12 + 8));
   assert.ok(layout.topLaneYs[1] - layout.topLaneYs[0] >= layout.lineHeight);
-  assert.ok(layout.scrollLaneYs[0] > layout.topLaneYs.at(-1));
-  assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs.at(-1));
-  assert.ok(layout.bottomLaneYs[0] - layout.bottomLaneYs[1] >= layout.lineHeight);
+  assert.ok(layout.scrollLaneYs[0] > layout.topLaneYs[0]);
+  assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs[0]);
 });
 
 test("scales comment bands to output resolution and respects the requested scroll row limit", () => {
@@ -111,4 +110,27 @@ test("scales comment bands to output resolution and respects the requested scrol
   assert.ok(layout.scrollLaneCount <= 3);
   assert.ok(layout.topLaneYs[0] < layout.scrollLaneYs[0]);
   assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs[0]);
+});
+
+
+test("uses comment tail clearance instead of the full screen transit time", () => {
+  const durationMs = 6545; // roughly 330 px/s across 1920px plus 240px of text
+  const headwayMs = calculateScrollCommentHeadway(1920, 240, durationMs);
+  assert.ok(headwayMs > 700 && headwayMs < 800);
+  assert.ok(headwayMs < durationMs / 5);
+});
+
+test("spreads scrolling rows through the video while fixed comments stay at the edges", () => {
+  const layout = calculateCommentLaneLayout({
+    height: 1080,
+    baseFontSize: 64,
+    outlineWidth: 4,
+    marginPercent: 7,
+    rowLimit: 12
+  });
+  assert.ok(layout.scrollLaneCount >= 7);
+  assert.ok(layout.scrollLaneYs[0] > layout.edge);
+  assert.ok(layout.scrollLaneYs.at(-1) < 1080 - layout.edge);
+  assert.ok(layout.topLaneYs[0] < layout.scrollLaneYs[0]);
+  assert.ok(layout.bottomLaneYs[0] > layout.scrollLaneYs.at(-1));
 });

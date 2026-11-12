@@ -972,10 +972,10 @@ function getCompositionEditorOptions() {
   };
   return {
     fontScale: number("compose-font-scale", 100, 50, 200) / 100,
-    baseFontSize: number("compose-font-size", 40, 18, 64),
+    baseFontSize: number("compose-font-size", 64, 18, 96),
     speed: number("compose-speed", 100, 30, 250) / 100,
     overlapProtection: byId("compose-overlap-protection").checked,
-    laneGapMs: number("compose-lane-gap", 160, 0, 500),
+    laneGapMs: number("compose-lane-gap", 80, 0, 500),
     marginPercent: number("compose-position", 7, 4, 25),
     offsetMs: number("compose-offset", 0, -10000, 10000),
     opacity: number("compose-opacity", 100, 20, 100) / 100,
@@ -1881,7 +1881,7 @@ function reserveOverlayLane(lanes, startMs, durationMs, gapMs) {
 
 function createCommentOverlaySchedule(comments, context, width, height, options = {}) {
   const fontScale = Math.min(2, Math.max(0.5, Number(options.fontScale) || 1));
-  const baseFontSize = Math.max(18, Math.min(64, Number(options.baseFontSize) || 40));
+  const baseFontSize = Math.max(18, Math.min(96, Number(options.baseFontSize) || 64));
   const speed = Math.min(2.5, Math.max(0.3, Number(options.speed) || 1));
   const marginPercent = Math.min(25, Math.max(4, Number(options.marginPercent) || 7));
   const displayMode = ["all", "scroll", "fixed", "top", "bottom"].includes(options.displayMode) ? options.displayMode : "all";
@@ -1931,16 +1931,36 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     if (commands.includes("small")) fontSize = Math.max(10, Math.round(baseSize * 0.78));
 
     const colorMap = {
-      red: "#ff5050",
-      blue: "#60aaff",
-      green: "#55e58a",
-      yellow: "#ffe45c",
-      pink: "#ff83d2",
-      cyan: "#64eaff",
-      orange: "#ffad58",
-      white: "#ffffff"
+      white: "#ffffff",
+      red: "#ff0000",
+      pink: "#ff8080",
+      orange: "#ffcc00",
+      yellow: "#ffff00",
+      green: "#00ff00",
+      cyan: "#00ffff",
+      blue: "#0000ff",
+      purple: "#cc00ff",
+      black: "#000000",
+      white2: "#cccc99",
+      niconicowhite: "#cccc99",
+      red2: "#cc0033",
+      truered: "#cc0033",
+      pink2: "#ff33cc",
+      orange2: "#ff6600",
+      passionorange: "#ff6600",
+      yellow2: "#999900",
+      madyellow: "#999900",
+      green2: "#00cc66",
+      elementalgreen: "#00cc66",
+      cyan2: "#00cccc",
+      blue2: "#33fffc",
+      marineblue: "#33fffc",
+      purple2: "#6633cc",
+      nobleviolet: "#6633cc",
+      black2: "#333333"
     };
-    const originalColor = commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
+    const explicitHex = commands.find((command) => /^#[0-9a-f]{6}$/i.test(command));
+    const originalColor = explicitHex || commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
     const color = colorMode === "green" ? "#55e58a" :
       colorMode === "white" ? "#ffffff" : originalColor;
     const fontFamily = ["ＭＳ Ｐゴシック", "Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
@@ -1951,7 +1971,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
 
     if (isFixed) {
       const lanes = isTop ? topLanes : bottomLanes;
-      const durationMs = fixedDurationMs || Math.max(1500, Math.round(5000 / speed));
+      const durationMs = fixedDurationMs || 3000;
       const reservation = allocateLane(lanes, startMs, durationMs, isTop ? topSequence++ : bottomSequence++);
       const lane = reservation.lane;
       const y = isTop ? layout.topLaneYs[lane] : layout.bottomLaneYs[lane];
@@ -1964,12 +1984,17 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
 
     const durationMs = fixedDurationMs || Math.max(1500, Math.min(32000,
       (((width + textWidth) / 330) * 1000) / speed));
-    const reservation = allocateLane(scrollLanes, startMs, durationMs, scrollSequence++);
+    const headwayMs = window.nicoCommentComposition.calculateScrollCommentHeadway(
+      width, textWidth, durationMs
+    );
+    const reservation = allocateLane(scrollLanes, startMs, headwayMs, scrollSequence++);
     const lane = reservation.lane;
     const y = layout.scrollLaneYs[lane];
     schedule.push({
-      ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
-      textWidth, mode: "scroll", y
+      ...comment,
+      startMs: reservation.startMs,
+      endMs: reservation.startMs + durationMs,
+      fontSize, color, textWidth, mode: "scroll", y
     });
   }
 
