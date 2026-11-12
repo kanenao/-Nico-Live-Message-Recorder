@@ -1519,10 +1519,12 @@ function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, widt
   context.globalAlpha = Math.min(1, Math.max(0.2, Number(options.opacity) || 1));
   const shadow = options.shadow !== false;
   const outlineWidth = Math.max(0, Math.min(12, Number(options.outlineWidth) || 0));
+  const fontFamily = ["Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
+    ? options.fontFamily : "Meiryo";
   for (const comment of activeComments) {
     if (videoTimeMs < comment.startMs || videoTimeMs > comment.endMs) continue;
     const elapsed = videoTimeMs - comment.startMs;
-    context.font = "bold " + comment.fontSize + "px Meiryo, Yu Gothic, sans-serif";
+    context.font = "bold " + comment.fontSize + "px \"" + fontFamily + "\", sans-serif";
     context.textBaseline = "middle";
     context.lineJoin = "round";
     context.lineWidth = outlineWidth;

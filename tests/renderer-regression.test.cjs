@@ -189,6 +189,7 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   assert.match(renderer, /durationSeconds/);
   assert.match(renderer, /composeOptions\.ngWords/);
   assert.match(renderer, /outlineWidth/);
+  assert.match(renderer, /const fontFamily = \["Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"\]/);
   assert.match(renderer, /api\.startCompose\(\{[\s\S]*?format: composeOptions\.outputFormat/);
   assert.match(main, /transcodeCompositionToMp4/);
   assert.match(main, /makeWebmFallbackPath/);
