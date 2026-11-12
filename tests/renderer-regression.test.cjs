@@ -79,9 +79,9 @@ test("automatic monitor recording is queued instead of interrupting an active re
 test("monitor prefers the authenticated follow-list API and retains public-history fallback", () => {
   assert.match(main, /fetchFollowingOnAirPrograms\(cookieHeader\)/);
   assert.match(main, /session\.fromPartition\("persist:nico-auth"\)/);
-  assert.match(main, /const historyTargets = enabledTargets\\.filter\\(\\(target\\) => !followedLiveByUser\\.has\\(target\\.userId\\)\\)/);
-  assert.match(main, /fetchUserBroadcastStatus\\(target\\.userId\\)/);
-  assert.match(main, /const history = followedProgram \\? null : historyByUser\\.get\\(target\\.userId\\)/);
+  assert.match(main, /const historyTargets = enabledTargets\.filter\(\(target\) => !followedLiveByUser\.has\(target\.userId\)\)/);
+  assert.match(main, /fetchUserBroadcastStatus\(target\.userId\)/);
+  assert.match(main, /const history = followedProgram \? null : historyByUser\.get\(target\.userId\)/);
   assert.match(main, /isFollowerOnly: Boolean\(live && live\.isFollowerOnly\)/);
   assert.match(main, /\[10, 15, 30, 60, 120, 300\]/);
   assert.match(html, /<option value="10">10秒（最速・推奨）<\/option>/);
