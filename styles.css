@@ -502,3 +502,26 @@ button, .button {
   -webkit-user-select: none;
   user-select: none;
 }
+
+
+/* beta28: grouped settings and composition controls */
+.settings-dialog { width: min(760px, 100%); }
+.settings-sections { display: grid; gap: 13px; padding: 18px 0 8px; }
+.settings-section { padding: 15px 16px; border: 1px solid rgba(155,175,220,.14); border-radius: 11px; background: rgba(5,10,20,.22); }
+.settings-section-heading h3 { margin: 0; color: #edf2ff; font-size: 12px; font-weight: 700; }
+.settings-section-heading p { margin: 5px 0 0; color: #8290ac; font-size: 10px; line-height: 1.55; }
+.settings-section .settings-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 18px; padding: 14px 0 0; }
+.settings-section .settings-checkbox { grid-column: 1 / -1; }
+.settings-note { margin: 3px 0 0; }
+.record-settings-heading { margin: 5px 0 10px; color: #aebbd4; font-size: 11px; font-weight: 700; }
+.compose-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; }
+.compose-settings-group { padding: 14px; border: 1px solid rgba(155,175,220,.14); border-radius: 11px; background: rgba(5,10,20,.2); }
+.compose-settings-heading { margin-bottom: 12px; }
+.compose-settings-heading h3 { margin: 0; color: #edf2ff; font-size: 12px; }
+.compose-settings-heading p { margin: 5px 0 0; color: #8290ac; font-size: 10px; line-height: 1.5; }
+.compose-settings-group-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 17px; }
+@media (max-width: 640px) {
+  .settings-section .settings-fields,
+  .compose-settings-group-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-dialog { padding: 17px; }
+}

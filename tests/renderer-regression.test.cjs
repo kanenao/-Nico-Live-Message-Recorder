@@ -445,3 +445,39 @@ test("broadcaster profile lookup never blocks live detection and immediate autom
   assert.match(main, /void resolveMonitorUserName\(target, followedProgram, latest\)\.then/);
   assert.match(main, /queueMonitorDetection\(/);
 });
+
+
+test("application settings are grouped by capture, comments, and app behavior", () => {
+  const settingsStart = html.indexOf('<div class="settings-sections">');
+  const settingsEnd = html.indexOf('<div class="settings-actions">', settingsStart);
+  assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, "grouped settings dialog must exist");
+  const settings = html.slice(settingsStart, settingsEnd);
+  for (const heading of ["配信監視・自動録画", "コメント保存", "アプリ動作・更新"]) {
+    assert.ok(settings.includes(heading), "missing settings group: " + heading);
+  }
+  for (const id of [
+    "setting-monitor-interval", "setting-monitor-quality", "setting-auto-record",
+    "setting-auto-start", "setting-comment-format", "setting-run-at-startup",
+    "setting-close-to-tray", "setting-keep-awake", "setting-auto-update-streamlink"
+  ]) {
+    assert.ok(settings.includes('id="' + id + '"'), "settings control not grouped: " + id);
+  }
+});
+
+test("comment video generation controls are separated into three clear groups", () => {
+  const groupsStart = html.indexOf('<div class="compose-editor-grid">');
+  const groupsEnd = html.indexOf('<p class="hint">NicoConvAss', groupsStart);
+  assert.ok(groupsStart >= 0 && groupsEnd > groupsStart, "composition setting groups must exist");
+  const groups = html.slice(groupsStart, groupsEnd);
+  for (const heading of ["コメント表示", "文字スタイル", "同期・出力"]) {
+    assert.ok(groups.includes(heading), "missing composition group: " + heading);
+  }
+  for (const id of [
+    "compose-font-scale", "compose-speed", "compose-row-limit", "compose-duration",
+    "compose-font-family", "compose-color-mode", "compose-ng-words", "compose-offset",
+    "compose-resolution", "compose-output-format", "compose-output-quality"
+  ]) {
+    assert.ok(groups.includes('id="' + id + '"'), "composition control not grouped: " + id);
+  }
+  assert.match(css, /\.compose-settings-group-grid/);
+});

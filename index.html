@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.27</span>
+        <span class="version" id="version">v0.1.0-beta.28</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -67,7 +67,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.27</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.28</span></div>
         </div>
       </aside>
 
@@ -246,6 +246,7 @@
                 </div>
                 <button class="button button-outline" id="stop-record-button" type="button" disabled>録画停止</button>
               </div>
+              <div class="record-settings-heading">録画画質・保存ツール</div>
               <div class="record-quality-row">
                 <label for="record-quality">録画画質</label>
                 <select id="record-quality">
@@ -303,21 +304,27 @@
           </div>
 
           <div class="compose-editor">
-            <div class="compose-editor-title">コメント表示を編集</div>
+            <div class="compose-editor-title">コメント表示・動画出力の設定</div>
             <div class="compose-editor-grid">
-              <label class="compose-editor-field">
+              <section class="compose-settings-group">
+                <div class="compose-settings-heading">
+                  <h3>コメント表示</h3>
+                  <p>コメントの大きさ・流れる速さ・画面内に表示する量を調整します。</p>
+                </div>
+                <div class="compose-settings-group-grid">
+<label class="compose-editor-field">
                 <span>コメントサイズ <output id="compose-font-value">100%</output></span>
                 <input id="compose-font-scale" type="range" min="50" max="200" step="5" value="100">
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>流れる速度 <output id="compose-speed-value">100%</output></span>
                 <input id="compose-speed" type="range" min="50" max="200" step="5" value="100">
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>コメントの最大行数</span>
                 <input id="compose-row-limit" type="number" min="1" max="24" step="1" value="12">
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>画面上の表示時間</span>
                 <select id="compose-duration">
                   <option value="auto" selected>自動（文字幅・速度で調整）</option>
@@ -325,29 +332,7 @@
                   <option value="10">10秒</option><option value="15">15秒</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
-                <span>フォント</span>
-                <select id="compose-font-family">
-                  <option value="Meiryo" selected>メイリオ</option>
-                  <option value="Yu Gothic UI">游ゴシック UI</option>
-                  <option value="BIZ UDPGothic">BIZ UDPゴシック</option>
-                  <option value="Arial">Arial</option>
-                </select>
-              </label>
-
-              <label class="compose-editor-field">
-                <span>コメント同期の微調整 <output id="compose-offset-value">0 ms</output></span>
-                <input id="compose-offset" type="range" min="-10000" max="10000" step="100" value="0">
-              </label>
-              <label class="compose-editor-field">
-                <span>上下の余白 <output id="compose-position-value">7%</output></span>
-                <input id="compose-position" type="range" min="4" max="25" step="1" value="7">
-              </label>
-              <label class="compose-editor-field">
-                <span>透明度 <output id="compose-opacity-value">100%</output></span>
-                <input id="compose-opacity" type="range" min="20" max="100" step="5" value="100">
-              </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>表示するコメント</span>
                 <select id="compose-display-mode">
                   <option value="all">スクロール・固定コメント</option>
@@ -357,7 +342,24 @@
                   <option value="bottom">下固定のみ</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
+                </div>
+              </section>
+<section class="compose-settings-group">
+                <div class="compose-settings-heading">
+                  <h3>文字スタイル</h3>
+                  <p>フォント・色・位置・縁取り・影・表示しないワードを設定します。</p>
+                </div>
+                <div class="compose-settings-group-grid">
+<label class="compose-editor-field">
+                <span>フォント</span>
+                <select id="compose-font-family">
+                  <option value="Meiryo" selected>メイリオ</option>
+                  <option value="Yu Gothic UI">游ゴシック UI</option>
+                  <option value="BIZ UDPGothic">BIZ UDPゴシック</option>
+                  <option value="Arial">Arial</option>
+                </select>
+              </label>
+<label class="compose-editor-field">
                 <span>文字色</span>
                 <select id="compose-color-mode">
                   <option value="original">コメントの色指定を反映</option>
@@ -365,7 +367,39 @@
                   <option value="green">すべて緑</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
+                <span>上下の余白 <output id="compose-position-value">7%</output></span>
+                <input id="compose-position" type="range" min="4" max="25" step="1" value="7">
+              </label>
+<label class="compose-editor-field">
+                <span>透明度 <output id="compose-opacity-value">100%</output></span>
+                <input id="compose-opacity" type="range" min="20" max="100" step="5" value="100">
+              </label>
+<label class="compose-editor-field">
+                <span>文字の縁取り <output id="compose-outline-value">4 px</output></span>
+                <input id="compose-outline" type="range" min="0" max="12" step="1" value="4">
+              </label>
+<label class="settings-checkbox compose-shadow-option">
+                <input type="checkbox" id="compose-shadow" checked>
+                <span>文字に影を付ける</span>
+              </label>
+<label class="compose-editor-field compose-editor-field-full">
+                <span>除外ワード（1行に1つ）</span>
+                <textarea id="compose-ng-words" rows="3" placeholder="動画に表示したくない言葉を入力&#10;例：ネタバレ&#10;例：テストコメント"></textarea>
+              </label>
+                </div>
+              </section>
+<section class="compose-settings-group">
+                <div class="compose-settings-heading">
+                  <h3>同期・出力</h3>
+                  <p>コメントの時間調整と動画の解像度・形式・画質を設定します。</p>
+                </div>
+                <div class="compose-settings-group-grid">
+<label class="compose-editor-field">
+                <span>コメント同期の微調整 <output id="compose-offset-value">0 ms</output></span>
+                <input id="compose-offset" type="range" min="-10000" max="10000" step="100" value="0">
+              </label>
+<label class="compose-editor-field">
                 <span>出力解像度</span>
                 <select id="compose-resolution">
                   <option value="original">元動画と同じ</option>
@@ -374,14 +408,14 @@
                   <option value="480">最大480p</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>フレームレート</span>
                 <select id="compose-fps">
                   <option value="30" selected>30 fps</option>
                   <option value="60">60 fps</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>動画ビットレート</span>
                 <select id="compose-bitrate">
                   <option value="3000000">軽量 3 Mbps</option>
@@ -389,38 +423,26 @@
                   <option value="10000000">高画質 10 Mbps</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
-                <span>文字の縁取り <output id="compose-outline-value">4 px</output></span>
-                <input id="compose-outline" type="range" min="0" max="12" step="1" value="4">
-              </label>
-              <label class="settings-checkbox compose-shadow-option">
-                <input type="checkbox" id="compose-shadow" checked>
-                <span>文字に影を付ける</span>
-              </label>
-              <label class="compose-editor-field compose-editor-field-full">
-                <span>除外ワード（1行に1つ）</span>
-                <textarea id="compose-ng-words" rows="3" placeholder="動画に表示したくない言葉を入力&#10;例：ネタバレ&#10;例：テストコメント"></textarea>
-              </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>出力幅（px / 0は自動）</span>
                 <input id="compose-width" type="number" min="0" max="7680" step="2" value="0">
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>出力高さ（px / 0は自動）</span>
                 <input id="compose-height" type="number" min="0" max="4320" step="2" value="0">
               </label>
-              <label class="settings-checkbox compose-shadow-option">
+<label class="settings-checkbox compose-shadow-option">
                 <input type="checkbox" id="compose-keep-aspect" checked>
                 <span>縦横比を維持して指定サイズ内へ収める</span>
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>出力形式</span>
                 <select id="compose-output-format">
                   <option value="webm" selected>WebM（標準・高速生成）</option>
                   <option value="mp4">MP4（H.264 / AAC）</option>
                 </select>
               </label>
-              <label class="compose-editor-field">
+<label class="compose-editor-field">
                 <span>MP4画質プリセット</span>
                 <select id="compose-output-quality">
                   <option value="fast">高速（容量やや大きめ）</option>
@@ -428,6 +450,8 @@
                   <option value="high">高画質（変換に時間）</option>
                 </select>
               </label>
+                </div>
+              </section>
             </div>
             <p class="hint">NicoConvAssを参考に、行数・表示秒数・フォント・縁取り・除外ワードを設定できます。元コメントの ue / shita / big / small / 色コマンドは「元の色を反映」時に利用します。</p>
           </div>
@@ -485,7 +509,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.27</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.28</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -499,27 +523,48 @@
           </div>
           <button class="button button-quiet button-small" id="close-settings-button" type="button" aria-label="閉じる">閉じる</button>
         </div>
-        <div class="settings-fields">
-          <label class="settings-field">
+        <div class="settings-sections">
+        <section class="settings-section ">
+          <div class="settings-section-heading">
+            <h3>配信監視・自動録画</h3>
+            <p>登録した配信者の検知間隔と、配信開始時の自動録画動作を設定します。</p>
+          </div>
+          <div class="settings-fields">
+<label class="settings-field">
             <span>配信監視の確認間隔</span>
             <select id="setting-monitor-interval">
-              <option value="10">10秒（最速・推奨）</option>
+              <option value="10" selected>10秒（最速・推奨）</option>
               <option value="15">15秒</option>
               <option value="30">30秒</option>
-              <option value="60" selected>1分（推奨）</option>
+              <option value="60">1分</option>
               <option value="120">2分</option>
               <option value="300">5分</option>
             </select>
           </label>
-          <label class="settings-field">
+<label class="settings-field">
             <span>自動録画の画質</span>
             <select id="setting-monitor-quality">
               <option value="best">最高画質</option>
               <option value="worst">低画質（通信量を抑える）</option>
             </select>
           </label>
-
-          <label class="settings-field">
+<label class="settings-checkbox">
+            <input type="checkbox" id="setting-auto-record" checked>
+            <span>配信開始を検知したら自動で録画する</span>
+          </label>
+<label class="settings-checkbox">
+            <input type="checkbox" id="setting-auto-start" checked>
+            <span>アプリ起動時に監視を自動開始する</span>
+          </label>
+          </div>
+        </section>
+        <section class="settings-section ">
+          <div class="settings-section-heading">
+            <h3>コメント保存</h3>
+            <p>JSONLを同期用の元データとして保持し、必要な形式を追加で自動作成します。</p>
+          </div>
+          <div class="settings-fields">
+<label class="settings-field">
             <span>コメント保存形式</span>
             <select id="setting-comment-format">
               <option value="jsonl">JSONL（標準・推奨）</option>
@@ -528,32 +573,34 @@
               <option value="all">JSONL + CSV + ASS</option>
             </select>
           </label>
-          <label class="settings-checkbox">
-            <input type="checkbox" id="setting-auto-record" checked>
-            <span>配信開始を検知したら自動で録画する</span>
-          </label>
-          <label class="settings-checkbox">
-            <input type="checkbox" id="setting-auto-start" checked>
-            <span>アプリ起動時に監視を自動開始する</span>
-          </label>
-          <label class="settings-checkbox">
+          </div>
+        </section>
+        <section class="settings-section ">
+          <div class="settings-section-heading">
+            <h3>アプリ動作・更新</h3>
+            <p>Windows起動時の動作、常駐、スリープ抑止、Streamlink更新を設定します。</p>
+          </div>
+          <div class="settings-fields">
+<label class="settings-checkbox">
             <input type="checkbox" id="setting-run-at-startup" checked>
             <span>Windowsへのログイン時にアプリを自動起動する</span>
           </label>
-          <label class="settings-checkbox">
+<label class="settings-checkbox">
             <input type="checkbox" id="setting-close-to-tray" checked>
             <span>ウィンドウを閉じてもタスクトレイに常駐する</span>
           </label>
-          <label class="settings-checkbox">
+<label class="settings-checkbox">
             <input type="checkbox" id="setting-keep-awake" checked>
             <span>監視中はPCのスリープを抑止する（画面は消灯できます）</span>
           </label>
-          <label class="settings-checkbox">
+<label class="settings-checkbox">
             <input type="checkbox" id="setting-auto-update-streamlink" checked>
             <span>Streamlinkを起動時・6時間ごとに自動確認し、更新を自動適用する</span>
           </label>
-        </div>
-        <p class="hint">最短10秒間隔で確認します。ログイン中はフォロー中番組APIを優先するため、フォロー限定放送も対象にできます。PCの電源断・ネットワーク断中は監視できません。Windowsログイン時の自動起動とタスクトレイ常駐を有効にすると、ウィンドウを閉じた後も監視・録画・コメント取得を続けます。</p>
+          </div>
+        </section>
+      </div>
+        <p class="hint settings-note">監視は最短10秒間隔です。ログイン中はフォロー中番組APIも確認しますが、PCの電源断・ネットワーク断中は監視できません。コメント付き動画の表示・同期・出力の詳細設定は「コメント付き動画生成」画面にまとめています。</p>ログイン中はフォロー中番組APIを優先するため、フォロー限定放送も対象にできます。PCの電源断・ネットワーク断中は監視できません。Windowsログイン時の自動起動とタスクトレイ常駐を有効にすると、ウィンドウを閉じた後も監視・録画・コメント取得を続けます。</p>
         <div class="settings-actions">
           <button class="button button-outline" id="cancel-settings-button" type="button">キャンセル</button>
           <button class="button button-primary" id="save-settings-button" type="button">設定を保存</button>
