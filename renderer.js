@@ -1224,7 +1224,7 @@ async function processMonitorAutoQueue() {
 }
 
 
-const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "articles"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "articles", "updates"]);
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -1572,6 +1572,76 @@ function renderStreamlinkUpdateState(payload) {
   }
 }
 
+function parseReleaseHistory(markdown) {
+  const entries = [];
+  let current = null;
+  for (const line of String(markdown || "").split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      current = { title: heading[1], notes: [] };
+      entries.push(current);
+      continue;
+    }
+    const note = line.match(/^\s*-\s+(.+)$/);
+    if (current && note) current.notes.push(note[1]);
+  }
+  return entries;
+}
+function renderReleaseHistory(markdown) {
+  const list = byId("release-history-list");
+  if (!list) return;
+  list.replaceChildren();
+  const entries = parseReleaseHistory(markdown);
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "release-history-empty";
+    empty.textContent = "更新履歴を読み込めませんでした。アプリを再起動して再度お試しください。";
+    list.appendChild(empty);
+    return;
+  }
+  const currentVersion = byId("app-current-version").textContent.replace(/^v/, "").trim();
+  for (const entry of entries) {
+    const article = document.createElement("article");
+    article.className = "release-history-item";
+    const heading = document.createElement("div");
+    heading.className = "release-history-item-heading";
+    const title = document.createElement("strong");
+    title.textContent = entry.title;
+    heading.appendChild(title);
+    if (entry.title === currentVersion || entry.title === "v" + currentVersion) {
+      const current = document.createElement("span");
+      current.className = "release-history-current";
+      current.textContent = "現在のバージョン";
+      heading.appendChild(current);
+    }
+    article.appendChild(heading);
+    if (entry.notes.length) {
+      const listItems = document.createElement("ul");
+      for (const note of entry.notes) {
+        const item = document.createElement("li");
+        item.textContent = note;
+        listItems.appendChild(item);
+      }
+      article.appendChild(listItems);
+    }
+    list.appendChild(article);
+  }
+}
+
+async function loadReleaseHistory() {
+  const list = byId("release-history-list");
+  if (!list) return;
+  try {
+    renderReleaseHistory(await api.getChangelog());
+  } catch (error) {
+    list.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "release-history-empty";
+    empty.textContent = "更新履歴の読み込みに失敗しました: " + (error.message || "不明なエラー");
+    list.appendChild(empty);
+  }
+}
+
 function renderUpdateState(payload) {
   if (!payload) return;
   const panel = byId("update-panel");
@@ -1807,6 +1877,12 @@ document.querySelectorAll("[data-page-target]").forEach((button) => {
   button.addEventListener("click", () => setActivePage(button.dataset.pageTarget));
 });
 byId("sidebar-settings-button").addEventListener("click", openSettings);
+byId("settings-open-updates-button").addEventListener("click", () => {
+  closeSettings();
+  setActivePage("updates");
+});
+byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
+byId("settings-install-update-button").addEventListener("click", installAppUpdate);
 setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
@@ -1855,6 +1931,7 @@ liveInput.addEventListener("keydown", (event) => {
     byId("footer-version").textContent = text;
     byId("app-current-version").textContent = text;
   } catch (_) {}
+  await loadReleaseHistory();
   await refreshAuthStatus();
   await refreshVideoTools();
   await refreshMonitorState();

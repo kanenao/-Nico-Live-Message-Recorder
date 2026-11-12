@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.33</span>
+        <span class="version" id="version">v0.1.0-beta.35</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -63,6 +63,9 @@
         </div>
         <div class="nav-group">
           <div class="side-label">アプリ</div>
+          <button class="nav-item" type="button" id="updates-nav-button" data-page-target="updates">
+            <span class="nav-icon">↻</span><span class="nav-text">バージョン更新</span>
+          </button>
           <button class="nav-item" type="button" id="sidebar-settings-button">
             <span class="nav-icon">⚙</span><span class="nav-text">アプリ設定</span>
           </button>
@@ -70,7 +73,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.34</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.35</span></div>
         </div>
       </aside>
 
@@ -552,8 +555,47 @@
           </div>
         </section>
 
+        <section class="panel version-update-page" id="updates-panel" data-page="updates">
+          <div class="panel-heading">
+            <div>
+              <div class="eyebrow">APPLICATION UPDATES</div>
+              <h2>バージョン更新</h2>
+              <p>アプリの最新版を確認し、過去の更新内容もここで確認できます。</p>
+            </div>
+            <span class="update-state-badge" id="settings-update-badge" data-state="idle">確認待ち</span>
+          </div>
+          <div class="version-update-summary">
+            <div class="settings-version-row">
+              <span>現在のバージョン</span>
+              <strong id="app-current-version">v0.1.0-beta.35</strong>
+            </div>
+            <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
+              <span>新しいバージョン</span>
+              <strong id="settings-latest-version">—</strong>
+            </div>
+          </div>
+          <div class="app-update-status" id="settings-update-status" role="status">起動時にGitHub Releasesから新しいバージョンを確認します。</div>
+          <progress class="app-update-progress" id="settings-update-progress" max="100" value="0" hidden></progress>
+          <div class="app-update-actions">
+            <button class="button button-outline button-small" id="settings-check-update-button" type="button">今すぐ更新を確認</button>
+            <button class="button button-primary button-small" id="settings-install-update-button" type="button" hidden>再起動して更新</button>
+          </div>
+          <p class="settings-help">起動時と6時間ごとに新しいバージョンを自動確認します。更新が見つかるとバックグラウンドでダウンロードし、準備完了後に再起動して適用できます。</p>
+          <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>
+
+          <div class="release-history-section">
+            <div class="release-history-heading">
+              <div><h3>バージョン更新履歴</h3><p>各バージョンで追加・変更した機能や修正内容を掲載しています。</p></div>
+              <span class="release-history-source">CHANGELOG</span>
+            </div>
+            <div class="release-history-list" id="release-history-list" aria-live="polite">
+              <div class="release-history-empty">更新履歴を読み込んでいます…</div>
+            </div>
+          </div>
+        </section>
+
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.33</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.35</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -667,30 +709,13 @@
           <p class="settings-help">初回はWindowsにOllamaをインストールし、ターミナルで <code>ollama pull qwen2.5:3b</code> を実行してください。モデルはPC内に保存されます。</p>
         </section>
 
-        <section class="settings-section app-update-settings" aria-live="polite">
-          <div class="settings-section-heading settings-update-heading">
-            <div>
-              <h3>アプリ情報・自動更新</h3>
-              <p>アプリ本体のバージョン確認と、最新版への更新を行います。</p>
-            </div>
-            <span class="update-state-badge" id="settings-update-badge" data-state="idle">確認待ち</span>
+        <section class="settings-section" aria-label="バージョン更新">
+          <div class="settings-section-heading">
+            <div><h3>バージョン更新</h3><p>更新確認とバージョンごとの変更履歴は、左メニューの「バージョン更新」から確認できます。</p></div>
           </div>
-          <div class="settings-version-row">
-            <span>現在のバージョン</span>
-            <strong id="app-current-version">v0.1.0-beta.33</strong>
-          </div>
-          <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
-            <span>新しいバージョン</span>
-            <strong id="settings-latest-version">—</strong>
-          </div>
-          <div class="app-update-status" id="settings-update-status" role="status">起動時にGitHub Releasesから新しいバージョンを確認します。</div>
-          <progress class="app-update-progress" id="settings-update-progress" max="100" value="0" hidden></progress>
           <div class="app-update-actions">
-            <button class="button button-outline button-small" id="settings-check-update-button" type="button">今すぐ更新を確認</button>
-            <button class="button button-primary button-small" id="settings-install-update-button" type="button" hidden>再起動して更新</button>
+            <button class="button button-outline button-small" id="settings-open-updates-button" type="button">バージョン更新を開く</button>
           </div>
-          <p class="settings-help">起動時と6時間ごとに自動確認します。更新が見つかるとバックグラウンドでダウンロードし、準備完了後に「再起動して更新」から適用できます。</p>
-          <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>
         </section>
       </div>
         <p class="hint settings-note">監視は最短10秒間隔です。ログイン中はフォロー中番組APIも確認しますが、PCの電源断・ネットワーク断中は監視できません。コメント付き動画の表示・同期・出力の詳細設定は「コメント付き動画生成」画面にまとめています。</p>

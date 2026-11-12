@@ -574,6 +574,24 @@ test("app settings expose the current version and a synchronized automatic updat
 });
 
 
+test("dedicated version update page shows the current version, updater controls, and bundled release history", () => {
+  assert.match(html, /data-page-target="updates"/);
+  assert.match(html, /id="updates-panel"[^>]*data-page="updates"/);
+  for (const id of ["app-current-version", "settings-update-badge", "settings-update-status",
+    "settings-update-progress", "settings-latest-version", "settings-check-update-button",
+    "settings-install-update-button", "release-history-list", "settings-open-updates-button"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing version page field: " + id);
+  }
+  assert.match(renderer, /"articles", "updates"/);
+  assert.match(renderer, /function parseReleaseHistory\(/);
+  assert.match(renderer, /function renderReleaseHistory\(/);
+  assert.match(renderer, /api\.getChangelog\(\)/);
+  assert.match(preload, /getChangelog:.*ipcRenderer\.invoke\("app:changelog"/);
+  assert.match(main, /ipcMain\.handle\("app:changelog"/);
+  assert.ok(packageConfig.build.files.includes("CHANGELOG.md"));
+  assert.match(css, /\.release-history-item/);
+});
+
 test("dashboard live count retains registered-target count after manual capture cards are merged", () => {
   assert.match(renderer, /function renderDashboardStats\(\) \{\s*const targets = Array\.isArray\(monitorSettings\.targets\)/);
   assert.match(renderer, /record\.title = status\.isRecording[\s\S]*この配信は現在録画中です/);

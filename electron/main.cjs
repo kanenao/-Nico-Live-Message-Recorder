@@ -760,6 +760,16 @@ function makeWindow() {
 
 ipcMain.handle("app:version", () => app.getVersion());
 
+ipcMain.handle("app:changelog", async () => {
+  const changelogPath = path.join(__dirname, "..", "CHANGELOG.md");
+  try {
+    return await fs.promises.readFile(changelogPath, "utf8");
+  } catch (error) {
+    console.warn("Could not read application changelog:", error);
+    return "";
+  }
+});
+
 ipcMain.handle("updates:check", () => checkForUpdatesNow());
 
 ipcMain.handle("updates:install", async () => {

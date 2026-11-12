@@ -577,3 +577,29 @@ button, .button {
 .session-current-program-meta { display: flex; gap: 8px 18px; flex-wrap: wrap; color: #8190ae; font-size: 9px; overflow-wrap: anywhere; }
 .broadcast-article-live-badge { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-bottom: 7px; padding: 4px 8px; border: 1px solid rgba(83,223,155,.3); border-radius: 20px; background: rgba(83,223,155,.09); color: #83e8b4; font-size: 9px; font-weight: 800; }
 .broadcast-article-updated { color: #7183a2; font-size: 9px; margin-top: 5px; }
+
+
+/* beta35: dedicated app version and release history page */
+.version-update-page { display: grid; gap: 15px; }
+.version-update-page .panel-heading { align-items: flex-start; }
+.version-update-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.version-update-summary .settings-version-row { min-height: 58px; }
+.version-update-page .app-update-status { padding: 12px 14px; border: 1px solid rgba(155,175,220,.12); border-radius: 8px; background: rgba(5,10,20,.22); }
+.version-update-page .app-update-progress { width: 100%; }
+.release-history-section { display: grid; gap: 12px; margin-top: 5px; padding-top: 17px; border-top: 1px solid rgba(155,175,220,.14); }
+.release-history-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.release-history-heading h3 { margin: 0; color: #e7edf9; font-size: 14px; }
+.release-history-heading p { margin: 5px 0 0; color: #8492ad; font-size: 10px; line-height: 1.6; }
+.release-history-source { padding: 4px 8px; border: 1px solid rgba(155,175,220,.14); border-radius: 20px; color: #8492ad; font: 9px Consolas, monospace; }
+.release-history-list { display: grid; gap: 10px; }
+.release-history-item { padding: 14px 15px; border: 1px solid rgba(155,175,220,.12); border-radius: 9px; background: rgba(5,10,20,.2); }
+.release-history-item-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.release-history-item-heading strong { color: #e8efff; font: 700 12px Consolas, "Yu Gothic UI", sans-serif; }
+.release-history-current { padding: 3px 7px; border-radius: 12px; background: rgba(83,223,155,.1); color: #83e8b4; font-size: 9px; }
+.release-history-item ul { margin: 11px 0 0; padding-left: 19px; display: grid; gap: 6px; }
+.release-history-item li { color: #aab6cd; font-size: 10px; line-height: 1.75; overflow-wrap: anywhere; }
+.release-history-empty { padding: 22px 14px; border: 1px dashed rgba(155,175,220,.18); border-radius: 8px; color: #8b99b5; font-size: 10px; text-align: center; }
+@media (max-width: 720px) {
+  .version-update-summary { grid-template-columns: minmax(0, 1fr); }
+  .release-history-heading { flex-direction: column; }
+}
