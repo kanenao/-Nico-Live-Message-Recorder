@@ -15,6 +15,7 @@ const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
 const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const composeExport = require(path.join(root, "electron", "composition-export.cjs"));
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
@@ -170,7 +171,10 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   for (const id of [
     "compose-font-scale", "compose-speed", "compose-offset", "compose-position",
     "compose-opacity", "compose-display-mode", "compose-color-mode",
-    "compose-resolution", "compose-fps", "compose-bitrate", "compose-shadow"
+    "compose-resolution", "compose-fps", "compose-bitrate", "compose-shadow",
+    "compose-row-limit", "compose-duration", "compose-font-family", "compose-outline",
+    "compose-ng-words", "compose-width", "compose-height", "compose-keep-aspect",
+    "compose-output-format", "compose-output-quality"
   ]) {
     assert.ok(html.includes('id="' + id + '"'), "missing composer control: " + id);
   }
@@ -181,8 +185,29 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   assert.match(renderer, /canvas\.captureStream\(composeOptions\.fps\)/);
   assert.match(renderer, /videoBitsPerSecond: composeOptions\.bitrate/);
   assert.match(renderer, /comment\.timeMs \+ composeOptions\.offsetMs/);
+  assert.match(renderer, /rowLimit: number\("compose-row-limit"/);
+  assert.match(renderer, /durationSeconds/);
+  assert.match(renderer, /composeOptions\.ngWords/);
+  assert.match(renderer, /outlineWidth/);
+  assert.match(renderer, /api\.startCompose\(\{[\s\S]*?format: composeOptions\.outputFormat/);
+  assert.match(main, /transcodeCompositionToMp4/);
+  assert.match(main, /makeWebmFallbackPath/);
+  assert.match(preload, /startCompose: \(options\) => ipcRenderer\.invoke\("compose:start", options\)/);
+  assert.match(html, /WebMまたはMP4/);
+  assert.match(css, /\.compose-editor-field-full/);
 });
 
+
+test("comment video export presets normalize WebM/MP4 format and build safe H.264/AAC arguments", () => {
+  assert.equal(composeExport.normalizeCompositionFormat("MP4"), "mp4");
+  assert.equal(composeExport.normalizeCompositionFormat("unknown"), "webm");
+  assert.equal(composeExport.normalizeCompositionQuality("invalid"), "standard");
+  const args = composeExport.buildMp4TranscodeArgs("input path.webm", "output path.mp4", "high");
+  for (const value of ["input path.webm", "output path.mp4", "libx264", "aac", "yuv420p", "slow", "18", "0:a:0?"]) {
+    assert.ok(args.includes(value), "missing FFmpeg argument: " + value);
+  }
+  assert.throws(() => composeExport.buildMp4TranscodeArgs("", "out.mp4", "standard"));
+});
 
 test("release preflight treats an HTTP 404 as unpublished and surfaces other GitHub API errors", () => {
   assert.match(releaseWorkflow, /Invoke-RestMethod/);
@@ -283,9 +308,9 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.22");
-  assert.ok(html.includes("0.1.0-beta.22"));
-  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-beta22-Windows"));
+  assert.equal(packageConfig.version, "0.1.0-beta.23");
+  assert.ok(html.includes("0.1.0-beta.23"));
+  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-beta23-Windows"));
 });
 
 test("past timeshift comments are fetched through NDGR previous and backward segments and aligned to archive start", () => {
