@@ -425,7 +425,7 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
     ...context,
     generatedAt: new Date().toISOString()
   };
-  const records = recordsText.split(/\\r?\\n/).filter(Boolean).map(line => {
+  const records = recordsText.split(/\r?\n/).filter(Boolean).map(line => {
     try { return JSON.parse(line); } catch (_) { return null; }
   }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
