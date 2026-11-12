@@ -566,3 +566,14 @@ button, .button {
   .settings-update-heading { flex-direction: column; }
   .settings-version-row { align-items: flex-start; flex-direction: column; gap: 5px; }
 }
+
+
+/* beta32: live recording metadata and in-progress broadcast articles */
+.session-current-program { display: grid; gap: 9px; margin: 14px 0 5px; padding: 13px 14px; border: 1px solid rgba(155,175,220,.14); border-radius: 10px; background: rgba(5,10,20,.25); }
+.session-current-program-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #8998b6; font-size: 9px; }
+.session-current-program-heading span:last-child { padding: 4px 8px; border: 1px solid rgba(155,175,220,.18); border-radius: 20px; color: #aebbd4; }
+.session-current-program-heading span:last-child[data-state="recording"] { color: #78e2b0; border-color: rgba(83,223,155,.28); background: rgba(83,223,155,.08); }
+.session-current-program strong { color: #e5ecfb; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.session-current-program-meta { display: flex; gap: 8px 18px; flex-wrap: wrap; color: #8190ae; font-size: 9px; overflow-wrap: anywhere; }
+.broadcast-article-live-badge { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-bottom: 7px; padding: 4px 8px; border: 1px solid rgba(83,223,155,.3); border-radius: 20px; background: rgba(83,223,155,.09); color: #83e8b4; font-size: 9px; font-weight: 800; }
+.broadcast-article-updated { color: #7183a2; font-size: 9px; margin-top: 5px; }

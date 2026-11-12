@@ -12,6 +12,8 @@ let connected = false;
 let recordStartedAt = 0;
 let recordClock = null;
 let currentLiveId = "";
+let currentProgramMetadata = {};
+let currentCaptureTarget = null;
 let commentCaptureState = "disconnected";
 let videoCaptureState = "idle";
 let commentCount = 0;
@@ -212,12 +214,75 @@ function renderEvent(record) {
   commentList.scrollTop = commentList.scrollHeight;
 }
 
+function renderSessionProgramInfo() {
+  const info = currentProgramMetadata || {};
+  const activeTarget = currentCaptureTarget || {};
+  const title = info.title || info.programTitle || activeTarget.title || "";
+  const broadcaster = info.broadcasterName || activeTarget.displayName || activeTarget.name || "";
+  const liveId = currentLiveId || activeTarget.liveId || "";
+  const startedAt = info.startedAt || activeTarget.startedAt || "";
+  const viewerCount = info.viewerCount ?? activeTarget.viewerCount ?? activeTarget.viewers;
+  const captureState = videoCaptureState === "recording"
+    ? "映像・音声を録画中"
+    : videoCaptureState === "stopping"
+      ? "録画停止中"
+      : (connected ? "コメント取得中" : (currentCaptureTarget ? "録画準備中" : "待機中"));
+
+  byId("session-current-title").textContent = title || (liveId
+    ? "番組情報を取得しています…"
+    : "放送IDを入力すると番組情報が表示されます");
+  byId("session-current-broadcaster").textContent = "配信者：" + (broadcaster || "未取得");
+  byId("session-current-live-id").textContent = "放送ID：" + (liveId || "未入力");
+  byId("session-current-started-at").textContent = "開始：" + (startedAt ? formatBroadcastStart(startedAt) : "未取得");
+  byId("session-current-viewers").textContent = "来場者：" +
+    (viewerCount == null || !Number.isFinite(Number(viewerCount)) ? "未取得" : Number(viewerCount).toLocaleString("ja-JP"));
+  byId("session-current-status").textContent = captureState;
+  byId("session-current-status").dataset.state = videoCaptureState;
+}
+
 function updateMetadata(metadata) {
   if (!metadata) return;
-  byId("live-title").textContent = metadata.title || "番組タイトルを取得できませんでした";
-  const broadcaster = metadata.broadcasterName || "放送者情報なし";
-  const status = metadata.status || "";
-  byId("live-meta").textContent = broadcaster + (status ? " ・ " + status : "");
+  const program = metadata.program || metadata.broadcast || metadata.live || {};
+  const readValue = (keys) => {
+    for (const key of keys) {
+      const value = metadata[key] !== undefined ? metadata[key] : program[key];
+      if (value !== undefined && value !== null && String(value).trim()) return value;
+    }
+    return "";
+  };
+  const provider = metadata.provider || {};
+  const title = String(readValue(["title", "programTitle", "liveTitle"]) || "").trim();
+  const broadcasterName = String(readValue(["broadcasterName", "providerName"]) || provider.name || "").trim();
+  const broadcasterId = String(readValue(["broadcasterId", "providerId"]) || provider.id || "").trim();
+  const startedAt = readValue(["startedAt", "beginTime", "startTime"]);
+  const viewerCount = readValue(["viewerCount", "viewers", "watchCount", "currentViewers", "totalViewers"]);
+  currentProgramMetadata = {
+    ...currentProgramMetadata,
+    liveId: currentLiveId,
+    title: title || currentProgramMetadata.title || "",
+    programTitle: title || currentProgramMetadata.programTitle || "",
+    broadcasterName: broadcasterName || currentProgramMetadata.broadcasterName || "",
+    broadcasterId: broadcasterId || currentProgramMetadata.broadcasterId || "",
+    startedAt: startedAt || currentProgramMetadata.startedAt || "",
+    viewerCount: viewerCount !== "" ? viewerCount : currentProgramMetadata.viewerCount
+  };
+  if (currentCaptureTarget && currentCaptureTarget.liveId === currentLiveId) {
+    currentCaptureTarget = {
+      ...currentCaptureTarget,
+      name: currentProgramMetadata.broadcasterName || currentCaptureTarget.name || "",
+      displayName: currentProgramMetadata.broadcasterName || currentCaptureTarget.displayName || "",
+      userId: currentProgramMetadata.broadcasterId || currentCaptureTarget.userId || "",
+      startedAt: currentProgramMetadata.startedAt || currentCaptureTarget.startedAt || "",
+      title: currentProgramMetadata.title || currentCaptureTarget.title || "",
+      viewerCount: currentProgramMetadata.viewerCount ?? currentCaptureTarget.viewerCount
+    };
+  }
+  byId("live-title").textContent = currentProgramMetadata.title || "番組タイトルを取得できませんでした";
+  const status = String(readValue(["status"]) || "").trim();
+  byId("live-meta").textContent = (currentProgramMetadata.broadcasterName || "放送者情報なし") +
+    (status ? " ・ " + status : "");
+  renderSessionProgramInfo();
+  renderLiveBroadcasts();
 }
 
 async function refreshAuthStatus() {
@@ -238,8 +303,12 @@ async function connectLive() {
     return;
   }
 
+  if (currentLiveId !== liveId) currentProgramMetadata = {};
   currentLiveId = liveId;
+  currentCaptureTarget = null;
+  currentProgramMetadata.liveId = liveId;
   liveInput.value = liveId;
+  renderSessionProgramInfo();
   clearComments();
   setConnection("connecting");
   byId("live-title").textContent = "番組情報を取得中…";
@@ -286,20 +355,41 @@ async function startVideoRecording(target = null) {
     return;
   }
 
-  if (currentLiveId !== liveId) clearComments();
+  const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
+  if (currentLiveId !== liveId) currentProgramMetadata = {};
   currentLiveId = liveId;
   liveInput.value = liveId;
+  currentProgramMetadata = {
+    ...currentProgramMetadata,
+    liveId,
+    title: selectedTarget && selectedTarget.title || currentProgramMetadata.title || "",
+    programTitle: selectedTarget && selectedTarget.title || currentProgramMetadata.programTitle || "",
+    broadcasterName: selectedTarget && selectedTarget.name || currentProgramMetadata.broadcasterName || "",
+    broadcasterId: selectedTarget && (selectedTarget.broadcasterId || selectedTarget.userId) || currentProgramMetadata.broadcasterId || "",
+    startedAt: selectedTarget && selectedTarget.startedAt || currentProgramMetadata.startedAt || "",
+    viewerCount: selectedTarget
+      ? (selectedTarget.viewerCount ?? selectedTarget.viewers ?? currentProgramMetadata.viewerCount)
+      : currentProgramMetadata.viewerCount
+  };
+  currentCaptureTarget = timeshift ? null : {
+    ...(selectedTarget || {}),
+    liveId,
+    isManualRecording: true,
+    isAutomaticRecording: false,
+    name: currentProgramMetadata.broadcasterName || "",
+    title: currentProgramMetadata.title || ""
+  };
   if (selectedTarget) {
     byId("live-title").textContent = selectedTarget.title || "番組情報を取得中…";
     byId("live-meta").textContent = (selectedTarget.name || "登録配信者") +
       " · " + liveId + " · LIVE一覧から録画開始";
   }
+  renderSessionProgramInfo();
   recordButton.disabled = true;
   renderLiveBroadcasts();
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
   try {
     const quality = byId("record-quality")?.value || "best";
-    const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
     let result;
     if (timeshift) {
       const archive = await api.startVideo(liveId, quality, { timeshift: true });
@@ -352,6 +442,8 @@ async function startVideoRecording(target = null) {
       showToast("映像録画とコメント取得を同時に開始しました。");
     }
   } catch (error) {
+    currentCaptureTarget = null;
+    renderSessionProgramInfo();
     setVideoState(false);
     if (!connected) setConnection("error");
     showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
@@ -376,6 +468,7 @@ function clearRecordClock() {
 
 function setVideoState(recording, stopping = false) {
   videoCaptureState = stopping ? "stopping" : (recording ? "recording" : "idle");
+  renderSessionProgramInfo();
   byId("record-indicator").classList.toggle("recording", recording);
   byId("record-status").textContent = stopping
     ? "録画停止中…"
@@ -482,6 +575,8 @@ function handleVideoState(payload) {
     showToast("録画データがありません。配信の状態と視聴権限を確認してください。", true);
   }
   clearRecordClock();
+  currentCaptureTarget = null;
+  renderSessionProgramInfo();
   setVideoState(false);
   processMonitorAutoQueue();
 }
@@ -541,12 +636,46 @@ function formatBroadcastElapsed(value) {
   return "経過 " + [hours, minutes, remainder].map(part => String(part).padStart(2, "0")).join(":");
 }
 
-function renderDashboardStats() {
+function getLiveBroadcastItems() {
+  const byLiveId = new Map();
   const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
-  const liveCount = targets.filter(target => {
+  for (const target of targets) {
     const status = monitorStatuses.get(target.userId);
-    return Boolean(status && status.isLive && !status.error);
-  }).length;
+    if (!status || !status.isLive || status.error || !status.liveId) continue;
+    byLiveId.set(status.liveId, { ...status, isRecording: false });
+  }
+  const activeCapture = currentCaptureTarget && currentCaptureTarget.liveId &&
+    (recordButton.disabled || Boolean(recordStartedAt) ||
+      videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing);
+  if (activeCapture) {
+    const capture = currentCaptureTarget;
+    const liveId = capture.liveId;
+    const existing = byLiveId.get(liveId) || {};
+    const name = currentProgramMetadata.broadcasterName ||
+      capture.displayName || capture.name || existing.name || "";
+    const title = currentProgramMetadata.title ||
+      capture.title || existing.title || "";
+    byLiveId.set(liveId, {
+      ...existing,
+      ...capture,
+      liveId,
+      userId: capture.userId || capture.broadcasterId || existing.userId || "",
+      name: name || "手動録画中の配信",
+      title: title || "番組タイトルを取得中…",
+      startedAt: currentProgramMetadata.startedAt || capture.startedAt || existing.startedAt || "",
+      isLive: true,
+      isRecording: true,
+      isAutomaticRecording: Boolean(capture.isAutomaticRecording),
+      isFollowerOnly: Boolean(capture.isFollowerOnly),
+      detectionSource: capture.isAutomaticRecording ? "自動録画中" : "手動録画中"
+    });
+  }
+  return Array.from(byLiveId.values())
+    .sort((a, b) => parseBroadcastTimestamp(b.startedAt) - parseBroadcastTimestamp(a.startedAt));
+}
+
+function renderDashboardStats() {
+  const liveCount = getLiveBroadcastItems().length;
   byId("dashboard-target-count").textContent = String(targets.length).padStart(2, "0");
   byId("dashboard-live-count").textContent = String(liveCount).padStart(2, "0");
   byId("dashboard-recording-count").textContent = videoCaptureState === "recording" ? "01" : "00";
@@ -564,11 +693,7 @@ function renderLiveBroadcasts() {
   const list = byId("live-broadcast-list");
   if (!list) return;
   list.replaceChildren();
-  const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
-  const liveItems = targets
-    .map(target => monitorStatuses.get(target.userId))
-    .filter(status => status && status.isLive && !status.error)
-    .sort((a, b) => parseBroadcastTimestamp(b.startedAt) - parseBroadcastTimestamp(a.startedAt));
+  const liveItems = getLiveBroadcastItems();
 
   if (!liveItems.length) {
     const empty = document.createElement("div");
@@ -589,7 +714,7 @@ function renderLiveBroadcasts() {
     top.className = "live-broadcast-top";
     const liveBadge = document.createElement("span");
     liveBadge.className = "live-broadcast-badge";
-    liveBadge.textContent = "● LIVE";
+    liveBadge.textContent = status.isRecording ? "● REC中" : "● LIVE";
     const start = document.createElement("span");
     start.className = "live-broadcast-start";
     start.textContent = "開始 " + formatBroadcastStart(status.startedAt);
@@ -616,18 +741,19 @@ function renderLiveBroadcasts() {
     const footer = document.createElement("div");
     footer.className = "live-broadcast-footer";
     const source = document.createElement("span");
-    source.textContent = (status.isFollowerOnly ? "フォロー限定 · " : "") +
-      (status.detectionSource || "配信監視");
+    source.textContent = status.isRecording
+      ? (status.isAutomaticRecording ? "自動録画中" : "手動録画中")
+      : (status.isFollowerOnly ? "フォロー限定 · " : "") + (status.detectionSource || "配信監視");
     const actions = document.createElement("div");
     actions.className = "live-broadcast-actions";
 
     const record = document.createElement("button");
     record.type = "button";
     record.className = "button button-primary button-small live-broadcast-record-button";
-    const recordingBusy = recordButton.disabled || Boolean(recordStartedAt) ||
-      videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
-    record.disabled = recordingBusy;
-    record.textContent = videoCaptureState === "recording" || recordStartedAt
+    const recordingBusy = !status.isRecording && (recordButton.disabled || Boolean(recordStartedAt) ||
+      videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing);
+    record.disabled = Boolean(status.isRecording) || recordingBusy;
+    record.textContent = status.isRecording
       ? "録画中" : videoCaptureState === "stopping"
         ? "停止中…" : recordingBusy ? "録画準備中…" : "録画開始";
     record.title = recordingBusy
@@ -1004,8 +1130,20 @@ async function processMonitorAutoQueue() {
     const liveId = normalizeId(target.liveId);
     if (!liveId) throw new Error("監視で検出した放送IDが正しくありません。");
 
+    if (currentLiveId !== liveId) currentProgramMetadata = {};
     currentLiveId = liveId;
+    currentProgramMetadata = {
+      ...currentProgramMetadata,
+      liveId,
+      title: target.title || "",
+      programTitle: target.title || "",
+      broadcasterName: target.displayName || target.name || "",
+      broadcasterId: target.broadcasterId || target.userId || "",
+      startedAt: target.startedAt || ""
+    };
+    currentCaptureTarget = { ...target, liveId, isAutomaticRecording: true, isManualRecording: false };
     liveInput.value = liveId;
+    renderSessionProgramInfo();
     clearComments();
     setConnection("connecting");
     byId("live-title").textContent = target.title || "番組情報を取得中…";
@@ -1044,6 +1182,8 @@ async function processMonitorAutoQueue() {
     }).catch(() => {});
   } catch (error) {
     setConnection("error");
+    currentCaptureTarget = null;
+    renderSessionProgramInfo();
     monitorHandledDetections.delete(String(target.userId || "") + ":" + String(target.liveId || ""));
     await api.retryMonitorTarget({
       userId: target.userId,
@@ -1064,6 +1204,8 @@ async function processMonitorAutoQueue() {
   } finally {
     monitorAutoProcessing = false;
     if (!recordStartedAt && videoCaptureState !== "recording") {
+      currentCaptureTarget = null;
+      renderSessionProgramInfo();
       recordButton.disabled = false;
     }
     renderLiveBroadcasts();
@@ -1281,6 +1423,12 @@ function renderBroadcastArticles() {
       formatLibraryDate(article.startedAt || article.generatedAt),
       article.liveId || ""
     ].filter(Boolean).join(" · ");
+    if (article.liveStatus === "live" || article.isLive) {
+      const liveBadge = document.createElement("span");
+      liveBadge.className = "broadcast-article-live-badge";
+      liveBadge.textContent = "● LIVE 配信中・記事更新中";
+      heading.append(liveBadge);
+    }
     heading.append(title, meta);
 
     const stats = document.createElement("div");
@@ -1299,7 +1447,8 @@ function renderBroadcastArticles() {
       stat("来場者", article.visitorCount == null ? "未取得" : Number(article.visitorCount).toLocaleString("ja-JP")),
       stat("投稿者", Number(article.uniqueCommenters || 0).toLocaleString("ja-JP") + "人"),
       stat("コメント", Number(article.commentCount || 0).toLocaleString("ja-JP") + "件"),
-      stat("配信時間", article.durationMinutes == null ? "未取得" : "約" + article.durationMinutes + "分")
+      stat("配信時間", article.durationMinutes == null ? "未取得" :
+        (article.liveStatus === "live" || article.isLive ? "約" + article.durationMinutes + "分経過" : "約" + article.durationMinutes + "分"))
     );
 
     const body = document.createElement("div");
@@ -1339,6 +1488,12 @@ function renderBroadcastArticles() {
       actions.appendChild(video);
     }
 
+    if (article.generatedAt) {
+      const updated = document.createElement("p");
+      updated.className = "broadcast-article-updated";
+      updated.textContent = "最終更新：" + formatLibraryDate(article.generatedAt);
+      body.appendChild(updated);
+    }
     card.append(heading, stats, body, actions);
     list.appendChild(card);
   }

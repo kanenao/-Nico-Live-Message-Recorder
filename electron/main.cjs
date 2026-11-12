@@ -476,7 +476,10 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
   const articlePath = path.join(directory, baseName + ".json");
   article.articlePath = articlePath;
   article.commentFile = commentPath;
+  let previousArticle = null;
+  try { previousArticle = JSON.parse(fs.readFileSync(articlePath, "utf8")); } catch (_) {}
   if (context.videoFile) article.videoFile = context.videoFile;
+  else if (previousArticle && previousArticle.videoFile) article.videoFile = previousArticle.videoFile;
   fs.writeFileSync(articlePath, JSON.stringify(article, null, 2), "utf8");
   send("articles:generated", { article });
   return article;
@@ -544,26 +547,9 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
   });
   send("comments:file", { path: commentFilePath });
   if (articleUpdateTimer) clearInterval(articleUpdateTimer);
-  articleUpdateTimer = setInterval(async () => {
-    if (!commentWriter || !commentFilePath || articleUpdateInProgress) return;
-    articleUpdateInProgress = true;
-    try {
-      await new Promise((resolve, reject) => {
-        commentWriter.write("", error => error ? reject(error) : resolve());
-      });
-      await createAndSaveBroadcastArticle(commentFilePath, {
-        ...currentProgramInfo,
-        liveId: currentLiveId,
-        broadcasterName: currentBroadcasterName,
-        broadcasterId: currentBroadcasterId,
-        liveUpdate: true
-      });
-    } catch (error) {
-      send("articles:ai-fallback", { liveId: currentLiveId, reason: "配信中の記事更新に失敗しました: " + error.message });
-    } finally {
-      articleUpdateInProgress = false;
-    }
-  }, 3 * 60 * 1000);
+  articleUpdateTimer = setInterval(() => {
+    void refreshLiveBroadcastArticle();
+  }, 60 * 1000);
   if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
 }
 
@@ -603,11 +589,16 @@ function updateCurrentBroadcaster(metadata, liveId) {
   };
   if (Object.keys(nextInfo).some((key) => nextInfo[key] && nextInfo[key] !== currentProgramInfo[key])) {
     currentProgramInfo = nextInfo;
-    if (commentWriter) appendMarker("programMetadata", {
-      ...currentProgramInfo,
-      broadcasterName: currentBroadcasterName,
-      broadcasterId: currentBroadcasterId
-    });
+    if (commentWriter) {
+      appendMarker("programMetadata", {
+        ...currentProgramInfo,
+        broadcasterName: currentBroadcasterName,
+        broadcasterId: currentBroadcasterId
+      });
+      if (currentProgramInfo.programTitle || currentProgramInfo.description) {
+        void refreshLiveBroadcastArticle();
+      }
+    }
   }
 }
 
@@ -622,6 +613,37 @@ function appendMarker(type, fields = {}) {
   const timestamp = new Date().toISOString();
   const marker = { type, liveId: currentLiveId, timestamp, receivedAt: timestamp, ...fields };
   commentWriter.write(JSON.stringify(marker) + "\n");
+}
+
+async function refreshLiveBroadcastArticle() {
+  if (!commentWriter || !commentFilePath || articleUpdateInProgress) return null;
+  const writer = commentWriter;
+  const filePath = commentFilePath;
+  const liveId = currentLiveId;
+  const context = {
+    ...currentProgramInfo,
+    liveId,
+    broadcasterName: currentBroadcasterName,
+    broadcasterId: currentBroadcasterId,
+    liveUpdate: true,
+    liveStatus: "live"
+  };
+  articleUpdateInProgress = true;
+  try {
+    await new Promise((resolve, reject) => {
+      writer.write("", error => error ? reject(error) : resolve());
+    });
+    if (commentWriter !== writer || commentFilePath !== filePath || currentLiveId !== liveId) return null;
+    return await createAndSaveBroadcastArticle(filePath, context);
+  } catch (error) {
+    send("articles:ai-fallback", {
+      liveId,
+      reason: "配信中の記事更新に失敗しました: " + error.message
+    });
+    return null;
+  } finally {
+    articleUpdateInProgress = false;
+  }
 }
 
 function appendMarkerAndWait(type, fields = {}) {
@@ -647,7 +669,8 @@ function closeCommentWriter() {
       liveId: currentLiveId,
       broadcasterName: currentBroadcasterName,
       broadcasterId: currentBroadcasterId,
-      ...currentProgramInfo
+      ...currentProgramInfo,
+      liveStatus: streamlinkProcess && streamlinkLiveId === currentLiveId ? "live" : "unknown"
     };
     commentWriter = null;
     writer.end(async () => {
@@ -1677,6 +1700,7 @@ async function finalizeStreamlinkRecording(exit) {
         broadcasterName: streamlinkBroadcasterName || currentBroadcasterName,
         broadcasterId: streamlinkBroadcasterId || currentBroadcasterId,
         ...currentProgramInfo,
+        liveStatus: commentWriter && provider ? "live" : "unknown",
         videoFile: finalPath
       });
     } catch (error) {

@@ -78,3 +78,37 @@ test("can generate a limited article from comments even when the program title i
   assert.match(article.title, /配信者/);
   assert.ok(article.paragraphs.some((paragraph) => paragraph.includes("コメントログ")));
 });
+
+
+test("live article drafts are marked as live and report elapsed time instead of a finish time", () => {
+  const article = generateBroadcastArticle(log([
+    { type: "sessionStart", liveId: "lv123456789", sessionStartedAt: "2026-11-12T10:00:00.000Z" },
+    { type: "programMetadata", programTitle: "生放送のテスト", description: "配信中の説明です。" },
+    { type: "comment", content: "今の展開が面白い", userId: "1", userName: "A", timestamp: "2026-11-12T10:15:00Z" },
+    { type: "videoStop", liveId: "lv123456789", videoStoppedAt: "2026-11-12T10:20:00.000Z" }
+  ]), {
+    liveUpdate: true,
+    generatedAt: "2026-11-12T10:30:00.000Z"
+  });
+  assert.equal(article.status, "generated");
+  assert.equal(article.liveStatus, "live");
+  assert.equal(article.isLive, true);
+  assert.equal(article.endedAt, "");
+  assert.equal(article.durationMinutes, 30);
+  assert.ok(article.paragraphs.some(paragraph => paragraph.includes("現在配信中")));
+  assert.ok(article.paragraphs.some(paragraph => paragraph.includes("配信中（約30分経過）")));
+});
+
+test("article status can remain unknown when only comment capture was stopped", () => {
+  const article = generateBroadcastArticle(log([
+    { type: "sessionStart", liveId: "lv123456789", sessionStartedAt: "2026-11-12T10:00:00.000Z" },
+    { type: "videoStop", liveId: "lv123456789", videoStoppedAt: "2026-11-12T10:20:00.000Z" },
+    { type: "comment", content: "記録したコメントです", userId: "1" }
+  ]), {
+    liveStatus: "unknown",
+    generatedAt: "2026-11-12T10:30:00.000Z"
+  });
+  assert.equal(article.liveStatus, "unknown");
+  assert.equal(article.isLive, false);
+  assert.equal(article.endedAt, "");
+});

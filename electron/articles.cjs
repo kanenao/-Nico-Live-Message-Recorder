@@ -153,8 +153,15 @@ function generateBroadcastArticle(input, context = {}) {
   ]);
   const visitorCount = Number.isFinite(Number(visitorCountValue)) && visitorCountValue !== ""
     ? Math.max(0, Math.floor(Number(visitorCountValue))) : null;
-  const durationMinutes = startedAt && endedAt
-    ? Math.max(0, Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 60000))
+  const liveStatus = context.liveUpdate === true || context.liveStatus === "live"
+    ? "live"
+    : context.liveStatus || (endedAt ? "ended" : "unknown");
+  const isLive = liveStatus === "live";
+  const generatedAt = validIso(context.generatedAt) || new Date().toISOString();
+  const effectiveEndedAt = liveStatus === "ended" ? endedAt : "";
+  const durationEndAt = isLive ? generatedAt : effectiveEndedAt;
+  const durationMinutes = startedAt && durationEndAt
+    ? Math.max(0, Math.round((Date.parse(durationEndAt) - Date.parse(startedAt)) / 60000))
     : null;
 
   if (!programTitle && !description && comments.length === 0) {
@@ -172,15 +179,18 @@ function generateBroadcastArticle(input, context = {}) {
 
   if (programTitle || description) {
     let opening = broadcaster + "は" + displayDate + "、";
-    opening += programTitle ? "「" + programTitle + "」と題した生配信を実施した。" : "生配信を実施した。";
+    opening += isLive
+      ? (programTitle ? "「" + programTitle + "」と題した生配信を現在配信中だ。" : "生配信を現在も実施している。")
+      : (programTitle ? "「" + programTitle + "」と題した生配信を実施した。" : "生配信を実施した。");
     if (description) opening += " 番組説明には「" + description.slice(0, 420) + (description.length > 420 ? "…" : "") + "」と記載されている。";
     paragraphs.push(opening);
   }
 
   if (comments.length) {
-    let commentParagraph = "保存されたコメントログには" + comments.length.toLocaleString("ja-JP") + "件のコメントが記録され、";
+    let commentParagraph = (isLive ? "配信開始後、現在までに保存されたコメントログには" : "保存されたコメントログには") +
+      comments.length.toLocaleString("ja-JP") + "件のコメントが" + (isLive ? "届いており、" : "記録され、");
     commentParagraph += uniqueCommenters
-      ? "投稿者は" + uniqueCommenters.toLocaleString("ja-JP") + "人だった。"
+      ? (isLive ? "確認できた投稿者は" : "投稿者は") + uniqueCommenters.toLocaleString("ja-JP") + "人" + (isLive ? "。" : "だった。")
       : "投稿者数は取得できなかった。";
     if (topics.length) {
       commentParagraph += " コメント内で複数回確認された語句は、" +
@@ -196,13 +206,17 @@ function generateBroadcastArticle(input, context = {}) {
     paragraphs.push("この記事に利用できるコメントログはありません。番組タイトルと説明から作成した概要のため、配信中の具体的な会話や展開は確認できていません。");
   }
 
-  if (startedAt || endedAt) {
+  if (startedAt || endedAt || isLive) {
     const timeText = startedAt ? displayDate : "開始時刻未取得";
-    const endText = endedAt
-      ? new Date(endedAt).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }) + "終了"
-      : "終了時刻未取得";
-    paragraphs.push("放送日時：" + timeText + " ／ " + endText +
-      (durationMinutes !== null ? "（約" + durationMinutes + "分）" : "") + "。");
+    const endText = isLive
+      ? "配信中"
+      : (effectiveEndedAt
+        ? new Date(effectiveEndedAt).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }) + "終了"
+        : "終了時刻未取得");
+    const durationText = durationMinutes !== null
+      ? (isLive ? "（約" + durationMinutes + "分経過）" : "（約" + durationMinutes + "分）")
+      : "";
+    paragraphs.push("放送日時：" + timeText + " ／ " + endText + durationText + "。");
   }
 
   const note = "自動生成記事です。番組タイトル・番組説明・保存済みコメントログを整理しています。映像・音声の発言内容を文字起こししたものではなく、コメントの抜粋も投稿者個人の意見です。";
@@ -216,7 +230,9 @@ function generateBroadcastArticle(input, context = {}) {
     programTitle,
     description,
     startedAt,
-    endedAt,
+    endedAt: effectiveEndedAt,
+    liveStatus,
+    isLive,
     durationMinutes,
     visitorCount,
     uniqueCommenters,
@@ -225,7 +241,7 @@ function generateBroadcastArticle(input, context = {}) {
     featuredComments,
     paragraphs,
     note,
-    generatedAt: validIso(context.generatedAt) || new Date().toISOString()
+    generatedAt
   };
 }
 
