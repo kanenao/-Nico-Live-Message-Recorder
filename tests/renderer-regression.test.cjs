@@ -193,7 +193,7 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   assert.match(main, /transcodeCompositionToMp4/);
   assert.match(main, /makeWebmFallbackPath/);
   assert.match(preload, /startCompose: \(options\) => ipcRenderer\.invoke\("compose:start", options\)/);
-  assert.match(html, /WebMまたはMP4/);
+  assert.match(html, /WebMはそのまま保存し、MP4を選ぶ/);
   assert.match(css, /\.compose-editor-field-full/);
 });
 
