@@ -546,3 +546,23 @@ button, .button {
 @media (max-width: 760px) {
   .broadcast-article-stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
+
+
+/* beta31: app version and automatic update settings */
+.app-update-settings { display: grid; gap: 12px; }
+.settings-update-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.update-state-badge { flex: 0 0 auto; padding: 5px 9px; border: 1px solid rgba(155,175,220,.18); border-radius: 20px; color: #aab6cd; background: rgba(255,255,255,.035); font-size: 9px; white-space: nowrap; }
+.update-state-badge[data-state="not-available"], .update-state-badge[data-state="downloaded"] { color: #78e0b5; border-color: rgba(83,223,155,.28); background: rgba(83,223,155,.08); }
+.update-state-badge[data-state="available"], .update-state-badge[data-state="progress"] { color: #e5c27b; border-color: rgba(229,194,123,.28); background: rgba(229,194,123,.08); }
+.update-state-badge[data-state="error"], .update-state-badge[data-state="unsupported"] { color: #f09aa5; border-color: rgba(240,154,165,.25); background: rgba(240,154,165,.07); }
+.settings-version-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 12px; border: 1px solid rgba(155,175,220,.12); border-radius: 8px; background: rgba(5,10,20,.22); color: #a8b5cf; font-size: 10px; }
+.settings-version-row strong { color: #ecf1ff; font: 700 12px Consolas, monospace; overflow-wrap: anywhere; }
+.settings-latest-version strong { color: #80e3b2; }
+.app-update-status { color: #a3afc8; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.app-update-progress { display: block; width: 100%; height: 9px; accent-color: #53df9b; }
+.app-update-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.app-update-settings .settings-help { margin: 0; }
+@media (max-width: 640px) {
+  .settings-update-heading { flex-direction: column; }
+  .settings-version-row { align-items: flex-start; flex-direction: column; gap: 5px; }
+}

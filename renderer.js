@@ -1385,6 +1385,13 @@ function renderUpdateState(payload) {
   const progress = byId("update-progress");
   const installButton = byId("install-update-button");
   const checkButton = byId("check-update-button");
+  const settingsStatus = byId("settings-update-status");
+  const settingsProgress = byId("settings-update-progress");
+  const settingsInstallButton = byId("settings-install-update-button");
+  const settingsCheckButton = byId("settings-check-update-button");
+  const settingsBadge = byId("settings-update-badge");
+  const latestVersionRow = byId("settings-latest-version-row");
+  const latestVersionLabel = byId("settings-latest-version");
   panel.hidden = false;
   progress.hidden = true;
   installButton.hidden = true;
@@ -1427,6 +1434,29 @@ function renderUpdateState(payload) {
     default:
       status.textContent = "更新状態を確認できません。";
   }
+
+  settingsStatus.textContent = status.textContent;
+  settingsProgress.hidden = progress.hidden;
+  settingsProgress.value = progress.value;
+  settingsInstallButton.hidden = installButton.hidden;
+  settingsInstallButton.disabled = installButton.disabled;
+  settingsCheckButton.disabled = checkButton.disabled;
+
+  const badgeLabels = {
+    checking: "確認中",
+    available: "更新あり",
+    progress: "ダウンロード中",
+    downloaded: "更新準備完了",
+    "not-available": "最新です",
+    unsupported: "自動更新対象外",
+    error: "確認エラー"
+  };
+  settingsBadge.textContent = badgeLabels[payload.state] || "状態確認中";
+  settingsBadge.dataset.state = payload.state || "idle";
+
+  const hasNewVersion = ["available", "progress", "downloaded"].includes(payload.state) && Boolean(payload.version);
+  latestVersionRow.hidden = !hasNewVersion;
+  latestVersionLabel.textContent = hasNewVersion ? "v" + payload.version : "—";
 }
 
 async function checkAppUpdates() {
@@ -1452,12 +1482,17 @@ async function checkAppUpdates() {
 
 async function installAppUpdate() {
   const button = byId("install-update-button");
+  const settingsButton = byId("settings-install-update-button");
   button.disabled = true;
+  settingsButton.disabled = true;
+  const installMessage = "録画とコメントログを安全に保存してから更新します…";
+  byId("update-status").textContent = installMessage;
+  byId("settings-update-status").textContent = installMessage;
   try {
-    byId("update-status").textContent = "録画とコメントログを安全に保存してから更新します…";
     await api.installUpdate();
   } catch (error) {
     button.disabled = false;
+    settingsButton.disabled = false;
     showToast(error.message || "更新をインストールできませんでした。", true);
   }
 }
@@ -1535,6 +1570,8 @@ byId("record-mode").addEventListener("change", () => {
 stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
 byId("install-update-button").addEventListener("click", installAppUpdate);
+byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
+byId("settings-install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
@@ -1620,6 +1657,7 @@ liveInput.addEventListener("keydown", (event) => {
     byId("version").textContent = text;
     byId("build-version").textContent = version;
     byId("footer-version").textContent = text;
+    byId("app-current-version").textContent = text;
   } catch (_) {}
   await refreshAuthStatus();
   await refreshVideoTools();

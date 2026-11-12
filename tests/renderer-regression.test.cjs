@@ -322,7 +322,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.30");
+  assert.equal(packageConfig.version, "0.1.0-beta.31");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -545,4 +545,28 @@ test("article page explains local comment-based summaries and does not claim spe
   assert.match(html, /記事はこのPC内に保存されます/);
   assert.match(html, /文字起こししたものではありません/);
   assert.match(css, /\.broadcast-article-card/);
+});
+
+
+test("app settings expose the current version and a synchronized automatic update panel", () => {
+  for (const id of [
+    "app-current-version",
+    "settings-update-badge",
+    "settings-update-status",
+    "settings-update-progress",
+    "settings-latest-version-row",
+    "settings-latest-version",
+    "settings-check-update-button",
+    "settings-install-update-button"
+  ]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing app update field: " + id);
+  }
+  assert.match(renderer, /settingsStatus\.textContent = status\.textContent/);
+  assert.match(renderer, /settingsProgress\.value = progress\.value/);
+  assert.match(renderer, /settingsCheckButton\.disabled = checkButton\.disabled/);
+  assert.match(renderer, /byId\("settings-check-update-button"\)\.addEventListener\("click", checkAppUpdates\)/);
+  assert.match(renderer, /byId\("settings-install-update-button"\)\.addEventListener\("click", installAppUpdate\)/);
+  assert.match(renderer, /byId\("app-current-version"\)\.textContent = text/);
+  assert.match(css, /\.app-update-settings/);
+  assert.match(css, /\.update-state-badge\[data-state="downloaded"\]/);
 });
