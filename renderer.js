@@ -1005,13 +1005,27 @@ async function processMonitorAutoQueue() {
 }
 
 
-function setLibraryView(open) {
+const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library"]);
+
+function setActivePage(page) {
+  const activePage = APP_PAGES.has(page) ? page : "dashboard";
   const content = document.querySelector(".content");
-  content.classList.toggle("show-library", Boolean(open));
-  byId("library-panel").hidden = !open;
-  byId("open-folder-button").classList.toggle("active", Boolean(open));
-  byId("dashboard-nav-button").classList.toggle("active", !open);
-  if (open) loadCaptureLibrary();
+  content.dataset.activePage = activePage;
+
+  content.querySelectorAll(":scope > [data-page]").forEach((view) => {
+    const isActive = view.dataset.page === activePage;
+    view.classList.toggle("page-hidden", !isActive);
+    if (view.id === "library-panel") view.hidden = !isActive;
+  });
+
+  document.querySelectorAll("[data-page-target]").forEach((button) => {
+    const isActive = button.dataset.pageTarget === activePage;
+    button.classList.toggle("active", isActive);
+    if (isActive) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+
+  if (activePage === "library") loadCaptureLibrary();
 }
 
 function formatLibraryBytes(value) {
@@ -1365,8 +1379,11 @@ byId("login-button").addEventListener("click", async () => {
   }
 });
 
-byId("open-folder-button").addEventListener("click", () => setLibraryView(true));
-byId("dashboard-nav-button").addEventListener("click", () => setLibraryView(false));
+document.querySelectorAll("[data-page-target]").forEach((button) => {
+  button.addEventListener("click", () => setActivePage(button.dataset.pageTarget));
+});
+byId("sidebar-settings-button").addEventListener("click", openSettings);
+setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
 byId("library-filter").addEventListener("change", renderCaptureLibrary);

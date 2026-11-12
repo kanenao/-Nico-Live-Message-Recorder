@@ -383,3 +383,29 @@ test("MP4 comment video conversion reports progress and uses a unique intermedia
   assert.ok(renderer.includes("durationMs"));
   assert.ok(renderer.includes('payload.state === "progress" ? Number(payload.percent)'));
 });
+
+
+test("feature navigation is grouped and every feature page has a dedicated view", () => {
+  for (const id of [
+    "dashboard-nav-button",
+    "monitor-nav-button",
+    "record-nav-button",
+    "comments-nav-button",
+    "compose-nav-button",
+    "open-folder-button",
+    "sidebar-settings-button"
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`), `missing navigation control: ${id}`);
+  }
+
+  for (const page of ["dashboard", "monitor", "record", "comments", "compose", "library"]) {
+    assert.match(html, new RegExp(`data-page="${page}"`), `missing page view: ${page}`);
+    assert.match(html, new RegExp(`data-page-target="${page}"`), `missing page navigation: ${page}`);
+  }
+
+  assert.match(renderer, /function setActivePage\(page\)/);
+  assert.match(renderer, /button\.dataset\.pageTarget/);
+  assert.match(renderer, /if \(activePage === "library"\) loadCaptureLibrary\(\)/);
+  assert.match(css, /\.content > \.page-hidden/);
+  assert.doesNotMatch(renderer, /setLibraryView/);
+});

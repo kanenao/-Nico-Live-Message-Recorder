@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.25</span>
+        <span class="version" id="version">v0.1.0-beta.26</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -27,19 +27,52 @@
     </header>
 
     <div class="layout">
-      <aside class="sidebar">
-        <div class="side-label">メニュー</div>
-        <button class="nav-item active" type="button" id="dashboard-nav-button"><span class="nav-icon">◉</span> 録画ダッシュボード</button>
-        <button class="nav-item" type="button" id="open-folder-button"><span class="nav-icon">▣</span> 録画ライブラリ</button>
+      <aside class="sidebar" aria-label="メインメニュー">
+        <div class="nav-group">
+          <div class="side-label">ホーム</div>
+          <button class="nav-item active" type="button" id="dashboard-nav-button" data-page-target="dashboard" aria-current="page">
+            <span class="nav-icon">◉</span><span class="nav-text">ダッシュボード</span>
+          </button>
+        </div>
+        <div class="nav-group">
+          <div class="side-label">配信管理</div>
+          <button class="nav-item" type="button" id="monitor-nav-button" data-page-target="monitor">
+            <span class="nav-icon">◎</span><span class="nav-text">配信者の監視</span>
+          </button>
+          <button class="nav-item" type="button" id="record-nav-button" data-page-target="record">
+            <span class="nav-icon">●</span><span class="nav-text">放送接続・録画</span>
+          </button>
+        </div>
+        <div class="nav-group">
+          <div class="side-label">コメント・動画</div>
+          <button class="nav-item" type="button" id="comments-nav-button" data-page-target="comments">
+            <span class="nav-icon">▤</span><span class="nav-text">コメントログ</span>
+          </button>
+          <button class="nav-item" type="button" id="compose-nav-button" data-page-target="compose">
+            <span class="nav-icon">✧</span><span class="nav-text">コメント付き動画生成</span>
+          </button>
+        </div>
+        <div class="nav-group">
+          <div class="side-label">保存データ</div>
+          <button class="nav-item" type="button" id="open-folder-button" data-page-target="library">
+            <span class="nav-icon">▣</span><span class="nav-text">録画ライブラリ</span>
+          </button>
+        </div>
+        <div class="nav-group">
+          <div class="side-label">アプリ</div>
+          <button class="nav-item" type="button" id="sidebar-settings-button">
+            <span class="nav-icon">⚙</span><span class="nav-text">アプリ設定</span>
+          </button>
+        </div>
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.25</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.26</span></div>
         </div>
       </aside>
 
       <main class="content">
-        <section class="welcome">
+        <section class="welcome" data-page="dashboard">
           <div>
             <div class="eyebrow">DESKTOP RECORDER / BETA</div>
             <h1>配信映像・音声とコメントを、まとめて保存。</h1>
@@ -77,7 +110,7 @@
           </div>
         </section>
 
-        <section class="panel library-panel" id="library-panel" hidden>
+        <section class="panel library-panel" id="library-panel" hidden data-page="library">
           <div class="panel-heading library-heading">
             <div>
               <div class="eyebrow">RECORDING LIBRARY</div>
@@ -166,7 +199,7 @@
           <p class="hint">ログイン中はフォロー中番組APIを優先し、登録ユーザーの公開放送履歴も併用して配信を検知します。フォロー限定番組はログイン中アカウントに表示・視聴権限がある場合のみ対象です。</p>
         </section>
 
-        <section class="panel session-panel">
+        <section class="panel session-panel" data-page="record">
           <div class="panel-heading session-heading">
             <div>
               <div class="eyebrow">LIVE CONNECTION / DIRECT STREAM</div>
@@ -248,7 +281,7 @@
           <div class="capture-status-path" id="capture-status-detail">録画・コメントの開始状態をここに表示します。</div>
         </section>
 
-        <section class="panel compose-panel">
+        <section class="panel compose-panel" data-page="compose">
           <div class="panel-heading">
             <div>
               <div class="eyebrow">COMMENT VIDEO COMPOSER</div>
@@ -409,7 +442,7 @@
           <div class="hint">WebMはそのまま保存し、MP4を選ぶと内蔵FFmpegでH.264 / AACへ変換します。MP4変換に失敗した場合も中間WebMを残して保存結果を案内します。元動画とコメントログは変更しません。</div>
         </section>
 
-        <section class="stats-grid">
+        <section class="stats-grid" data-page="comments">
           <article class="stat-card">
             <span class="stat-label">受信コメント</span>
             <strong id="comment-count">0</strong>
@@ -427,7 +460,7 @@
           </article>
         </section>
 
-        <section class="panel comments-panel">
+        <section class="panel comments-panel" data-page="comments">
           <div class="comments-heading">
             <div>
               <div class="eyebrow">LIVE COMMENT STREAM</div>
@@ -452,7 +485,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.25</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.26</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
