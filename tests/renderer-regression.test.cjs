@@ -35,6 +35,9 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
     "setting-monitor-quality",
     "setting-auto-record",
     "setting-auto-start",
+    "setting-run-at-startup",
+    "setting-close-to-tray",
+    "setting-keep-awake",
     "monitor-user-id",
     "monitor-add-button",
     "monitor-start-button",
@@ -48,6 +51,12 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
   assert.match(main, /ipcMain\.handle\("monitor:start"/);
   assert.match(main, /ipcMain\.handle\("monitor:stop"/);
   assert.match(main, /ipcMain\.handle\("monitor:retry-target"/);
+  assert.match(main, /app\.setLoginItemSettings/);
+  assert.match(main, /new Tray\(/);
+  assert.match(main, /prevent-app-suspension/);
+  assert.match(main, /scheduleNextMonitorCheck/);
+  assert.match(main, /mapWithConcurrency\(historyTargets, 4/);
+  assert.match(html, /<option value="10">10秒（最速・推奨）<\/option>/);
 });
 
 test("saved monitor user IDs are validated with a numeric pattern", () => {
@@ -71,8 +80,8 @@ test("monitor prefers the authenticated follow-list API and retains public-histo
   assert.match(main, /session\.fromPartition\("persist:nico-auth"\)/);
   assert.match(main, /const result = followedProgram \? null : await fetchUserBroadcastStatus/);
   assert.match(main, /isFollowerOnly: Boolean\(live && live\.isFollowerOnly\)/);
-  assert.match(main, /\[15, 30, 60, 120, 300\]/);
-  assert.match(html, /<option value="15">15秒（最速）<\/option>/);
+  assert.match(main, /\[10, 15, 30, 60, 120, 300\]/);
+  assert.match(html, /<option value="10">10秒（最速・推奨）<\/option>/);
 });
 
 
@@ -309,7 +318,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.26");
+  assert.equal(packageConfig.version, "0.1.0-beta.27");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -408,4 +417,21 @@ test("feature navigation is grouped and every feature page has a dedicated view"
   assert.match(renderer, /if \(activePage === "library"\) loadCaptureLibrary\(\)/);
   assert.match(css, /\.content > \.page-hidden/);
   assert.doesNotMatch(renderer, /setLibraryView/);
+});
+
+
+test("monitor resumes detection when a stream is still live after an app restart", () => {
+  assert.match(main, /const monitorObservedLiveIds = new Map\(\)/);
+  assert.match(main, /const previouslyObservedLiveId = monitorObservedLiveIds\.get\(target\.userId\)/);
+  assert.match(main, /previouslyObservedLiveId !== live\.liveId/);
+  assert.doesNotMatch(main, /live && target\.lastProgramId !== live\.liveId/);
+  assert.match(main, /pendingDetections: monitorPendingDetections\.splice/);
+  assert.match(renderer, /result\.pendingDetections\.forEach\(handleMonitorLiveDetected\)/);
+  assert.match(renderer, /monitorHandledDetections/);
+});
+
+test("automatic capture failure clears the live detection gate for retry", () => {
+  assert.match(main, /if \(target\) monitorObservedLiveIds\.delete\(userId\)/);
+  assert.match(renderer, /monitorHandledDetections\.delete\(String\(target\.userId/);
+  assert.match(renderer, /api\.startCapture\(liveId, monitorSettings\.quality/);
 });

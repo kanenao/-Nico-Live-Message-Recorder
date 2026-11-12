@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.26</span>
+        <span class="version" id="version">v0.1.0-beta.27</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -67,7 +67,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.26</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.27</span></div>
         </div>
       </aside>
 
@@ -485,7 +485,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.26</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.27</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -503,7 +503,8 @@
           <label class="settings-field">
             <span>配信監視の確認間隔</span>
             <select id="setting-monitor-interval">
-              <option value="15">15秒（最速）</option>
+              <option value="10">10秒（最速・推奨）</option>
+              <option value="15">15秒</option>
               <option value="30">30秒</option>
               <option value="60" selected>1分（推奨）</option>
               <option value="120">2分</option>
@@ -536,11 +537,23 @@
             <span>アプリ起動時に監視を自動開始する</span>
           </label>
           <label class="settings-checkbox">
+            <input type="checkbox" id="setting-run-at-startup" checked>
+            <span>Windowsへのログイン時にアプリを自動起動する</span>
+          </label>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="setting-close-to-tray" checked>
+            <span>ウィンドウを閉じてもタスクトレイに常駐する</span>
+          </label>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="setting-keep-awake" checked>
+            <span>監視中はPCのスリープを抑止する（画面は消灯できます）</span>
+          </label>
+          <label class="settings-checkbox">
             <input type="checkbox" id="setting-auto-update-streamlink" checked>
             <span>Streamlinkを起動時・6時間ごとに自動確認し、更新を自動適用する</span>
           </label>
         </div>
-        <p class="hint">監視にはニコニコの公開放送履歴を使用します。APIの仕様変更やアクセス制限により、一時的に検知できない場合があります。</p>
+        <p class="hint">最短10秒間隔で確認します。ログイン中はフォロー中番組APIを優先するため、フォロー限定放送も対象にできます。PCの電源断・ネットワーク断中は監視できません。Windowsログイン時の自動起動とタスクトレイ常駐を有効にすると、ウィンドウを閉じた後も監視・録画・コメント取得を続けます。</p>
         <div class="settings-actions">
           <button class="button button-outline" id="cancel-settings-button" type="button">キャンセル</button>
           <button class="button button-primary" id="save-settings-button" type="button">設定を保存</button>

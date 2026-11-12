@@ -21,12 +21,16 @@ let monitorSettings = {
   intervalSeconds: 60,
   autoRecord: true,
   autoStart: true,
+  runAtStartup: true,
+  closeToTray: true,
+  keepAwake: true,
   quality: "best",
   commentFormat: "jsonl",
   autoUpdateStreamlink: true,
   targets: []
 };
 const monitorStatuses = new Map();
+const monitorHandledDetections = new Set();
 let monitorIsRunning = false;
 const monitorAutoQueue = [];
 let monitorAutoProcessing = false;
@@ -771,6 +775,9 @@ function applyMonitorState(result) {
   }
   renderMonitorState(result);
   renderMonitorTargets();
+  if (Array.isArray(result.pendingDetections)) {
+    result.pendingDetections.forEach(handleMonitorLiveDetected);
+  }
 }
 
 function addMonitorActivity(message, kind = "") {
@@ -882,11 +889,14 @@ function updateCompositionEditorLabels() {
 }
 
 function openSettings() {
-  byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 60);
+  byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 10);
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
   byId("setting-comment-format").value = ["jsonl", "csv", "ass", "all"].includes(monitorSettings.commentFormat) ? monitorSettings.commentFormat : "jsonl";
   byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
   byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
+  byId("setting-run-at-startup").checked = monitorSettings.runAtStartup !== false;
+  byId("setting-close-to-tray").checked = monitorSettings.closeToTray !== false;
+  byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("settings-modal").hidden = false;
 }
@@ -902,6 +912,9 @@ async function saveSettings() {
     commentFormat: byId("setting-comment-format").value,
     autoRecord: byId("setting-auto-record").checked,
     autoStart: byId("setting-auto-start").checked,
+    runAtStartup: byId("setting-run-at-startup").checked,
+    closeToTray: byId("setting-close-to-tray").checked,
+    keepAwake: byId("setting-keep-awake").checked,
     autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked
   };
   const button = byId("save-settings-button");
@@ -919,6 +932,12 @@ async function saveSettings() {
 
 function handleMonitorLiveDetected(payload) {
   if (!payload || !payload.liveId) return;
+  const detectionKey = String(payload.userId || "") + ":" + String(payload.liveId);
+  if (monitorHandledDetections.has(detectionKey)) return;
+  monitorHandledDetections.add(detectionKey);
+  while (monitorHandledDetections.size > 250) {
+    monitorHandledDetections.delete(monitorHandledDetections.values().next().value);
+  }
   const label = (payload.name || ("ユーザー " + payload.userId)) +
     " の配信開始を検知：" + payload.liveId +
     (payload.title ? "「" + payload.title + "」" : "") +
@@ -983,6 +1002,7 @@ async function processMonitorAutoQueue() {
     }
   } catch (error) {
     setConnection("error");
+    monitorHandledDetections.delete(String(target.userId || "") + ":" + String(target.liveId || ""));
     await api.retryMonitorTarget({
       userId: target.userId,
       liveId: target.liveId
