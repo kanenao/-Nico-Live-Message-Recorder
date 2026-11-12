@@ -760,6 +760,12 @@ function makeWindow() {
 
 ipcMain.handle("app:version", () => app.getVersion());
 
+ipcMain.handle("app:open-releases", async () => {
+  const releasesUrl = "https://github.com/kanenao/-Nico-Live-Message-Recorder/releases";
+  await shell.openExternal(releasesUrl);
+  return true;
+});
+
 ipcMain.handle("app:changelog", async () => {
   const changelogPath = path.join(__dirname, "..", "CHANGELOG.md");
   try {

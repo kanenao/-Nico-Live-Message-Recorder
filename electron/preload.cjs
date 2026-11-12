@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("nicoAPI", {
   getVersion: () => ipcRenderer.invoke("app:version"),
   getChangelog: () => ipcRenderer.invoke("app:changelog"),
+  openGitHubReleases: () => ipcRenderer.invoke("app:open-releases"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   getMonitorState: () => ipcRenderer.invoke("monitor:get-state"),

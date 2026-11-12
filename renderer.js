@@ -1836,6 +1836,13 @@ stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
 byId("install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
+byId("open-github-releases-button").addEventListener("click", async () => {
+  try {
+    await api.openGitHubReleases();
+  } catch (error) {
+    showToast(`GitHub Releasesを開けませんでした: ${error.message}`, true);
+  }
+});
 byId("settings-install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);

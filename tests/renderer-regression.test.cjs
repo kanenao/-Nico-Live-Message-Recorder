@@ -322,7 +322,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.35");
+  assert.equal(packageConfig.version, "0.1.0-beta.36");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -579,7 +579,7 @@ test("dedicated version update page shows the current version, updater controls,
   assert.match(html, /id="updates-panel"[^>]*data-page="updates"/);
   for (const id of ["app-current-version", "settings-update-badge", "settings-update-status",
     "settings-update-progress", "settings-latest-version", "settings-check-update-button",
-    "settings-install-update-button", "release-history-list", "settings-open-updates-button"]) {
+    "settings-install-update-button", "release-history-list", "settings-open-updates-button", "open-github-releases-button"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing version page field: " + id);
   }
   assert.match(renderer, /"articles", "updates"/);
@@ -587,6 +587,10 @@ test("dedicated version update page shows the current version, updater controls,
   assert.match(renderer, /function renderReleaseHistory\(/);
   assert.match(renderer, /api\.getChangelog\(\)/);
   assert.match(preload, /getChangelog:.*ipcRenderer\.invoke\("app:changelog"/);
+  assert.match(preload, /openGitHubReleases:.*ipcRenderer\.invoke\("app:open-releases"/);
+  assert.match(main, /ipcMain\.handle\("app:open-releases"/);
+  assert.match(main, /shell\.openExternal\(releasesUrl\)/);
+  assert.match(renderer, /api\.openGitHubReleases\(\)/);
   assert.match(main, /ipcMain\.handle\("app:changelog"/);
   assert.ok(packageConfig.build.files.includes("CHANGELOG.md"));
   assert.match(css, /\.release-history-item/);
