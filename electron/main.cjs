@@ -11,6 +11,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle } = require("./articles.cjs");
+const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const {
   normalizeCompositionFormat,
   normalizeCompositionQuality,
@@ -416,14 +417,51 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
     return { status: "skipped", reason: "コメントログが見つかりません。" };
   }
   const recordsText = fs.readFileSync(commentPath, "utf8");
-  const article = generateBroadcastArticle(recordsText, {
+  const articleContext = {
     ...currentProgramInfo,
     broadcasterName: currentBroadcasterName,
     broadcasterId: currentBroadcasterId,
     liveId: currentLiveId,
     ...context,
     generatedAt: new Date().toISOString()
-  });
+  };
+  const records = recordsText.split(/\\r?\\n/).filter(Boolean).map(line => {
+    try { return JSON.parse(line); } catch (_) { return null; }
+  }).filter(Boolean);
+  const article = generateBroadcastArticle(records, articleContext);
+  if (article.status === "generated") {
+    const aiSettings = readAppSettings().aiArticle || {};
+    if (aiSettings.enabled !== false) {
+      const ollamaStatus = await getOllamaStatus({ baseUrl: aiSettings.baseUrl });
+      if (ollamaStatus.connected) {
+        const selectedModel = String(aiSettings.model || "qwen2.5:3b");
+        const installedModel = ollamaStatus.models.some(item => item.name === selectedModel || item.name.startsWith(selectedModel + ":"));
+        if (installedModel) {
+          try {
+            const aiArticle = await generateArticleWithOllama({
+              baseUrl: aiSettings.baseUrl,
+              model: selectedModel,
+              records,
+              context: articleContext
+            });
+            article.title = aiArticle.title;
+            article.summary = aiArticle.summary;
+            article.paragraphs = aiArticle.paragraphs;
+            if (aiArticle.topics.length) article.topics = aiArticle.topics.map(term => ({ term, count: 0 }));
+            article.aiProvider = aiArticle.provider;
+            article.aiModel = aiArticle.model;
+          } catch (error) {
+            article.aiFallbackReason = error.message;
+            send("articles:ai-fallback", { liveId: article.liveId, reason: error.message });
+          }
+        } else {
+          article.aiFallbackReason = "指定モデルが未インストールです: " + selectedModel;
+        }
+      } else {
+        article.aiFallbackReason = "Ollamaに接続できないため、従来方式で記事を生成しました。";
+      }
+    }
+  }
   if (article.status !== "generated") {
     send("articles:skipped", { liveId: article.liveId || context.liveId || "", reason: article.reason });
     return article;
