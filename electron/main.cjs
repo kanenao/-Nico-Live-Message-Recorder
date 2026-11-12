@@ -790,11 +790,16 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
 function getMonitorSettings() {
   const stored = readAppSettings().monitor || {};
   const targets = Array.isArray(stored.targets) ? stored.targets : [];
+  const isLegacyMonitorSettings = stored.runAtStartup === undefined;
+  const storedIntervalSeconds = Number(stored.intervalSeconds);
+  const normalizedIntervalSeconds = isLegacyMonitorSettings && storedIntervalSeconds === 60
+    ? 10
+    : storedIntervalSeconds;
   return {
     ...DEFAULT_MONITOR_SETTINGS,
     ...stored,
-    intervalSeconds: [10, 15, 30, 60, 120, 300].includes(Number(stored.intervalSeconds))
-      ? Number(stored.intervalSeconds)
+    intervalSeconds: [10, 15, 30, 60, 120, 300].includes(normalizedIntervalSeconds)
+      ? normalizedIntervalSeconds
       : DEFAULT_MONITOR_SETTINGS.intervalSeconds,
     autoRecord: stored.autoRecord !== false,
     autoStart: stored.autoStart !== false,
