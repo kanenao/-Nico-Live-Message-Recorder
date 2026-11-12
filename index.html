@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.32</span>
+        <span class="version" id="version">v0.1.0-beta.33</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -70,7 +70,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.32</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.33</span></div>
         </div>
       </aside>
 
@@ -340,20 +340,32 @@
               <section class="compose-settings-group">
                 <div class="compose-settings-heading">
                   <h3>コメント表示</h3>
-                  <p>コメントの大きさ・流れる速さ・画面内に表示する量を調整します。</p>
+                  <p>ニコ生風の文字、文字サイズ、流れる速さ、行数、コメント同士の重なりを調整します。</p>
                 </div>
                 <div class="compose-settings-group-grid">
 <label class="compose-editor-field">
-                <span>コメントサイズ <output id="compose-font-value">100%</output></span>
+                <span>コメントサイズ倍率 <output id="compose-font-value">100%</output></span>
                 <input id="compose-font-scale" type="range" min="50" max="200" step="5" value="100">
               </label>
 <label class="compose-editor-field">
-                <span>流れる速度 <output id="compose-speed-value">100%</output></span>
-                <input id="compose-speed" type="range" min="50" max="200" step="5" value="100">
+                <span>基本文字サイズ（1080p） <output id="compose-font-size-value">40 px</output></span>
+                <input id="compose-font-size" type="range" min="18" max="64" step="1" value="40">
               </label>
 <label class="compose-editor-field">
-                <span>コメントの最大行数</span>
+                <span>流れる速度 <output id="compose-speed-value">100%</output></span>
+                <input id="compose-speed" type="range" min="30" max="250" step="5" value="100">
+              </label>
+<label class="compose-editor-field">
+                <span>スクロールコメントの最大行数</span>
                 <input id="compose-row-limit" type="number" min="1" max="24" step="1" value="12">
+              </label>
+<label class="settings-checkbox">
+                <input type="checkbox" id="compose-overlap-protection" checked>
+                <span>コメント同士の重なりを防ぐ（おすすめ）</span>
+              </label>
+<label class="compose-editor-field">
+                <span>重なり回避の間隔 <output id="compose-lane-gap-value">160 ms</output></span>
+                <input id="compose-lane-gap" type="range" min="0" max="500" step="10" value="160">
               </label>
 <label class="compose-editor-field">
                 <span>画面上の表示時間</span>
@@ -384,7 +396,8 @@
 <label class="compose-editor-field">
                 <span>フォント</span>
                 <select id="compose-font-family">
-                  <option value="Meiryo" selected>メイリオ</option>
+                  <option value="ＭＳ Ｐゴシック" selected>ニコ生風（ＭＳ Ｐゴシック）</option>
+                  <option value="Meiryo">メイリオ</option>
                   <option value="Yu Gothic UI">游ゴシック UI</option>
                   <option value="BIZ UDPGothic">BIZ UDPゴシック</option>
                   <option value="Arial">Arial</option>
@@ -540,7 +553,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.32</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.33</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -664,7 +677,7 @@
           </div>
           <div class="settings-version-row">
             <span>現在のバージョン</span>
-            <strong id="app-current-version">v0.1.0-beta.32</strong>
+            <strong id="app-current-version">v0.1.0-beta.33</strong>
           </div>
           <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
             <span>新しいバージョン</span>

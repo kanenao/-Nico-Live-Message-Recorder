@@ -80,6 +80,43 @@
     };
   }
 
+
+  // Calculate non-overlapping vertical bands with room for the biggest "big" comment,
+  // text outline and shadow. Top/bottom fixed comments get their own reserved bands.
+  function calculateCommentLaneLayout(options = {}) {
+    const height = Math.max(120, Number(options.height) || 1080);
+    const baseFontSize = Math.max(12, Math.min(110, Number(options.baseFontSize) || 40));
+    const outlineWidth = Math.max(0, Math.min(12, Number(options.outlineWidth) || 4));
+    const marginPercent = Math.max(4, Math.min(25, Number(options.marginPercent) || 7));
+    const rowLimit = Math.max(1, Math.min(24, Math.floor(Number(options.rowLimit) || 12)));
+    const edge = Math.round(height * marginPercent / 100);
+    const maximumCommentFont = Math.min(120, Math.max(10, Math.round(baseFontSize * 1.22)));
+    const lineHeight = Math.max(24, Math.ceil(maximumCommentFont * 1.22 + outlineWidth * 2 + 8));
+    const fixedLaneCount = rowLimit >= 6 ? 2 : 1;
+    const fixedBandHeight = fixedLaneCount * lineHeight;
+    const scrollTop = edge + fixedBandHeight + 8;
+    const scrollBottom = height - edge - fixedBandHeight - 8;
+    const availableScrollRows = Math.max(1, Math.floor((scrollBottom - scrollTop) / lineHeight));
+    const scrollLaneCount = Math.max(1, Math.min(rowLimit, availableScrollRows));
+    const topLaneYs = Array.from({ length: fixedLaneCount }, (_, lane) =>
+      edge + Math.round(lineHeight / 2) + lane * lineHeight);
+    const bottomLaneYs = Array.from({ length: fixedLaneCount }, (_, lane) =>
+      height - edge - Math.round(lineHeight / 2) - lane * lineHeight);
+    const scrollLaneYs = Array.from({ length: scrollLaneCount }, (_, lane) =>
+      Math.min(height - edge - Math.round(lineHeight / 2),
+        scrollTop + Math.round(lineHeight / 2) + lane * lineHeight));
+
+    return {
+      edge,
+      lineHeight,
+      fixedLaneCount,
+      scrollLaneCount,
+      topLaneYs,
+      bottomLaneYs,
+      scrollLaneYs
+    };
+  }
+
   // Reserve a lane without allowing a new comment to overlap the previous one.
   // When every lane is occupied, defer the comment to the earliest free lane.
   function reserveLane(lanes, requestedStartMs, durationMs, gapMs) {
@@ -97,5 +134,5 @@
     return { lane, startMs, endMs: startMs + duration };
   }
 
-  return { timestampMs, prepareCommentTimeline, reserveLane };
+  return { timestampMs, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout };
 });

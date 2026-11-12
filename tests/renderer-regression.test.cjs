@@ -322,7 +322,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.32");
+  assert.equal(packageConfig.version, "0.1.0-beta.33");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -476,7 +476,8 @@ test("comment video generation controls are separated into three clear groups", 
     assert.ok(groups.includes(heading), "missing composition group: " + heading);
   }
   for (const id of [
-    "compose-font-scale", "compose-speed", "compose-row-limit", "compose-duration",
+    "compose-font-scale", "compose-font-size", "compose-speed", "compose-row-limit", "compose-duration",
+    "compose-overlap-protection", "compose-lane-gap",
     "compose-font-family", "compose-color-mode", "compose-ng-words", "compose-offset",
     "compose-resolution", "compose-output-format", "compose-output-quality"
   ]) {
@@ -580,4 +581,27 @@ test("dashboard live count retains registered-target count after manual capture 
 
 test("a live article is generated immediately when program metadata is already available", () => {
   assert.match(main, /if \(currentProgramInfo\.programTitle \|\| currentProgramInfo\.description\) \{\s*void refreshLiveBroadcastArticle\(\);\s*\}/);
+});
+
+
+test("comment video composition uses a Nico-style font, adjustable pixel size, and collision-safe lanes", () => {
+  for (const id of [
+    "compose-font-size",
+    "compose-font-size-value",
+    "compose-overlap-protection",
+    "compose-lane-gap",
+    "compose-lane-gap-value"
+  ]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing comment style control: " + id);
+  }
+  assert.match(html, /<option value="ＭＳ Ｐゴシック" selected>ニコ生風/);
+  assert.match(renderer, /baseFontSize: number\("compose-font-size", 40, 18, 64\)/);
+  assert.match(renderer, /overlapProtection: byId\("compose-overlap-protection"\)\.checked/);
+  assert.match(renderer, /laneGapMs: number\("compose-lane-gap", 160, 0, 500\)/);
+  assert.match(renderer, /calculateCommentLaneLayout\(/);
+  assert.match(renderer, /layout\.scrollLaneYs\[lane\]/);
+  assert.match(renderer, /layout\.topLaneYs\[lane\]/);
+  assert.match(renderer, /layout\.bottomLaneYs\[lane\]/);
+  assert.match(composition, /function calculateCommentLaneLayout\(/);
+  assert.match(composition, /const lineHeight = Math\.max\(24/);
 });

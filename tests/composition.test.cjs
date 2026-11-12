@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { prepareCommentTimeline, timestampMs, reserveLane } = require("../composition.js");
+const { prepareCommentTimeline, timestampMs, reserveLane, calculateCommentLaneLayout } = require("../composition.js");
 
 test("aligns comments to videoStart rather than sessionStart", () => {
   const result = prepareCommentTimeline([
@@ -80,4 +80,35 @@ test("keeps comments in the same lane from overlapping", () => {
   const third = reserveLane(lanes, 3000, 6000, 250);
   assert.ok(third.startMs >= 7250);
   assert.ok(third.startMs >= first.startMs + 6250);
+});
+
+
+test("calculates separate comment bands with spacing for maximum font size and outline", () => {
+  const layout = calculateCommentLaneLayout({
+    height: 1080,
+    baseFontSize: 42,
+    outlineWidth: 6,
+    marginPercent: 7,
+    rowLimit: 12
+  });
+  assert.equal(layout.fixedLaneCount, 2);
+  assert.ok(layout.lineHeight >= Math.ceil(51 * 1.22 + 12 + 8));
+  assert.ok(layout.topLaneYs[1] - layout.topLaneYs[0] >= layout.lineHeight);
+  assert.ok(layout.scrollLaneYs[0] > layout.topLaneYs.at(-1));
+  assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs.at(-1));
+  assert.ok(layout.bottomLaneYs[0] - layout.bottomLaneYs[1] >= layout.lineHeight);
+});
+
+test("scales comment bands to output resolution and respects the requested scroll row limit", () => {
+  const layout = calculateCommentLaneLayout({
+    height: 720,
+    baseFontSize: 40,
+    outlineWidth: 4,
+    marginPercent: 7,
+    rowLimit: 3
+  });
+  assert.equal(layout.fixedLaneCount, 1);
+  assert.ok(layout.scrollLaneCount <= 3);
+  assert.ok(layout.topLaneYs[0] < layout.scrollLaneYs[0]);
+  assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs[0]);
 });

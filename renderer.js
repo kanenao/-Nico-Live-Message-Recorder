@@ -972,7 +972,10 @@ function getCompositionEditorOptions() {
   };
   return {
     fontScale: number("compose-font-scale", 100, 50, 200) / 100,
-    speed: number("compose-speed", 100, 50, 200) / 100,
+    baseFontSize: number("compose-font-size", 40, 18, 64),
+    speed: number("compose-speed", 100, 30, 250) / 100,
+    overlapProtection: byId("compose-overlap-protection").checked,
+    laneGapMs: number("compose-lane-gap", 160, 0, 500),
     marginPercent: number("compose-position", 7, 4, 25),
     offsetMs: number("compose-offset", 0, -10000, 10000),
     opacity: number("compose-opacity", 100, 20, 100) / 100,
@@ -1000,7 +1003,9 @@ function updateCompositionEditorLabels() {
     ["compose-font-scale", "compose-font-value", "%"],
     ["compose-speed", "compose-speed-value", "%"],
     ["compose-position", "compose-position-value", "%"],
-    ["compose-opacity", "compose-opacity-value", "%"]
+    ["compose-opacity", "compose-opacity-value", "%"],
+    ["compose-font-size", "compose-font-size-value", " px"],
+    ["compose-lane-gap", "compose-lane-gap-value", " ms"]
   ]) {
     const input = byId(inputId);
     const output = byId(outputId);
@@ -1876,17 +1881,36 @@ function reserveOverlayLane(lanes, startMs, durationMs, gapMs) {
 
 function createCommentOverlaySchedule(comments, context, width, height, options = {}) {
   const fontScale = Math.min(2, Math.max(0.5, Number(options.fontScale) || 1));
-  const speed = Math.min(2, Math.max(0.5, Number(options.speed) || 1));
+  const baseFontSize = Math.max(18, Math.min(64, Number(options.baseFontSize) || 40));
+  const speed = Math.min(2.5, Math.max(0.3, Number(options.speed) || 1));
   const marginPercent = Math.min(25, Math.max(4, Number(options.marginPercent) || 7));
   const displayMode = ["all", "scroll", "fixed", "top", "bottom"].includes(options.displayMode) ? options.displayMode : "all";
   const colorMode = ["original", "white", "green"].includes(options.colorMode) ? options.colorMode : "original";
-  const baseSize = Math.max(12, Math.min(110, Math.round(height * 0.045 * fontScale)));
-  const rowLimit = Math.max(1, Math.min(24, Math.floor(Number(options.rowLimit) || 12)));
-  const scrollLaneCount = Math.max(1, Math.min(rowLimit, Math.floor(height / Math.max(24, baseSize * 1.3))));
-  const fixedLaneCount = Math.max(1, Math.min(rowLimit, Math.floor(height / Math.max(24, baseSize * 1.16) / 2)));
-  const scrollLanes = Array(scrollLaneCount).fill(0);
-  const topLanes = Array(fixedLaneCount).fill(0);
-  const bottomLanes = Array(fixedLaneCount).fill(0);
+  const outlineWidth = Math.max(0, Math.min(12, Number(options.outlineWidth) || 0));
+  const baseSize = Math.max(12, Math.min(110,
+    Math.round((height / 1080) * baseFontSize * fontScale)));
+  const overlapProtection = options.overlapProtection !== false;
+  const laneGapMs = Math.max(0, Math.min(500, Number(options.laneGapMs ?? 160)));
+  const layout = window.nicoCommentComposition.calculateCommentLaneLayout({
+    height,
+    baseFontSize: baseSize,
+    outlineWidth,
+    marginPercent,
+    rowLimit: options.rowLimit
+  });
+  const scrollLanes = Array(layout.scrollLaneCount).fill(0);
+  const topLanes = Array(layout.fixedLaneCount).fill(0);
+  const bottomLanes = Array(layout.fixedLaneCount).fill(0);
+  let scrollSequence = 0;
+  let topSequence = 0;
+  let bottomSequence = 0;
+  const allocateLane = (lanes, requestedStart, duration, sequence) => {
+    if (overlapProtection) {
+      return reserveOverlayLane(lanes, requestedStart, duration, laneGapMs);
+    }
+    const lane = sequence % lanes.length;
+    return { lane, startMs: requestedStart, endMs: requestedStart + duration };
+  };
   const fixedDurationMs = Number(options.durationSeconds) > 0
     ? Math.max(1000, Math.min(30000, Number(options.durationSeconds) * 1000))
     : 0;
@@ -1919,8 +1943,8 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     const originalColor = commands.map((command) => colorMap[command]).find(Boolean) || "#ffffff";
     const color = colorMode === "green" ? "#55e58a" :
       colorMode === "white" ? "#ffffff" : originalColor;
-    const fontFamily = ["Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
-      ? options.fontFamily : "Meiryo";
+    const fontFamily = ["ＭＳ Ｐゴシック", "Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
+      ? options.fontFamily : "ＭＳ Ｐゴシック";
     context.font = "bold " + fontSize + "px \"" + fontFamily + "\", sans-serif";
     const textWidth = Math.ceil(context.measureText(comment.text).width) + 20;
     const startMs = comment.timeMs;
@@ -1928,12 +1952,9 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     if (isFixed) {
       const lanes = isTop ? topLanes : bottomLanes;
       const durationMs = fixedDurationMs || Math.max(1500, Math.round(5000 / speed));
-      const reservation = reserveOverlayLane(lanes, startMs, durationMs, 150);
+      const reservation = allocateLane(lanes, startMs, durationMs, isTop ? topSequence++ : bottomSequence++);
       const lane = reservation.lane;
-      const edge = Math.round(height * (marginPercent / 100));
-      const y = isTop
-        ? edge + lane * Math.round(fontSize * 1.16)
-        : height - edge - lane * Math.round(fontSize * 1.16);
+      const y = isTop ? layout.topLaneYs[lane] : layout.bottomLaneYs[lane];
       schedule.push({
         ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
         textWidth, mode: isTop ? "top" : "bottom", y
@@ -1943,9 +1964,9 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
 
     const durationMs = fixedDurationMs || Math.max(1500, Math.min(32000,
       (((width + textWidth) / 330) * 1000) / speed));
-    const reservation = reserveOverlayLane(scrollLanes, startMs, durationMs, 180);
+    const reservation = allocateLane(scrollLanes, startMs, durationMs, scrollSequence++);
     const lane = reservation.lane;
-    const y = Math.round(height * (marginPercent / 100)) + lane * Math.round(fontSize * 1.18);
+    const y = layout.scrollLaneYs[lane];
     schedule.push({
       ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
       textWidth, mode: "scroll", y
@@ -1961,8 +1982,8 @@ function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, widt
   context.globalAlpha = Math.min(1, Math.max(0.2, Number(options.opacity) || 1));
   const shadow = options.shadow !== false;
   const outlineWidth = Math.max(0, Math.min(12, Number(options.outlineWidth) || 0));
-  const fontFamily = ["Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
-    ? options.fontFamily : "Meiryo";
+  const fontFamily = ["ＭＳ Ｐゴシック", "Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
+    ? options.fontFamily : "ＭＳ Ｐゴシック";
   for (const comment of activeComments) {
     if (videoTimeMs < comment.startMs || videoTimeMs > comment.endMs) continue;
     const elapsed = videoTimeMs - comment.startMs;
@@ -2157,7 +2178,7 @@ async function composeCommentVideo() {
     });
     const schedule = createCommentOverlaySchedule(
       adjustedComments, context, canvas.width, canvas.height, composeOptions
-    );
+    ).filter(comment => comment.startMs < durationMs && comment.endMs > 0);
     if (!schedule.length) throw new Error("現在の表示設定に一致するコメントがありません。");
 
     canvasStream = canvas.captureStream(composeOptions.fps);
@@ -2320,7 +2341,7 @@ async function composeCommentVideo() {
   }
 }
 
-for (const id of ["compose-font-scale", "compose-speed", "compose-position", "compose-opacity", "compose-offset", "compose-outline"]) {
+for (const id of ["compose-font-scale", "compose-font-size", "compose-speed", "compose-position", "compose-opacity", "compose-offset", "compose-outline", "compose-lane-gap"]) {
   byId(id).addEventListener("input", updateCompositionEditorLabels);
 }
 updateCompositionEditorLabels();
