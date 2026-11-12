@@ -635,6 +635,25 @@
           </div>
         </section>
 
+        <section class="settings-section" aria-live="polite">
+          <div class="settings-section-heading">
+            <div><h3>無料AI記事生成（Ollama）</h3><p>AIをPC内で実行します。OpenAI APIキー・API料金は不要です。</p></div>
+            <span class="update-state-badge" id="ollama-status-badge" data-state="idle">未確認</span>
+          </div>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="setting-ai-article-enabled" checked>
+            <span>配信記事をOllamaで自動生成する（利用できない場合は従来方式に切り替え）</span>
+          </label>
+          <label class="settings-field">AIモデル名
+            <input type="text" id="setting-ai-article-model" value="qwen2.5:3b" maxlength="100" placeholder="qwen2.5:3b">
+          </label>
+          <div class="app-update-status" id="ollama-status-message" role="status">接続先： http://127.0.0.1:11434</div>
+          <div class="app-update-actions">
+            <button class="button button-outline button-small" id="ollama-check-button" type="button">Ollama接続を確認</button>
+          </div>
+          <p class="settings-help">初回はWindowsにOllamaをインストールし、ターミナルで <code>ollama pull qwen2.5:3b</code> を実行してください。モデルはPC内に保存されます。</p>
+        </section>
+
         <section class="settings-section app-update-settings" aria-live="polite">
           <div class="settings-section-heading settings-update-heading">
             <div>
