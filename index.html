@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.37</span>
+        <span class="version" id="version">v0.1.0-beta.38</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -371,6 +371,10 @@
                 <input id="compose-speed" type="range" min="30" max="250" step="5" value="100">
               </label>
 <label class="compose-editor-field">
+                <span>基本スクロール速度（px/秒）</span>
+                <input id="compose-pixels-per-second" type="number" min="80" max="1000" step="10" value="330">
+              </label>
+<label class="compose-editor-field">
                 <span>スクロールコメントの最大行数</span>
                 <input id="compose-row-limit" type="number" min="1" max="24" step="1" value="12">
               </label>
@@ -591,6 +595,7 @@
           <div class="app-update-actions">
             <button class="button button-outline button-small" id="settings-check-update-button" type="button">今すぐ更新を確認</button>
             <button class="button button-primary button-small" id="settings-install-update-button" type="button" hidden>再起動して更新</button>
+            <button class="button button-quiet button-small" id="open-github-releases-button" type="button">GitHub Releasesでダウンロード</button>
           </div>
           <p class="settings-help">起動時と6時間ごとに新しいバージョンを自動確認します。更新が見つかるとバックグラウンドでダウンロードし、準備完了後に再起動して適用できます。</p>
           <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>

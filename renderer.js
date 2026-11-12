@@ -977,6 +977,7 @@ function getCompositionEditorOptions() {
     fontScale: number("compose-font-scale", 100, 50, 200) / 100,
     baseFontSize: number("compose-font-size", 64, 18, 96),
     speed: number("compose-speed", 100, 30, 250) / 100,
+    scrollSpeedPxPerSecond: number("compose-pixels-per-second", 330, 80, 1000),
     overlapProtection: byId("compose-overlap-protection").checked,
     laneGapMs: number("compose-lane-gap", 80, 0, 500),
     marginPercent: number("compose-position", 7, 4, 25),
@@ -1970,6 +1971,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
   const fontScale = Math.min(2, Math.max(0.5, Number(options.fontScale) || 1));
   const baseFontSize = Math.max(18, Math.min(96, Number(options.baseFontSize) || 64));
   const speed = Math.min(2.5, Math.max(0.3, Number(options.speed) || 1));
+  const pixelsPerSecond = Math.max(80, Math.min(1000, Number(options.scrollSpeedPxPerSecond) || 330)) * speed;
   const marginPercent = Math.min(25, Math.max(4, Number(options.marginPercent) || 7));
   const displayMode = ["all", "scroll", "fixed", "top", "bottom"].includes(options.displayMode) ? options.displayMode : "all";
   const colorMode = ["original", "white", "green"].includes(options.colorMode) ? options.colorMode : "original";
@@ -2069,8 +2071,9 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
       continue;
     }
 
+    // Saccubus-style explicit pixel/second control keeps comment motion predictable.
     const durationMs = fixedDurationMs || Math.max(1500, Math.min(32000,
-      (((width + textWidth) / 330) * 1000) / speed));
+      ((width + textWidth) / pixelsPerSecond) * 1000));
     const headwayMs = window.nicoCommentComposition.calculateScrollCommentHeadway(
       width, textWidth, durationMs
     );
@@ -2135,13 +2138,41 @@ function setComposePreviewStatus(message, isError = false) {
   }
 }
 
+function calculateCompositionOutputSize(sourceWidth, sourceHeight, options = {}) {
+  const width = Math.max(2, Number(sourceWidth) || 1920);
+  const height = Math.max(2, Number(sourceHeight) || 1080);
+  const customWidth = Math.max(0, Number(options.outputWidth) || 0);
+  const customHeight = Math.max(0, Number(options.outputHeight) || 0);
+  let outputWidth;
+  let outputHeight;
+  if (customWidth > 0 || customHeight > 0) {
+    const requestedWidth = customWidth > 0 ? customWidth : width;
+    const requestedHeight = customHeight > 0 ? customHeight : height;
+    if (options.keepAspect !== false) {
+      const scale = Math.min(requestedWidth / width, requestedHeight / height);
+      outputWidth = Math.max(2, Math.round(width * scale / 2) * 2);
+      outputHeight = Math.max(2, Math.round(height * scale / 2) * 2);
+    } else {
+      outputWidth = Math.max(2, Math.round(requestedWidth / 2) * 2);
+      outputHeight = Math.max(2, Math.round(requestedHeight / 2) * 2);
+    }
+  } else {
+    const targetHeight = options.resolution === "original" || !options.resolution ? height : Number(options.resolution);
+    const scale = Math.min(1, targetHeight / height);
+    outputWidth = Math.max(2, Math.round(width * scale / 2) * 2);
+    outputHeight = Math.max(2, Math.round(height * scale / 2) * 2);
+  }
+  return { width: outputWidth, height: outputHeight };
+}
+
 function drawComposePreviewFrame() {
   const video = byId("compose-preview-video");
   const canvas = byId("compose-preview-canvas");
   if (!video || !canvas || !video.videoWidth || !video.videoHeight) return;
-  if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+  const outputSize = calculateCompositionOutputSize(video.videoWidth, video.videoHeight, getCompositionEditorOptions());
+  if (canvas.width !== outputSize.width || canvas.height !== outputSize.height) {
+    canvas.width = outputSize.width;
+    canvas.height = outputSize.height;
   }
   const context = canvas.getContext("2d");
   if (!context) return;
@@ -2171,8 +2202,9 @@ async function refreshComposePreview() {
       .filter(comment => !options.ngWords.some(word => word && String(comment.text || "").toLocaleLowerCase("ja-JP").includes(word)));
     const context = canvas.getContext("2d");
     if (!context) throw new Error("プレビュー用キャンバスを作成できません。");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const outputSize = calculateCompositionOutputSize(video.videoWidth, video.videoHeight, options);
+    canvas.width = outputSize.width;
+    canvas.height = outputSize.height;
     composePreviewSchedule = createCommentOverlaySchedule(adjusted, context, canvas.width, canvas.height, options)
       .filter(comment => comment.startMs < video.duration * 1000 && comment.endMs > 0);
     drawComposePreviewFrame();
@@ -2318,26 +2350,9 @@ async function composeCommentVideo() {
     const canvas = document.createElement("canvas");
     const sourceWidth = videoElement.videoWidth || 1920;
     const sourceHeight = videoElement.videoHeight || 1080;
-    const customWidth = composeOptions.outputWidth;
-    const customHeight = composeOptions.outputHeight;
-    if (customWidth > 0 || customHeight > 0) {
-      const requestedWidth = customWidth > 0 ? customWidth : sourceWidth;
-      const requestedHeight = customHeight > 0 ? customHeight : sourceHeight;
-      if (composeOptions.keepAspect) {
-        const scale = Math.min(requestedWidth / sourceWidth, requestedHeight / sourceHeight);
-        canvas.width = Math.max(2, Math.round(sourceWidth * scale / 2) * 2);
-        canvas.height = Math.max(2, Math.round(sourceHeight * scale / 2) * 2);
-      } else {
-        canvas.width = Math.max(2, Math.round(requestedWidth / 2) * 2);
-        canvas.height = Math.max(2, Math.round(requestedHeight / 2) * 2);
-      }
-    } else {
-      const targetHeight = composeOptions.resolution === "original"
-        ? sourceHeight : Number(composeOptions.resolution);
-      const resolutionScale = Math.min(1, targetHeight / sourceHeight);
-      canvas.width = Math.max(2, Math.round(sourceWidth * resolutionScale / 2) * 2);
-      canvas.height = Math.max(2, Math.round(sourceHeight * resolutionScale / 2) * 2);
-    }
+    const outputSize = calculateCompositionOutputSize(sourceWidth, sourceHeight, composeOptions);
+    canvas.width = outputSize.width;
+    canvas.height = outputSize.height;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("動画合成用キャンバスを作成できません。");
     const ngWords = composeOptions.ngWords;

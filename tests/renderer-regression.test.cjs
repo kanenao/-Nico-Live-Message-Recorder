@@ -618,7 +618,8 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
     "compose-font-size-value",
     "compose-overlap-protection",
     "compose-lane-gap",
-    "compose-lane-gap-value"
+    "compose-lane-gap-value",
+    "compose-pixels-per-second"
   ]) {
     assert.ok(html.includes('id="' + id + '"'), "missing comment style control: " + id);
   }
@@ -626,6 +627,11 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
   assert.match(renderer, /baseFontSize: number\("compose-font-size", 64, 18, 96\)/);
   assert.match(renderer, /overlapProtection: byId\("compose-overlap-protection"\)\.checked/);
   assert.match(renderer, /laneGapMs: number\("compose-lane-gap", 80, 0, 500\)/);
+  assert.match(renderer, /scrollSpeedPxPerSecond: number\("compose-pixels-per-second", 330, 80, 1000\)/);
+  assert.match(renderer, /function calculateCompositionOutputSize\(/);
+  assert.match(renderer, /calculateCompositionOutputSize\(video\.videoWidth, video\.videoHeight, options\)/);
+  assert.match(renderer, /calculateCompositionOutputSize\(sourceWidth, sourceHeight, composeOptions\)/);
+  assert.match(renderer, /\(\(width \+ textWidth\) \/ pixelsPerSecond\) \* 1000/);
   assert.match(renderer, /calculateCommentLaneLayout\(/);
   assert.match(renderer, /layout\.scrollLaneYs\[lane\]/);
   assert.match(renderer, /layout\.topLaneYs\[lane\]/);
