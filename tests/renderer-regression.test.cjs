@@ -438,3 +438,10 @@ test("automatic capture failure clears the live detection gate for retry", () =>
   assert.match(renderer, /monitorHandledDetections\.delete\(String\(target\.userId/);
   assert.match(renderer, /api\.startCapture\(liveId, monitorSettings\.quality/);
 });
+
+
+test("broadcaster profile lookup never blocks live detection and immediate automatic capture", () => {
+  assert.doesNotMatch(main, /const displayName = await resolveMonitorUserName/);
+  assert.match(main, /void resolveMonitorUserName\(target, followedProgram, latest\)\.then/);
+  assert.match(main, /queueMonitorDetection\(/);
+});
