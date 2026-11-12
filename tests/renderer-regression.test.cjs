@@ -527,7 +527,7 @@ test("registered broadcaster broadcast articles are stored locally and available
   assert.match(renderer, /function renderBroadcastArticles\(/);
   assert.match(renderer, /api\.getBroadcastArticles\(\)/);
   assert.match(renderer, /api\.generateBroadcastArticle\(item\.path\)/);
-  assert.match(renderer, /await createAndSaveBroadcastArticle/);
+  assert.match(main, /await createAndSaveBroadcastArticle/);
   assert.match(html, /data-page-target="articles"/);
   assert.match(html, /id="articles-panel"[^>]*data-page="articles"/);
   assert.match(html, /id="articles-search"/);

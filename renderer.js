@@ -1504,6 +1504,14 @@ api.onEvent(({ channel, payload }) => {
     renderMonitorTargets();
   }
   if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
+  if (channel === "articles:generated") {
+    if (!byId("articles-panel").hidden) loadBroadcastArticles();
+    const article = payload && payload.article;
+    addMonitorActivity("放送記事を生成しました：" + (article && (article.programTitle || article.liveId) || ""));
+  }
+  if (channel === "articles:skipped" && payload && payload.reason) {
+    addMonitorActivity("放送記事は生成対象外です：" + payload.reason);
+  }
   if (channel === "monitor:error") addMonitorActivity(
     (payload.name || payload.userId || "ユーザー") + " の状態確認エラー：" + (payload.error || ""),
     "error"
