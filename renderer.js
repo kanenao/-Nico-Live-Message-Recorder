@@ -1454,9 +1454,10 @@ function renderUpdateState(payload) {
   settingsBadge.textContent = badgeLabels[payload.state] || "状態確認中";
   settingsBadge.dataset.state = payload.state || "idle";
 
-  const hasNewVersion = ["available", "progress", "downloaded"].includes(payload.state) && Boolean(payload.version);
+  const latestVersion = payload.version || latestVersionLabel.textContent.replace(/^v/, "");
+  const hasNewVersion = ["available", "progress", "downloaded"].includes(payload.state) && Boolean(latestVersion);
   latestVersionRow.hidden = !hasNewVersion;
-  latestVersionLabel.textContent = hasNewVersion ? "v" + payload.version : "—";
+  latestVersionLabel.textContent = hasNewVersion ? "v" + latestVersion : "—";
 }
 
 async function checkAppUpdates() {

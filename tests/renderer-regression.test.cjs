@@ -564,6 +564,7 @@ test("app settings expose the current version and a synchronized automatic updat
   assert.match(renderer, /settingsStatus\.textContent = status\.textContent/);
   assert.match(renderer, /settingsProgress\.value = progress\.value/);
   assert.match(renderer, /settingsCheckButton\.disabled = checkButton\.disabled/);
+  assert.match(renderer, /const latestVersion = payload\.version \|\| latestVersionLabel\.textContent\.replace/);
   assert.match(renderer, /byId\("settings-check-update-button"\)\.addEventListener\("click", checkAppUpdates\)/);
   assert.match(renderer, /byId\("settings-install-update-button"\)\.addEventListener\("click", installAppUpdate\)/);
   assert.match(renderer, /byId\("app-current-version"\)\.textContent = text/);
