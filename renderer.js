@@ -983,7 +983,9 @@ async function processMonitorAutoQueue() {
     setConnection("connecting");
     const capture = await api.startCapture(liveId, monitorSettings.quality || "best", {
       displayName: target.displayName || target.name || "",
-      broadcasterId: target.broadcasterId || target.userId || ""
+      broadcasterId: target.broadcasterId || target.userId || "",
+      programTitle: target.title || "",
+      startedAt: target.startedAt || ""
     });
     if (capture.comment && capture.comment.metadata) updateMetadata(capture.comment.metadata);
     if (capture.comment && capture.comment.commentFile) {
@@ -1041,7 +1043,7 @@ async function processMonitorAutoQueue() {
 }
 
 
-const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "articles"]);
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -1051,7 +1053,7 @@ function setActivePage(page) {
   content.querySelectorAll(":scope > [data-page]").forEach((view) => {
     const isActive = view.dataset.page === activePage;
     view.classList.toggle("page-hidden", !isActive);
-    if (view.id === "library-panel") view.hidden = !isActive;
+    if (view.id === "library-panel" || view.id === "articles-panel") view.hidden = !isActive;
   });
 
   document.querySelectorAll("[data-page-target]").forEach((button) => {
@@ -1062,6 +1064,7 @@ function setActivePage(page) {
   });
 
   if (activePage === "library") loadCaptureLibrary();
+  if (activePage === "articles") loadBroadcastArticles();
 }
 
 function formatLibraryBytes(value) {
@@ -1140,6 +1143,29 @@ function renderCaptureLibrary() {
       catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
     });
     actions.append(openButton, showButton);
+    if (item.type === "comment" && item.extension === "JSONL") {
+      const articleButton = document.createElement("button");
+      articleButton.type = "button";
+      articleButton.className = "button button-outline button-small";
+      articleButton.textContent = "記事を生成";
+      articleButton.addEventListener("click", async () => {
+        articleButton.disabled = true;
+        try {
+          const result = await api.generateBroadcastArticle(item.path);
+          if (result && result.status === "generated") {
+            showToast("放送記事を生成しました: " + (result.title || item.liveId));
+            await loadBroadcastArticles();
+          } else {
+            showToast((result && result.reason) || "記事を生成できませんでした。", true);
+          }
+        } catch (error) {
+          showToast(error.message || "放送記事を生成できませんでした。", true);
+        } finally {
+          articleButton.disabled = false;
+        }
+      });
+      actions.appendChild(articleButton);
+    }
     if (item.type === "video") {
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
@@ -1182,6 +1208,127 @@ async function loadCaptureLibrary() {
     renderCaptureLibrary();
   } catch (error) {
     if (list) list.textContent = error.message || "ライブラリを読み込めませんでした。";
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderBroadcastArticles() {
+  const list = byId("articles-list");
+  if (!list) return;
+  list.replaceChildren();
+  const query = String(byId("articles-search").value || "").trim().toLowerCase();
+  const items = broadcastArticles.filter((article) => {
+    const searchable = [
+      article.broadcasterName, article.programTitle, article.title, article.liveId,
+      ...(article.topics || []).map((topic) => topic.term)
+    ].join(" ").toLowerCase();
+    return !query || searchable.includes(query);
+  });
+
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "article-empty";
+    empty.textContent = broadcastArticles.length
+      ? "検索条件に一致する記事がありません。"
+      : "まだ放送記事がありません。配信の録画終了またはコメント切断時に自動生成されます。過去のJSONLログは録画ライブラリから記事化できます。";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const article of items) {
+    const card = document.createElement("article");
+    card.className = "broadcast-article-card";
+    const heading = document.createElement("div");
+    heading.className = "broadcast-article-heading";
+    const title = document.createElement("h3");
+    title.textContent = article.title || article.programTitle || article.liveId || "放送記事";
+    const meta = document.createElement("p");
+    meta.className = "broadcast-article-meta";
+    meta.textContent = [
+      article.broadcasterName || "配信者名未取得",
+      formatLibraryDate(article.startedAt || article.generatedAt),
+      article.liveId || ""
+    ].filter(Boolean).join(" · ");
+    heading.append(title, meta);
+
+    const stats = document.createElement("div");
+    stats.className = "broadcast-article-stats";
+    const stat = (label, value) => {
+      const item = document.createElement("div");
+      item.className = "broadcast-article-stat";
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      const amount = document.createElement("strong");
+      amount.textContent = value;
+      item.append(caption, amount);
+      return item;
+    };
+    stats.append(
+      stat("来場者", article.visitorCount == null ? "未取得" : Number(article.visitorCount).toLocaleString("ja-JP")),
+      stat("投稿者", Number(article.uniqueCommenters || 0).toLocaleString("ja-JP") + "人"),
+      stat("コメント", Number(article.commentCount || 0).toLocaleString("ja-JP") + "件"),
+      stat("配信時間", article.durationMinutes == null ? "未取得" : "約" + article.durationMinutes + "分")
+    );
+
+    const body = document.createElement("div");
+    body.className = "broadcast-article-body";
+    for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
+      const p = document.createElement("p");
+      p.textContent = paragraph;
+      body.appendChild(p);
+    }
+    const note = document.createElement("p");
+    note.className = "broadcast-article-note";
+    note.textContent = article.note || "番組情報と保存済みコメントから自動生成された記事です。";
+    body.appendChild(note);
+
+    const actions = document.createElement("div");
+    actions.className = "broadcast-article-actions";
+    if (article.liveId) {
+      const watch = document.createElement("button");
+      watch.type = "button";
+      watch.className = "button button-quiet button-small";
+      watch.textContent = "元の放送を開く";
+      watch.addEventListener("click", async () => {
+        try { await api.openWatch(article.liveId); }
+        catch (error) { showToast(error.message || "放送ページを開けませんでした。", true); }
+      });
+      actions.appendChild(watch);
+    }
+    if (article.videoFile) {
+      const video = document.createElement("button");
+      video.type = "button";
+      video.className = "button button-outline button-small";
+      video.textContent = "録画を再生";
+      video.addEventListener("click", async () => {
+        try { await api.openLibraryItem(article.videoFile); }
+        catch (error) { showToast(error.message || "録画ファイルを開けませんでした。", true); }
+      });
+      actions.appendChild(video);
+    }
+
+    card.append(heading, stats, body, actions);
+    list.appendChild(card);
+  }
+}
+
+let broadcastArticles = [];
+
+async function loadBroadcastArticles() {
+  const button = byId("articles-refresh-button");
+  if (button) button.disabled = true;
+  const list = byId("articles-list");
+  if (list && !broadcastArticles.length) list.textContent = "放送記事を読み込んでいます…";
+  try {
+    const result = await api.getBroadcastArticles();
+    broadcastArticles = Array.isArray(result.items) ? result.items : [];
+    byId("articles-total").textContent = String(result.total || 0);
+    byId("articles-broadcaster-count").textContent = String(result.broadcasterCount || 0);
+    byId("articles-comment-total").textContent = Number(result.commentCount || 0).toLocaleString("ja-JP");
+    renderBroadcastArticles();
+  } catch (error) {
+    if (list) list.textContent = error.message || "放送記事を読み込めませんでした。";
   } finally {
     if (button) button.disabled = false;
   }
@@ -1423,6 +1570,8 @@ setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
 byId("library-filter").addEventListener("change", renderCaptureLibrary);
+byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
+byId("articles-search").addEventListener("input", renderBroadcastArticles);
 byId("library-open-folder-button").addEventListener("click", async () => {
   try {
     const result = await api.openDataFolder();

@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   disconnectLive: () => ipcRenderer.invoke("live:disconnect"),
   getVideoToolStatus: () => ipcRenderer.invoke("video:tools-status"),
   getCaptureLibrary: () => ipcRenderer.invoke("library:list"),
+  getBroadcastArticles: () => ipcRenderer.invoke("articles:list"),
+  generateBroadcastArticle: (filePath) => ipcRenderer.invoke("articles:generate-from-comment", filePath),
   openLibraryItem: (filePath) => ipcRenderer.invoke("library:open-item", filePath),
   showLibraryItem: (filePath) => ipcRenderer.invoke("library:show-item", filePath),
   deleteLibraryVideo: (filePath) => ipcRenderer.invoke("library:delete-video", filePath),

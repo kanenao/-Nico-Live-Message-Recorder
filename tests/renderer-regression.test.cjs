@@ -322,7 +322,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.29");
+  assert.equal(packageConfig.version, "0.1.0-beta.30");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -406,12 +406,13 @@ test("feature navigation is grouped and every feature page has a dedicated view"
     "comments-nav-button",
     "compose-nav-button",
     "open-folder-button",
+    "articles-nav-button",
     "sidebar-settings-button"
   ]) {
     assert.match(html, new RegExp(`id="${id}"`), `missing navigation control: ${id}`);
   }
 
-  for (const page of ["dashboard", "monitor", "record", "comments", "compose", "library"]) {
+  for (const page of ["dashboard", "monitor", "record", "comments", "compose", "library", "articles"]) {
     assert.match(html, new RegExp(`data-page="${page}"`), `missing page view: ${page}`);
     assert.match(html, new RegExp(`data-page-target="${page}"`), `missing page navigation: ${page}`);
   }
@@ -510,4 +511,38 @@ test("Windows notifications report detected LIVE and automatic recording results
   assert.match(main, /notifyOnLive: stored\.notifyOnLive !== false/);
   assert.match(main, /notifyOnLive: candidate\.notifyOnLive !== false/);
   assert.match(main, /notifyOnLive: true/);
+});
+
+
+test("registered broadcaster broadcast articles are stored locally and available in a dedicated page", () => {
+  assert.match(main, /require\("\.\/articles\.cjs"\)/);
+  assert.match(main, /generateBroadcastArticle\(/);
+  assert.match(main, /function createAndSaveBroadcastArticle\(/);
+  assert.match(main, /function listBroadcastArticles\(/);
+  assert.match(main, /path\.join\(dataRoot\(\), "articles"/);
+  assert.match(main, /ipcMain\.handle\("articles:list"/);
+  assert.match(main, /ipcMain\.handle\("articles:generate-from-comment"/);
+  assert.match(preload, /getBroadcastArticles:.*ipcRenderer\.invoke\("articles:list"/);
+  assert.match(preload, /generateBroadcastArticle:.*ipcRenderer\.invoke\("articles:generate-from-comment"/);
+  assert.match(renderer, /function renderBroadcastArticles\(/);
+  assert.match(renderer, /api\.getBroadcastArticles\(\)/);
+  assert.match(renderer, /api\.generateBroadcastArticle\(item\.path\)/);
+  assert.match(renderer, /await createAndSaveBroadcastArticle/);
+  assert.match(html, /data-page-target="articles"/);
+  assert.match(html, /id="articles-panel"[^>]*data-page="articles"/);
+  assert.match(html, /id="articles-search"/);
+});
+
+test("articles are refreshed after recording and comment logs are closed", () => {
+  assert.match(main, /await appendMarkerAndWait\("videoStop"/);
+  assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath,\s*\{/);
+  assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath, articleContext\)/);
+  assert.match(renderer, /channel === "articles:generated"/);
+  assert.match(renderer, /if \(activePage === "articles"\) loadBroadcastArticles\(\)/);
+});
+
+test("article page explains local comment-based summaries and does not claim speech transcription", () => {
+  assert.match(html, /記事はこのPC内に保存されます/);
+  assert.match(html, /文字起こししたものではありません/);
+  assert.match(css, /\.broadcast-article-card/);
 });

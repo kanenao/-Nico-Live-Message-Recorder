@@ -10,6 +10,7 @@ const {
   buildStreamlinkArgs
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
+const { generateBroadcastArticle } = require("./articles.cjs");
 const {
   normalizeCompositionFormat,
   normalizeCompositionQuality,
@@ -51,6 +52,7 @@ let commentWriter = null;
 let commentFilePath = "";
 let currentBroadcasterName = "";
 let currentBroadcasterId = "";
+let currentProgramInfo = {};
 let streamlinkLiveId = "";
 let streamlinkBroadcasterName = "";
 let streamlinkBroadcasterId = "";
@@ -409,6 +411,80 @@ async function moveCommentLogToBroadcasterFolder(sourcePath) {
   return destinationPath;
 }
 
+async function createAndSaveBroadcastArticle(commentPath, context = {}) {
+  if (!commentPath || !fs.existsSync(commentPath)) {
+    return { status: "skipped", reason: "コメントログが見つかりません。" };
+  }
+  const recordsText = fs.readFileSync(commentPath, "utf8");
+  const article = generateBroadcastArticle(recordsText, {
+    ...currentProgramInfo,
+    broadcasterName: currentBroadcasterName,
+    broadcasterId: currentBroadcasterId,
+    liveId: currentLiveId,
+    ...context,
+    generatedAt: new Date().toISOString()
+  });
+  if (article.status !== "generated") {
+    send("articles:skipped", { liveId: article.liveId || context.liveId || "", reason: article.reason });
+    return article;
+  }
+
+  const directory = path.join(dataRoot(), "articles",
+    broadcasterFolderName(article.broadcasterName, article.broadcasterId));
+  fs.mkdirSync(directory, { recursive: true });
+  const baseName = path.basename(commentPath, path.extname(commentPath));
+  const articlePath = path.join(directory, baseName + ".json");
+  article.articlePath = articlePath;
+  article.commentFile = commentPath;
+  if (context.videoFile) article.videoFile = context.videoFile;
+  fs.writeFileSync(articlePath, JSON.stringify(article, null, 2), "utf8");
+  send("articles:generated", { article });
+  return article;
+}
+
+function listBroadcastArticles() {
+  const root = path.join(dataRoot(), "articles");
+  const queue = [root];
+  const items = [];
+  while (queue.length) {
+    const directory = queue.pop();
+    let entries = [];
+    try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch (_) {}
+    for (const entry of entries) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".json") continue;
+      try {
+        const article = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+        if (article && article.status === "generated" && article.schemaVersion === 1) items.push(article);
+      } catch (_) {
+        // Ignore incomplete or older article files.
+      }
+    }
+  }
+  items.sort((a, b) => Date.parse(b.startedAt || b.generatedAt) - Date.parse(a.startedAt || a.generatedAt));
+  return {
+    total: items.length,
+    broadcasterCount: new Set(items.map((item) => item.broadcasterId || item.broadcasterName).filter(Boolean)).size,
+    commentCount: items.reduce((sum, item) => sum + (Number(item.commentCount) || 0), 0),
+    items: items.slice(0, 2000)
+  };
+}
+
+function generateArticleFromCommentFile(value) {
+  const target = resolveLibraryItemPath(value);
+  const commentsRoot = path.resolve(dataRoot(), "comments");
+  const relative = path.relative(commentsRoot, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative) ||
+      path.extname(target).toLowerCase() !== ".jsonl") {
+    throw new Error("記事生成にはコメントフォルダー内のJSONLファイルを指定してください。");
+  }
+  return createAndSaveBroadcastArticle(target, {});
+}
+
 function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
   currentBroadcasterName = String(displayName || "").trim();
   currentBroadcasterId = String(broadcasterId || "");
@@ -423,7 +499,8 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
   appendMarker("sessionStart", {
     sessionStartedAt: new Date().toISOString(),
     broadcasterName: currentBroadcasterName,
-    broadcasterId: currentBroadcasterId
+    broadcasterId: currentBroadcasterId,
+    ...currentProgramInfo
   });
   send("comments:file", { path: commentFilePath });
 }
@@ -443,8 +520,32 @@ function updateCurrentBroadcaster(metadata, liveId) {
   if (id) {
     currentBroadcasterId = id;
     if (streamlinkLiveId && (!liveId || streamlinkLiveId === liveId)) {
-      streamlinkBroadcasterId = id;
+      streamlinkBroadcasterId = currentBroadcasterId;
     }
+  }
+
+  const program = metadata.program || metadata.broadcast || metadata.live || {};
+  const readField = (keys) => {
+    for (const key of keys) {
+      const value = metadata[key] !== undefined ? metadata[key] : program[key];
+      if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+    }
+    return "";
+  };
+  const nextInfo = {
+    ...currentProgramInfo,
+    programTitle: readField(["programTitle", "title", "liveTitle"]) || currentProgramInfo.programTitle || "",
+    description: readField(["programDescription", "description", "summary"]) || currentProgramInfo.description || "",
+    startedAt: readField(["startedAt", "beginTime", "startTime"]) || currentProgramInfo.startedAt || "",
+    endedAt: readField(["endedAt", "endTime"]) || currentProgramInfo.endedAt || ""
+  };
+  if (Object.keys(nextInfo).some((key) => nextInfo[key] && nextInfo[key] !== currentProgramInfo[key])) {
+    currentProgramInfo = nextInfo;
+    if (commentWriter) appendMarker("programMetadata", {
+      ...currentProgramInfo,
+      broadcasterName: currentBroadcasterName,
+      broadcasterId: currentBroadcasterId
+    });
   }
 }
 
@@ -461,6 +562,16 @@ function appendMarker(type, fields = {}) {
   commentWriter.write(JSON.stringify(marker) + "\n");
 }
 
+function appendMarkerAndWait(type, fields = {}) {
+  if (!commentWriter) return Promise.resolve(null);
+  const writer = commentWriter;
+  const timestamp = new Date().toISOString();
+  const marker = { type, liveId: currentLiveId, timestamp, receivedAt: timestamp, ...fields };
+  return new Promise((resolve, reject) => {
+    writer.write(JSON.stringify(marker) + "\n", (error) => error ? reject(error) : resolve(marker));
+  });
+}
+
 function closeCommentWriter() {
   return new Promise((resolve) => {
     if (!commentWriter) {
@@ -469,6 +580,12 @@ function closeCommentWriter() {
     }
     const writer = commentWriter;
     const oldPath = commentFilePath;
+    const articleContext = {
+      liveId: currentLiveId,
+      broadcasterName: currentBroadcasterName,
+      broadcasterId: currentBroadcasterId,
+      ...currentProgramInfo
+    };
     commentWriter = null;
     writer.end(async () => {
       try {
@@ -477,6 +594,11 @@ function closeCommentWriter() {
         await exportCommentSidecars(commentFilePath);
       } catch (error) {
         send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
+      }
+      try {
+        await createAndSaveBroadcastArticle(commentFilePath, articleContext);
+      } catch (error) {
+        send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
       }
       resolve();
     });
@@ -696,13 +818,19 @@ function closeLivePreview() {
 ipcMain.handle("preview:open", (_event, value) => openLivePreview(value));
 ipcMain.handle("preview:close", () => closeLivePreview());
 
-async function prepareCommentSession(liveId, displayName = "", broadcasterId = "") {
+async function prepareCommentSession(liveId, displayName = "", broadcasterId = "", programInfo = {}) {
   if (provider) {
     try { provider.disconnect(); } catch (_) {}
     provider = null;
   }
   await closeCommentWriter();
   currentLiveId = liveId;
+  currentProgramInfo = {
+    programTitle: String(programInfo.programTitle || programInfo.title || "").slice(0, 300),
+    description: String(programInfo.description || "").slice(0, 3000),
+    startedAt: String(programInfo.startedAt || ""),
+    endedAt: String(programInfo.endedAt || "")
+  };
   openCommentWriter(liveId, displayName, broadcasterId);
   send("live:state", { state: "connecting" });
 }
@@ -1438,13 +1566,17 @@ async function finalizeStreamlinkRecording(exit) {
   }
 
   if (currentLiveId && commentWriter) {
-    appendMarker("videoStop", {
-      timestamp: stoppedAt,
-      receivedAt: stoppedAt,
-      videoStoppedAt: stoppedAt,
-      videoFile: finalPath || rawPath,
-      sourceVideoFile: rawPath
-    });
+    try {
+      await appendMarkerAndWait("videoStop", {
+        timestamp: stoppedAt,
+        receivedAt: stoppedAt,
+        videoStoppedAt: stoppedAt,
+        videoFile: finalPath || rawPath,
+        sourceVideoFile: rawPath
+      });
+    } catch (error) {
+      send("app:error", "コメントログの終了マーカー保存に失敗しました: " + error.message);
+    }
   }
 
   if (hasOutput && finalPath && streamlinkLiveId) {
@@ -1464,6 +1596,20 @@ async function finalizeStreamlinkRecording(exit) {
       }
     } catch (error) {
       send("app:error", "配信者フォルダーへの整理に失敗しました。元の保存先に残しています: " + error.message);
+    }
+  }
+
+  if (hasOutput && commentWriter && commentFilePath && streamlinkLiveId) {
+    try {
+      await createAndSaveBroadcastArticle(commentFilePath, {
+        liveId: streamlinkLiveId,
+        broadcasterName: streamlinkBroadcasterName || currentBroadcasterName,
+        broadcasterId: streamlinkBroadcasterId || currentBroadcasterId,
+        ...currentProgramInfo,
+        videoFile: finalPath
+      });
+    } catch (error) {
+      send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
     }
   }
 
@@ -1821,13 +1967,19 @@ ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => 
 
   const requestedName = String(options && options.displayName || "").trim().slice(0, 80);
   const requestedId = String(options && options.broadcasterId || "").trim();
+  const programInfo = {
+    programTitle: String(options && (options.programTitle || options.title) || "").slice(0, 300),
+    description: String(options && options.description || "").slice(0, 3000),
+    startedAt: String(options && options.startedAt || "")
+  };
   const reuseComments = currentLiveId === liveId && Boolean(provider && commentWriter);
 
   if (reuseComments) {
     if (requestedName) currentBroadcasterName = requestedName;
     if (requestedId) currentBroadcasterId = requestedId;
+    currentProgramInfo = { ...currentProgramInfo, ...programInfo };
   } else {
-    await prepareCommentSession(liveId, requestedName, requestedId);
+    await prepareCommentSession(liveId, requestedName, requestedId, programInfo);
   }
 
   // Both operations are launched in the same main-process turn. The JSONL
@@ -2182,6 +2334,8 @@ function resolveLibraryItemPath(value) {
 }
 
 ipcMain.handle("library:list", () => listCaptureLibrary());
+ipcMain.handle("articles:list", () => listBroadcastArticles());
+ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
 ipcMain.handle("library:open-item", async (_event, value) => {
   const target = resolveLibraryItemPath(value);
   const error = await shell.openPath(target);
