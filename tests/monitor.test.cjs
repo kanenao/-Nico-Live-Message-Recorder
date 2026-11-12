@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   normalizeNicoUserId,
+  mapWithConcurrency,
   extractUserBroadcasts,
   fetchUserBroadcastStatus,
   fetchFollowingOnAirPrograms,
@@ -274,4 +275,24 @@ test("uses an ID fallback when the public profile is private or invalid", async 
   });
   assert.equal(name, "");
   assert.equal(calls, 2);
+});
+
+
+test("mapWithConcurrency limits concurrent work and preserves input order", async () => {
+  let active = 0;
+  let maximum = 0;
+  const result = await mapWithConcurrency([1, 2, 3, 4, 5, 6], 2, async (value) => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 4));
+    active -= 1;
+    return value * 2;
+  });
+  assert.equal(maximum, 2);
+  assert.deepEqual(result, [2, 4, 6, 8, 10, 12]);
+});
+
+test("mapWithConcurrency accepts an empty list and rejects a missing mapper", async () => {
+  assert.deepEqual(await mapWithConcurrency([], 4, async (value) => value), []);
+  await assert.rejects(mapWithConcurrency([1], 1, null), /mapper/);
 });
