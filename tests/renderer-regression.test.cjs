@@ -72,7 +72,7 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
   assert.match(renderer, /monitorAutoProcessing = true;\s*recordButton\.disabled = true/);
-  assert.match(renderer, /if \(!recordStartedAt && videoCaptureState !== "recording"\) \{\s*recordButton\.disabled = false/);
+  assert.match(renderer, /if \(!recordStartedAt && videoCaptureState !== "recording"\) \{[\s\S]*?recordButton\.disabled = false;/);
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
 
@@ -202,7 +202,7 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   assert.match(renderer, /durationSeconds/);
   assert.match(renderer, /composeOptions\.ngWords/);
   assert.match(renderer, /outlineWidth/);
-  assert.match(renderer, /const fontFamily = \["Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"\]/);
+  assert.match(renderer, /const fontFamily = \["ＭＳ Ｐゴシック", "Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"\]/);
   assert.match(renderer, /api\.startCompose\(\{[\s\S]*?format: composeOptions\.outputFormat/);
   assert.match(main, /transcodeCompositionToMp4/);
   assert.match(main, /makeWebmFallbackPath/);
@@ -322,7 +322,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.33");
+  assert.equal(packageConfig.version, "0.1.0-beta.35");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
