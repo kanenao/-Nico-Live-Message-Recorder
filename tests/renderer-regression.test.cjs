@@ -13,6 +13,8 @@ const ass = fs.readFileSync(path.join(root, "electron", "ass.cjs"), "utf8");
 const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
 const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf8");
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
+const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
+const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
@@ -270,6 +272,8 @@ test("video deletion is limited to saved videos and requires a native confirmati
   assert.match(main, /ipcMain\.handle\("library:delete-video"/);
   assert.match(main, /const videosRoot = path\.resolve\(dataRoot\(\), "videos"\)/);
   assert.match(main, /streamlinkOutputPath/);
+  assert.match(main, /streamlinkFinalOutputPath/);
+  assert.match(main, /activeRecordingPaths/);
   assert.match(main, /streamlinkProcess \|\| streamlinkFinalizePromise/);
   assert.match(main, /dialog\.showMessageBox\(mainWindow/);
   assert.match(main, /削除した動画は元に戻せません/);
@@ -278,7 +282,19 @@ test("video deletion is limited to saved videos and requires a native confirmati
   assert.match(renderer, /deleteButton\.textContent = "削除"/);
 });
 
+test("package, UI and CI artifact versions are kept in sync", () => {
+  assert.equal(packageConfig.version, "0.1.0-beta.22");
+  assert.match(html, /0\\.1\\.0-beta\\.22/);
+  assert.match(buildWorkflow, /Nico-Live-Message-Recorder-beta22-Windows/);
+});
+
 test("past timeshift comments are fetched through NDGR previous and backward segments and aligned to archive start", () => {
+  const handlerStart = main.indexOf('ipcMain.handle("video:start"');
+  const lockAt = main.indexOf("timeshiftCommentFetchActive = true;", handlerStart);
+  const pageFetchAt = main.indexOf("fetchTimeshiftProgramPage(liveId, cookieHeader)", handlerStart);
+  assert.ok(lockAt > handlerStart && lockAt < pageFetchAt, "timeshift lock must be acquired before network requests");
+  assert.match(main, /別の過去配信コメントを取得中です/);
+  assert.match(main, /capture:start[\\s\\S]*?timeshiftCommentFetchActive/);
   assert.match(main, /fetchTimeshiftArchive\(page\.webSocketUrl, cookieHeader/);
   assert.match(main, /appendMarker\("timeshiftOrigin"/);
   assert.match(main, /record\.isHistory = true/);
@@ -292,7 +308,7 @@ test("past timeshift comments are fetched through NDGR previous and backward seg
 test("editing menus and clipboard shortcuts support cut copy and paste", () => {
   assert.match(main, /contents\.on\("context-menu"/);
   assert.match(main, /contents\.on\("before-input-event"/);
-  assert.match(main, /actions = \{ x: "cut", c: "copy", v: "paste"/);
+  assert.match(main, /actions = \{ x: "cut", c: "copy", v: "paste", a: "selectAll"/);
   assert.match(main, /Menu\.buildFromTemplate\(template\)/);
   assert.match(css, /user-select:\s*text/);
 });

@@ -45,6 +45,7 @@ let streamlinkProcess = null;
 let streamlinkFinalizePromise = null;
 let streamlinkRuntimeDirectory = "";
 let streamlinkOutputPath = "";
+let streamlinkFinalOutputPath = "";
 let streamlinkFfmpegPath = "";
 let streamlinkStopRequested = false;
 let composeWriter = null;
@@ -480,7 +481,7 @@ function makeWindow() {
     const modified = process.platform === "darwin" ? input.meta : input.control;
     if (!modified) return;
     const key = String(input.key || "").toLowerCase();
-    const actions = { x: "cut", c: "copy", v: "paste", z: input.shift ? "redo" : "undo", y: "redo" };
+    const actions = { x: "cut", c: "copy", v: "paste", a: "selectAll", z: input.shift ? "redo" : "undo", y: "redo" };
     const action = actions[key];
     if (!action || typeof contents[action] !== "function") return;
     event.preventDefault();
@@ -1156,6 +1157,7 @@ async function finalizeStreamlinkRecording(exit) {
       await remuxTransportStreamToMp4(rawPath, mp4Path, ffmpegPath);
       await fs.promises.unlink(rawPath).catch(() => {});
       finalPath = mp4Path;
+      streamlinkFinalOutputPath = mp4Path;
       converted = true;
     } catch (_) {
       send("app:error", "MP4変換に失敗したため、元のTSファイルを保存しました。FFmpegの設定を確認してください。");
@@ -1185,6 +1187,7 @@ async function finalizeStreamlinkRecording(exit) {
         }
         await fs.promises.rename(finalPath, organizedPath);
         finalPath = organizedPath;
+        streamlinkFinalOutputPath = organizedPath;
       }
     } catch (error) {
       send("app:error", "配信者フォルダーへの整理に失敗しました。元の保存先に残しています: " + error.message);
@@ -1196,6 +1199,7 @@ async function finalizeStreamlinkRecording(exit) {
   streamlinkFinalizePromise = null;
   streamlinkRuntimeDirectory = "";
   streamlinkOutputPath = "";
+  streamlinkFinalOutputPath = "";
   streamlinkLiveId = "";
   streamlinkBroadcasterName = "";
   streamlinkBroadcasterId = "";
@@ -1350,6 +1354,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   streamlinkProcess = child;
   streamlinkRuntimeDirectory = runtime.runtimeDirectory;
   streamlinkOutputPath = outputPath;
+  streamlinkFinalOutputPath = ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath;
   streamlinkLiveId = liveId;
   streamlinkBroadcasterName = currentBroadcasterName;
   streamlinkBroadcasterId = currentBroadcasterId;
@@ -1396,26 +1401,43 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
 
 ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
   if (!(options && options.timeshift)) {
+    if (timeshiftCommentFetchActive) {
+      throw new Error("過去配信のコメント取得中です。完了後に録画を開始してください。");
+    }
     return startVideoInternal(value, quality, options && options.displayName, options && options.broadcasterId, options);
   }
-
-  const liveId = safeLiveId(value);
-  let page = null;
-  let commentError = "";
-  const cookieHeader = await getNicoCookieHeader();
-  try {
-    page = await fetchTimeshiftProgramPage(liveId, cookieHeader);
-    if (!page.webSocketUrl) {
-      commentError = "このタイムシフトでは過去コメント用の接続情報を取得できませんでした。映像録画のみ実行します。";
-    }
-  } catch (error) {
-    commentError = "過去番組のコメント情報を取得できませんでした: " +
-      (error && error.message ? error.message : String(error));
+  if (timeshiftCommentFetchActive) {
+    throw new Error("別の過去配信コメントを取得中です。完了後に再試行してください。");
+  }
+  if (streamlinkProcess || streamlinkFinalizePromise) {
+    throw new Error("別の映像録画が実行中、またはファイル確定中です。先に停止してください。");
   }
 
-  if (!page || !page.webSocketUrl) {
-    timeshiftCommentFetchActive = true;
+  // Lock before fetching the watch page so another capture/comment session cannot race this request.
+  timeshiftCommentFetchActive = true;
+  try {
+    const liveId = safeLiveId(value);
+    let page = null;
+    let commentError = "";
+    let cookieHeader = "";
     try {
+      cookieHeader = await getNicoCookieHeader();
+    } catch (error) {
+      commentError = "ニコニコのログイン情報を確認できませんでした: " +
+        (error && error.message ? error.message : String(error));
+    }
+    try {
+      page = await fetchTimeshiftProgramPage(liveId, cookieHeader);
+      if (!page.webSocketUrl) {
+        commentError = "このタイムシフトでは過去コメント用の接続情報を取得できませんでした。映像録画のみ実行します。";
+      }
+    } catch (error) {
+      const pageError = "過去番組のコメント情報を取得できませんでした: " +
+        (error && error.message ? error.message : String(error));
+      commentError = commentError ? commentError + " " + pageError : pageError;
+    }
+
+    if (!page || !page.webSocketUrl) {
       // Close any previous live-comment session and create this archive's own
       // log even when the archive does not expose a comment WebSocket endpoint.
       await prepareCommentSession(
@@ -1440,21 +1462,12 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
         commentsFetched: false,
         commentError
       };
-    } catch (error) {
-      if (commentWriter) await closeCommentWriter();
-      send("live:state", { state: "error" });
-      throw error;
-    } finally {
-      timeshiftCommentFetchActive = false;
     }
-  }
 
-  let video = null;
-  let commentCount = 0;
-  let commentsTruncated = false;
-  let finalCommentFile = "";
-  timeshiftCommentFetchActive = true;
-  try {
+    let video = null;
+    let commentCount = 0;
+    let commentsTruncated = false;
+    let finalCommentFile = "";
     await prepareCommentSession(liveId, page.broadcasterName, page.broadcasterId);
     video = await startVideoInternal(
       liveId,
@@ -1501,8 +1514,9 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
         commentError = commentError ? commentError + " " + note : note;
       }
     } catch (error) {
-      commentError = "映像録画は継続しますが、過去コメントの取得に失敗しました: " +
+      const fetchError = "映像録画は継続しますが、過去コメントの取得に失敗しました: " +
         (error && error.message ? error.message : String(error));
+      commentError = commentError ? commentError + " " + fetchError : fetchError;
     }
 
     await closeCommentWriter();
@@ -1526,6 +1540,9 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
 });
 
 ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => {
+  if (timeshiftCommentFetchActive) {
+    throw new Error("過去配信のコメント取得中です。完了後に録画を開始してください。");
+  }
   const liveId = safeLiveId(value);
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
 
@@ -1775,9 +1792,14 @@ ipcMain.handle("library:delete-video", async (_event, value) => {
   if (!LIBRARY_VIDEO_EXTENSIONS.has(extension)) {
     throw new Error("対応していない動画ファイル形式です。");
   }
-  if (streamlinkOutputPath && path.resolve(streamlinkOutputPath) === path.resolve(target) &&
-      (streamlinkProcess || streamlinkFinalizePromise)) {
-    throw new Error("録画中またはファイル確定中の動画は削除できません。録画停止後に再試行してください。");
+  const activeRecordingPaths = [
+    streamlinkOutputPath,
+    streamlinkFinalOutputPath,
+    streamlinkOutputPath && streamlinkOutputPath.replace(/\.ts$/i, ".mp4")
+  ].filter(Boolean).map((filePath) => path.resolve(filePath));
+  if ((streamlinkProcess || streamlinkFinalizePromise) &&
+      activeRecordingPaths.includes(path.resolve(target))) {
+    throw new Error("録画中またはMP4変換・ファイル確定中の動画は削除できません。録画停止後に再試行してください。");
   }
 
   const confirmation = await dialog.showMessageBox(mainWindow, {
