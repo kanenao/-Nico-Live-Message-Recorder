@@ -58,7 +58,7 @@ test("settings and broadcaster monitor controls are present in the Japanese UI",
   assert.match(main, /scheduleNextMonitorCheck/);
   assert.match(main, /mapWithConcurrency\(historyTargets, 4/);
   assert.match(main, /isLegacyMonitorSettings && storedIntervalSeconds === 60/);
-  assert.match(html, /<option value="10">10秒（最速・推奨）<\/option>/);
+  assert.match(html, /<option value="10"(?: selected)?>10秒（最速・推奨）<\/option>/);
 });
 
 test("saved monitor user IDs are validated with a numeric pattern", () => {
@@ -85,7 +85,7 @@ test("monitor prefers the authenticated follow-list API and retains public-histo
   assert.match(main, /const history = followedProgram \? null : historyByUser\.get\(target\.userId\)/);
   assert.match(main, /isFollowerOnly: Boolean\(live && live\.isFollowerOnly\)/);
   assert.match(main, /\[10, 15, 30, 60, 120, 300\]/);
-  assert.match(html, /<option value="10">10秒（最速・推奨）<\/option>/);
+  assert.match(html, /<option value="10"(?: selected)?>10秒（最速・推奨）<\/option>/);
 });
 
 
