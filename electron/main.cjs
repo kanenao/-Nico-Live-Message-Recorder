@@ -658,6 +658,7 @@ function closeCommentWriter() {
       } catch (error) {
         send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
       }
+      while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
       try {
         await createAndSaveBroadcastArticle(commentFilePath, articleContext);
       } catch (error) {
