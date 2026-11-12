@@ -481,3 +481,13 @@ test("comment video generation controls are separated into three clear groups", 
   }
   assert.match(css, /\.compose-settings-group-grid/);
 });
+
+
+test("grouped settings explanatory text closes before the dialog actions", () => {
+  const noteStart = html.indexOf('<p class="hint settings-note">');
+  const noteEnd = html.indexOf("</p>", noteStart);
+  assert.ok(noteStart >= 0 && noteEnd > noteStart, "settings note must be present and closed");
+  const afterNote = html.slice(noteEnd + 4).trimStart();
+  assert.ok(afterNote.startsWith('<div class="settings-actions">'), "settings actions must follow a balanced note");
+  assert.doesNotMatch(html, /<\/p>ログイン中はフォロー中番組API/);
+});
