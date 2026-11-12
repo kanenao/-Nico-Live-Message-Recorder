@@ -19,7 +19,7 @@ const composeExport = require(path.join(root, "electron", "composition-export.cj
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
-  const end = renderer.indexOf("function setCompositionProgress(", start);
+  const end = renderer.indexOf("function setComposePreviewStatus(", start);
   assert.ok(start >= 0 && end > start, "drawCommentOverlay must exist");
   const drawFunction = renderer.slice(start, end);
   assert.doesNotMatch(drawFunction, /clearRect\s*\(/);
@@ -631,6 +631,7 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
   assert.match(renderer, /function calculateCompositionOutputSize\(/);
   assert.match(renderer, /calculateCompositionOutputSize\(video\.videoWidth, video\.videoHeight, options\)/);
   assert.match(renderer, /calculateCompositionOutputSize\(sourceWidth, sourceHeight, composeOptions\)/);
+  assert.match(renderer, /"compose-pixels-per-second"[\s\S]*"compose-resolution"[\s\S]*"compose-keep-aspect"/);
   assert.match(renderer, /\(\(width \+ textWidth\) \/ pixelsPerSecond\) \* 1000/);
   assert.match(renderer, /calculateCommentLaneLayout\(/);
   assert.match(renderer, /layout\.scrollLaneYs\[lane\]/);

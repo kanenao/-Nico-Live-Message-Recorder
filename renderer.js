@@ -2092,8 +2092,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
 }
 
 function drawCommentOverlay(context, schedule, activeComments, videoTimeMs, width, height, options = {}) {
-  // The base video frame has already been drawn to this canvas. Do not clear it:
-  // clearing here used to erase the video and leave only a black background + comments.
+  // The base video frame has already been drawn to this canvas. Preserve it so the overlay stays transparent.
   context.globalAlpha = Math.min(1, Math.max(0.2, Number(options.opacity) || 1));
   const shadow = options.shadow !== false;
   const outlineWidth = Math.max(0, Math.min(12, Number(options.outlineWidth) || 0));
@@ -2567,7 +2566,7 @@ byId("compose-preview-video").addEventListener("play", () => {
   composePreviewFrame = requestAnimationFrame(tick);
 });
 byId("compose-preview-video").addEventListener("pause", () => cancelAnimationFrame(composePreviewFrame));
-for (const id of ["compose-font-scale", "compose-font-size", "compose-speed", "compose-position", "compose-opacity", "compose-offset", "compose-outline", "compose-lane-gap", "compose-row-limit", "compose-duration", "compose-display-mode", "compose-font-family", "compose-color-mode", "compose-overlap-protection", "compose-shadow", "compose-ng-words"]) {
+for (const id of ["compose-font-scale", "compose-font-size", "compose-speed", "compose-pixels-per-second", "compose-position", "compose-opacity", "compose-offset", "compose-outline", "compose-lane-gap", "compose-row-limit", "compose-duration", "compose-display-mode", "compose-font-family", "compose-color-mode", "compose-overlap-protection", "compose-shadow", "compose-ng-words", "compose-resolution", "compose-width", "compose-height", "compose-keep-aspect"]) {
   byId(id).addEventListener("input", scheduleComposePreviewRefresh);
   byId(id).addEventListener("change", scheduleComposePreviewRefresh);
 }
