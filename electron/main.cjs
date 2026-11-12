@@ -1074,9 +1074,30 @@ async function checkMonitoredUsers() {
               beginTime: followedProgram.beginAt
             }
           : result.live;
-        const displayName = await resolveMonitorUserName(target, followedProgram, result && result.latest);
-        const checkedAt = result ? result.checkedAt : new Date().toISOString();
         const latest = result ? result.latest : null;
+        const providerName = String(
+          (followedProgram && followedProgram.providerName) ||
+          (latest && latest.providerName) || ""
+        ).trim();
+        const savedName = String(target.name || "").trim();
+        const displayName = (providerName ||
+          (savedName && !/^ユーザー \d+$/.test(savedName)
+            ? savedName : "ユーザー " + target.userId)).slice(0, 80);
+        const checkedAt = result ? result.checkedAt : new Date().toISOString();
+
+        // A profile lookup is useful for labels/folder names, but must never delay
+        // the immediate video + comment capture triggered by an on-air result.
+        if (!providerName && (!savedName || /^ユーザー \d+$/.test(savedName))) {
+          void resolveMonitorUserName(target, followedProgram, latest).then((resolvedName) => {
+            const currentStatus = monitorTargetStatuses.get(target.userId);
+            if (!resolvedName || !currentStatus || currentStatus.checkedAt !== checkedAt) return;
+            currentStatus.name = resolvedName;
+            monitorTargetStatuses.set(target.userId, currentStatus);
+            send("monitor:target-status", currentStatus);
+          }).catch((error) => {
+            console.warn("Background broadcaster-name lookup failed:", target.userId, error);
+          });
+        }
         const source = followedProgram ? "フォロー中番組API" : "公開放送履歴API";
         const startedAt = live ? normalizeMonitorDate(live.beginTime || live.startedAt) : "";
         const endedAt = live ? normalizeMonitorDate(live.endTime || live.endedAt) : "";
