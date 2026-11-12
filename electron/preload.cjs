@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   getMonitorState: () => ipcRenderer.invoke("monitor:get-state"),
+  getOllamaStatus: () => ipcRenderer.invoke("ollama:get-status"),
   saveMonitorSettings: (settings) => ipcRenderer.invoke("monitor:save-settings", settings),
   notifyMonitorRecordingResult: (result) => ipcRenderer.invoke("monitor:notify-recording-result", result),
   addMonitorTarget: (target) => ipcRenderer.invoke("monitor:add-target", target),
