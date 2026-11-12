@@ -310,8 +310,10 @@ test("video deletion is limited to saved videos and requires a native confirmati
 
 test("package, UI and CI artifact versions are kept in sync", () => {
   assert.equal(packageConfig.version, "0.1.0-beta.24");
-  assert.ok(html.includes("0.1.0-beta.23"));
-  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-beta23-Windows"));
+  assert.ok(html.includes(packageConfig.version));
+  const betaNumber = packageConfig.version.match(/beta\\.(\\d+)$/)?.[1];
+  assert.ok(betaNumber, "package version must be a beta release");
+  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-beta" + betaNumber + "-Windows"));
 });
 
 test("past timeshift comments are fetched through NDGR previous and backward segments and aligned to archive start", () => {
