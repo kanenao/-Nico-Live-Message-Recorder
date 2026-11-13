@@ -77,7 +77,7 @@ async function generateArticleWithOllama(options = {}) {
     "放送ID: " + String(context.liveId || "不明"),
     "番組説明: " + String(context.description || "なし").slice(0, 1200),
     "コメント記録(JSON): " + JSON.stringify(comments),
-    audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
+    audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：" + "\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
     options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\n" + frameTimeline : ""
   ].join("\n\n");
   const data = await requestJson(baseUrl + "/api/chat", {

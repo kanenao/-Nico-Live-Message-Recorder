@@ -13,7 +13,7 @@ function buildWhisperArgs(modelPath, audioPath, outputPrefix) {
 }
 function normalizeTimestamp(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
-    const seconds = value > 100000 ? value / 1000 : value;
+    const seconds = value > 10000 ? value / 1000 : value;
     const whole = Math.max(0, Math.floor(seconds));
     return [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60].map(part => String(part).padStart(2, "0")).join(":");
   }
