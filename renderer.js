@@ -2230,8 +2230,6 @@ try {
 // Register primary capture controls even if event subscription fails. This prevents
 // one preload/event-listener error from aborting all subsequent button bindings.
 connectButton.addEventListener("click", connectLive);
- disconnectButton.addEventListener("click", disconnectLive);
- recordButton.addEventListener("click", startVideoRecording);
 disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 byId("record-mode").addEventListener("change", () => {

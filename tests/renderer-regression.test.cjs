@@ -864,16 +864,16 @@ test("AI broadcast article prompt follows the Kick editorial structure while pre
 
 
 test("primary recording controls remain bound when Electron event subscription fails", () => {
-  const eventSubscription = renderer.indexOf("try {\\n  if (!api || typeof api.onEvent !== \\"function\\")");
+  const eventSubscription = renderer.indexOf('try {\\n  if (!api || typeof api.onEvent !== "function"');
   const primaryBindings = renderer.indexOf('connectButton.addEventListener("click", connectLive)');
   assert.ok(eventSubscription >= 0, "event subscription is guarded");
   assert.ok(primaryBindings > eventSubscription, "primary controls are bound after guarded event subscription");
   assert.match(renderer, /Electron preload bridge のイベントAPIを利用できません/);
   assert.match(renderer, /event bridge initialization failed/);
-  assert.match(preload, /connectLive: \\(liveId\\) => ipcRenderer\\.invoke\\("live:connect"/);
-  assert.match(preload, /startCapture: \\(liveId, quality, options\\) => ipcRenderer\\.invoke\\("capture:start"/);
-  assert.match(preload, /startVideo: \\(liveId, quality, options\\) => ipcRenderer\\.invoke\\("video:start"/);
-  assert.match(main, /ipcMain\\.handle\\("live:connect"/);
-  assert.match(main, /ipcMain\\.handle\\("capture:start"/);
-  assert.match(main, /ipcMain\\.handle\\("video:start"/);
+  assert.ok(preload.includes('connectLive: (liveId) => ipcRenderer.invoke("live:connect", liveId)'));
+  assert.ok(preload.includes('startCapture: (liveId, quality, options) => ipcRenderer.invoke("capture:start", liveId, quality, options)'));
+  assert.ok(preload.includes('startVideo: (liveId, quality, options) => ipcRenderer.invoke("video:start", liveId, quality, options)'));
+  assert.ok(main.includes('ipcMain.handle("live:connect"'));
+  assert.ok(main.includes('ipcMain.handle("capture:start"'));
+  assert.ok(main.includes('ipcMain.handle("video:start"'));
 });
