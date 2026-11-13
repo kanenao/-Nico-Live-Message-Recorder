@@ -406,10 +406,13 @@ async function startVideoRecording(target = null) {
         commentError: archive.commentError || ""
       };
     } else {
-      result = await api.startCapture(liveId, quality, selectedTarget ? {
-        displayName: selectedTarget.name || "",
-        broadcasterId: selectedTarget.userId || ""
-      } : {});
+      result = await api.startCapture(liveId, quality, {
+        displayName: selectedTarget && selectedTarget.name || currentProgramMetadata.broadcasterName || "",
+        broadcasterId: selectedTarget && (selectedTarget.broadcasterId || selectedTarget.userId) || currentProgramMetadata.broadcasterId || "",
+        programTitle: selectedTarget && selectedTarget.title || currentProgramMetadata.programTitle || currentProgramMetadata.title || "",
+        description: selectedTarget && selectedTarget.description || currentProgramMetadata.description || "",
+        startedAt: selectedTarget && selectedTarget.startedAt || currentProgramMetadata.startedAt || ""
+      });
     }
     if (result.comment && result.comment.metadata) updateMetadata(result.comment.metadata);
     if (result.comment && result.comment.commentFile) {
@@ -1391,6 +1394,15 @@ function renderCaptureLibrary() {
     file.appendChild(createLibraryText("library-file-name", item.fileName));
     file.appendChild(createLibraryText("library-file-meta", item.liveId || item.extension));
     row.appendChild(file);
+    if (item.type === "video" && item.article) {
+      const articleSummary = document.createElement("div"); articleSummary.className = "library-article-summary";
+      const articleTitle = document.createElement("strong"); articleTitle.textContent = "放送記事：" + item.article.title; articleSummary.appendChild(articleTitle);
+      if (item.article.summary) { const summary = document.createElement("p"); summary.textContent = item.article.summary; articleSummary.appendChild(summary); }
+      if (item.article.topics && item.article.topics.length) { const topics = document.createElement("small"); topics.textContent = "話題：" + item.article.topics.join("・"); articleSummary.appendChild(topics); }
+      const openArticle = document.createElement("button"); openArticle.type = "button"; openArticle.className = "button button-outline button-small"; openArticle.textContent = "記事を見る";
+      openArticle.addEventListener("click", async () => { await loadBroadcastArticles(); byId("articles-search").value = item.liveId || item.article.title; setActivePage("articles"); renderBroadcastArticles(); });
+      articleSummary.appendChild(openArticle); file.appendChild(articleSummary);
+    }
     row.appendChild(createLibraryText("library-broadcaster", item.broadcaster));
     const type = createLibraryText("library-type", item.type === "video" ? "録画動画 · " + item.extension : "コメント · " + item.extension);
     type.classList.toggle("is-video", item.type === "video");
@@ -1475,7 +1487,8 @@ async function loadCaptureLibrary() {
     list.textContent = "録画ファイルを検索しています…";
   }
   try {
-    const result = await api.getCaptureLibrary();
+    const [result, articleResult] = await Promise.all([api.getCaptureLibrary(), api.getBroadcastArticles()]);
+    broadcastArticles = Array.isArray(articleResult.items) ? articleResult.items : [];
     captureLibraryItems = Array.isArray(result.items) ? result.items : [];
     byId("library-total").textContent = String(result.total || 0);
     byId("library-video-count").textContent = String(result.videoCount || 0);
@@ -1619,7 +1632,16 @@ function renderBroadcastArticles() {
       });
       actions.appendChild(video);
     }
-
+    const deleteArticle = document.createElement("button"); deleteArticle.type = "button"; deleteArticle.className = "button button-danger button-small"; deleteArticle.textContent = "記事を削除";
+    deleteArticle.title = "記事JSONだけを削除します。録画動画とコメントログは残ります。";
+    deleteArticle.addEventListener("click", async () => {
+      deleteArticle.disabled = true;
+      try { const result = await api.deleteBroadcastArticle(article.articlePath); if (result && result.cancelled) return;
+        showToast("放送記事を削除しました。録画動画とコメントログは残っています。"); await loadBroadcastArticles(); await loadCaptureLibrary();
+      } catch (error) { showToast(error.message || "放送記事を削除できませんでした。", true); }
+      finally { deleteArticle.disabled = false; }
+    });
+    actions.appendChild(deleteArticle);
     if (article.generatedAt) {
       const updated = document.createElement("p");
       updated.className = "broadcast-article-updated";
