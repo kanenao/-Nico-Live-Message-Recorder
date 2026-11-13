@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.42</span>
+        <span class="version" id="version">v0.1.0-beta.44</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -176,9 +176,9 @@
               <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
               <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択。番組情報だけでも記事を生成できます。</small></label>
               <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像内容をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。動画全体から最大12枚の代表フレームを分析します。</small></div></div>
-              <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDを入力して開始すると、録画せずにコメントと放送画面を取得します。映像は毎分取り込み、記事は約5分ごとに更新します。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
+              <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDを入力して開始すると、録画せずにコメントと放送画面を取得します。映像は30秒ごとに取得して最大12枚を時系列で保持し、qwen2.5vl:3bで映像とコメントを照合して約5分ごとに記事を更新します。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
             </div>
-            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。動画分析には画像対応モデル（例：qwen2.5vl）が必要です。音声の文字起こしは行いません。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
+            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。映像分析にはOllamaの qwen2.5vl:3b を推奨します（ollama pull qwen2.5vl:3b）。未導入時は画像分析を行わず、コメント中心の記事に切り替わります。音声の文字起こしは行いません。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
             <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>
           </section>
           <div class="library-summary article-summary">
@@ -597,7 +597,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.1.0-beta.42</strong>
+              <strong id="app-current-version">v0.1.0-beta.44</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -626,7 +626,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.42</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.44</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

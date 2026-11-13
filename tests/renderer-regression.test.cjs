@@ -324,7 +324,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.43");
+  assert.equal(packageConfig.version, "0.1.0-beta.44");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -544,7 +544,7 @@ test("registered broadcaster broadcast articles are stored locally and available
 test("articles are refreshed after recording and comment logs are closed", () => {
   assert.match(main, /await appendMarkerAndWait\("videoStop"/);
   assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath,\s*\{/);
-  assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath, articleContext\)/);
+  assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath, articleContext, \{/);
   assert.match(renderer, /channel === "articles:generated"/);
   assert.match(renderer, /if \(activePage === "articles"\) loadBroadcastArticles\(\)/);
 });
@@ -663,7 +663,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /async function stopLiveArticleSession\(/);
   assert.match(main, /capturePage\(\)/);
   assert.match(main, /5 \* 60 \* 1000/);
-  assert.match(main, /60 \* 1000/);
+  assert.match(main, /30 \* 1000/);
   assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
   assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
   assert.match(renderer, /api\.startLiveArticleSession\(/);
@@ -674,4 +674,8 @@ test("standalone article generation is available without monitor registration an
   assert.match(renderer, /api\.selectArticleVideo\(\)/);
   assert.match(html, /id="manual-article-video-select-button"/);
   assert.match(ollamaSource, /images: options\.images\.slice\(0, 12\)/);
+  assert.match(main, /item.name === "qwen2.5vl:3b"/);
+  assert.match(main, /capturedAt: new Date().toISOString()/);
+  assert.match(ollamaSource, /frameTimeline/);
+  assert.match(ollamaSource, /frame => typeof frame === "string" ? frame : String(frame && frame.image/);
 });

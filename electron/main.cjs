@@ -429,7 +429,14 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     const configuredModel = String(aiSettings.aiArticleModel || "qwen2.5:3b");
     const configuredInstalled = status.models.find(item => item.name === configuredModel || item.name.startsWith(configuredModel + ":"));
     const visionPattern = /qwen[23].*vl|llava|vision|gemma3|moondream|minicpm-v/i;
-    const visionModel = options.images && options.images.length ? status.models.find(item => visionPattern.test(item.name)) || (configuredInstalled && visionPattern.test(configuredInstalled.name) ? configuredInstalled : null) : null;
+    const visionModels = status.models.filter(item => visionPattern.test(item.name));
+    const visionModel = options.images && options.images.length
+      ? visionModels.find(item => item.name === "qwen2.5vl:3b")
+        || visionModels.find(item => item.name.startsWith("qwen2.5vl:3b-"))
+        || visionModels.find(item => item.name.toLowerCase().startsWith("qwen2.5vl"))
+        || visionModels[0]
+        || (configuredInstalled && visionPattern.test(configuredInstalled.name) ? configuredInstalled : null)
+      : null;
     if (options.images && options.images.length && !visionModel) throw new Error("動画の映像分析には画像対応モデルが必要です。Ollamaで「ollama pull qwen2.5vl:3b」を実行してください。");
     const model = options.images && options.images.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
     if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
@@ -1095,7 +1102,7 @@ async function captureLiveArticleFrame() {
     const resized = image.resize({ width: 640 });
     const encoded = resized.toJPEG(62).toString("base64");
     if (!encoded) return null;
-    liveArticleFrames.push(encoded);
+    liveArticleFrames.push({ image: encoded, capturedAt: new Date().toISOString() });
     if (liveArticleFrames.length > 12) liveArticleFrames.shift();
     send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length });
     return { frameCount: liveArticleFrames.length };
@@ -1128,7 +1135,7 @@ async function startLiveArticleSession(input = {}) {
     articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, 5 * 60 * 1000);
     if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
     if (liveArticleCaptureTimer) clearInterval(liveArticleCaptureTimer);
-    liveArticleCaptureTimer = setInterval(() => { void captureLiveArticleFrame(); }, 60 * 1000);
+    liveArticleCaptureTimer = setInterval(() => { void captureLiveArticleFrame(); }, 30 * 1000);
     if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
     await captureLiveArticleFrame();
     send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length });
