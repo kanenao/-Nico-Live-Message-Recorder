@@ -56,6 +56,23 @@ function runProcess(executable, args, timeoutMs, label) {
     child.once("close", code => code === 0 ? finish() : finish(new Error(label + "に失敗しました。" + (stderr.trim() ? " " + stderr.trim().slice(-1400) : "終了コード: " + code))));
   });
 }
+async function transcribeAudioFile(options = {}) {
+  const audioPath = path.resolve(String(options.audioPath || ""));
+  const whisperCliPath = path.resolve(String(options.whisperCliPath || ""));
+  const modelPath = path.resolve(String(options.modelPath || ""));
+  if (!fs.existsSync(audioPath) || !fs.statSync(audioPath).isFile()) throw new Error("音声セグメントが見つかりません。");
+  if (!whisperCliPath || !fs.existsSync(whisperCliPath)) throw new Error("whisper-cli実行ファイルが選択されていません。");
+  if (!modelPath || !fs.existsSync(modelPath)) throw new Error("Whisperの日本語モデルファイルが選択されていません。");
+  const outputPrefix = path.join(path.dirname(audioPath), path.basename(audioPath, path.extname(audioPath)) + ".transcript");
+  await runProcess(whisperCliPath, buildWhisperArgs(modelPath, audioPath, outputPrefix), 5 * 60 * 1000, "Whisper音声認識");
+  const jsonPath = outputPrefix + ".json";
+  if (!fs.existsSync(jsonPath)) throw new Error("Whisperの文字起こし結果(JSON)が見つかりません。");
+  try {
+    const result = parseWhisperJson(fs.readFileSync(jsonPath, "utf8"));
+    if (!result.text) throw new Error("音声から文字を認識できませんでした。");
+    return result;
+  } finally { await fs.promises.rm(jsonPath, { force: true }).catch(() => {}); }
+}
 async function transcribeVideoAudio(options = {}) {
   const videoPath = path.resolve(String(options.videoPath || ""));
   const ffmpegPath = String(options.ffmpegPath || "");
@@ -70,12 +87,7 @@ async function transcribeVideoAudio(options = {}) {
   const outputPrefix = path.join(directory, "transcript");
   try {
     await runProcess(ffmpegPath, buildFfmpegAudioArgs(videoPath, wavPath), 10 * 60 * 1000, "FFmpeg音声抽出");
-    await runProcess(whisperCliPath, buildWhisperArgs(modelPath, wavPath, outputPrefix), 45 * 60 * 1000, "Whisper音声認識");
-    const jsonPath = outputPrefix + ".json";
-    if (!fs.existsSync(jsonPath)) throw new Error("Whisperの文字起こし結果(JSON)が見つかりません。whisper-cliの対応バージョンを確認してください。");
-    const result = parseWhisperJson(fs.readFileSync(jsonPath, "utf8"));
-    if (!result.text) throw new Error("音声から文字を認識できませんでした。");
-    return result;
+    return await transcribeAudioFile({ audioPath: wavPath, whisperCliPath, modelPath });
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
-module.exports = { buildFfmpegAudioArgs, buildWhisperArgs, normalizeTimestamp, parseWhisperJson, transcribeVideoAudio };
+module.exports = { buildFfmpegAudioArgs, buildWhisperArgs, normalizeTimestamp, parseWhisperJson, transcribeAudioFile, transcribeVideoAudio };
