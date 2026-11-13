@@ -56,10 +56,16 @@ jobs:
         run: npm test
       - name: Build installer and portable ZIP
         run: npm run dist:win
+      - name: Read app version
+        id: app-version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$version" >> $env:GITHUB_OUTPUT
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: Nico-Live-Message-Recorder-beta44-Windows
+          name: Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows
           path: dist/*
           if-no-files-found: error
           retention-days: 14

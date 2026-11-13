@@ -337,7 +337,8 @@ test("package, UI and CI artifact versions are kept in sync", () => {
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
-  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-beta" + betaNumber + "-Windows"));
+  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows"));
+  assert.match(buildWorkflow, /Get-Content package\\.json -Raw \\| ConvertFrom-Json/);
 });
 
 test("past timeshift comments are fetched through NDGR previous and backward segments and aligned to archive start", () => {
@@ -548,6 +549,17 @@ test("registered broadcaster broadcast articles are stored locally and available
   assert.match(html, /data-page-target="articles"/);
   assert.match(html, /id="articles-panel"[^>]*data-page="articles"/);
   assert.match(html, /id="articles-search"/);
+});
+
+test("live article stop generates a final ended-state article before closing the comment log", () => {
+  const stopStart = main.indexOf("async function stopLiveArticleSession()");
+  const stopEnd = main.indexOf('ipcMain.handle("articles:live-stop"', stopStart);
+  const stopHandler = main.slice(stopStart, stopEnd);
+  assert.match(stopHandler, /while \(articleUpdateInProgress\)/);
+  assert.match(stopHandler, /refreshLiveBroadcastArticle\(\{ finalize: true \}\)/);
+  assert.ok(stopHandler.indexOf("refreshLiveBroadcastArticle") < stopHandler.indexOf("await closeCommentWriter"));
+  assert.match(main, /liveStatus: options\.finalize \? "ended" : "live"/);
+  assert.match(main, /state: options\.finalize \? "finalized" : "updated"/);
 });
 
 test("articles are refreshed after recording and comment logs are closed", () => {

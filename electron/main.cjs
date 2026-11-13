@@ -716,7 +716,7 @@ function appendMarker(type, fields = {}) {
   commentWriter.write(JSON.stringify(marker) + "\n");
 }
 
-async function refreshLiveBroadcastArticle() {
+async function refreshLiveBroadcastArticle(options = {}) {
   if (!commentWriter || !commentFilePath) return null;
   if (articleUpdateInProgress) {
     // Keep one refresh queued while Ollama is busy; metadata or comment bursts
@@ -733,7 +733,7 @@ async function refreshLiveBroadcastArticle() {
     broadcasterName: currentBroadcasterName,
     broadcasterId: currentBroadcasterId,
     liveUpdate: true,
-    liveStatus: "live"
+    liveStatus: options.finalize ? "ended" : "live"
   };
   articleUpdateInProgress = true;
   try {
@@ -745,12 +745,12 @@ async function refreshLiveBroadcastArticle() {
       send("articles:live-state", { state: "generating", liveId, frameCount: liveArticleFrames.length });
     }
     const article = await createAndSaveBroadcastArticle(filePath, context, {
-      force: liveArticleSessionActive,
-      images: liveArticleSessionActive ? liveArticleFrames.slice(-12) : []
+      force: liveArticleSessionActive || Boolean(options.finalize),
+      images: liveArticleSessionActive || options.finalize ? liveArticleFrames.slice(-12) : []
     });
-    if (liveArticleSessionActive) {
+    if (liveArticleSessionActive || options.finalize) {
       send("articles:live-state", {
-        state: "updated",
+        state: options.finalize ? "finalized" : "updated",
         liveId,
         frameCount: liveArticleFrames.length,
         generated: Boolean(article && article.status === "generated"),
@@ -1187,8 +1187,18 @@ async function startLiveArticleSession(input = {}) {
 
 async function stopLiveArticleSession() {
   if (!liveArticleSessionActive && !commentWriter) return { stopped: true, alreadyStopped: true };
+  if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
   if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
+  articleRefreshPending = false;
   if (provider) { try { provider.disconnect(); } catch (_) {} provider = null; }
+  // Let an in-flight Ollama request finish before creating the definitive article.
+  while (articleUpdateInProgress) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  articleRefreshPending = false;
+  if (commentWriter && commentFilePath) {
+    await refreshLiveBroadcastArticle({ finalize: true });
+  }
   await closeCommentWriter();
   const liveId = currentLiveId;
   liveArticleSessionActive = false;
