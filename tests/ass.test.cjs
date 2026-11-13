@@ -18,6 +18,19 @@ test("aligns ASS timestamps to videoStart and excludes earlier history", () => {
   assert.doesNotMatch(result.content, /old history/);
 });
 
+test("aligns timeshift comments to the original program start", () => {
+  const result = generateAssFromRecords([
+    { type: "sessionStart", sessionStartedAt: "2026-11-11T00:00:00.000Z" },
+    { type: "timeshiftOrigin", originAt: "2026-11-11T00:00:00.000Z" },
+    { type: "videoStart", videoStartedAt: "2026-11-11T00:10:00.000Z", videoOriginAt: "2026-11-11T00:00:00.000Z" },
+    { type: "comment", timestamp: "2026-11-11T00:00:12.340Z", content: "タイムシフトコメント" }
+  ]);
+
+  assert.equal(result.commentCount, 1);
+  assert.match(result.content, /Dialogue: 0,0:00:12\.34,/);
+  assert.match(result.content, /タイムシフトコメント/);
+});
+
 test("converts top, bottom, color and size commands", () => {
   const result = generateAssFromRecords([
     { type: "videoStart", videoStartedAt: "2026-11-11T00:00:00.000Z" },
