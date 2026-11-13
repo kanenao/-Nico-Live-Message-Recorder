@@ -485,7 +485,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   const records = parseCommentLog(commentsText);
   if (records.length > 20000) throw new Error("コメントログが多すぎます。20,000行以下に分割してください。");
   const context = {
-    broadcasterName: String(input.broadcasterName || "").trim().slice(0, 80) || "未登録配信者",
+    broadcasterName: String(input.broadcasterName || "").trim().slice(0, 80),
     broadcasterId: String(input.broadcasterId || "").trim().slice(0, 40),
     liveId: String(input.liveId || "").trim().slice(0, 32),
     programTitle: String(input.programTitle || "").trim().slice(0, 300),
@@ -497,6 +497,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   }
   const article = generateBroadcastArticle(records, context);
   if (article.status !== "generated") return article;
+  if (!context.broadcasterName && article.broadcasterName === "登録配信者") article.broadcasterName = "未登録配信者";
   await enhanceBroadcastArticleWithOllama(article, records, context, { force: true });
   article.articleSource = "manual";
   article.commentFileName = String(input.fileName || "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 160);
