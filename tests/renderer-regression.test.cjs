@@ -837,3 +837,25 @@ test("article export is exposed through a save dialog and preload bridge", () =>
   assert.match(preload, /exportBroadcastArticleHtml:.*ipcRenderer\.invoke\("articles:export-html"/);
   assert.match(renderer, /api\.exportBroadcastArticleHtml\(article\)/);
 });
+
+
+test("live article capture uses a hidden window and does not open the visible watch preview", () => {
+  assert.match(main, /async function openHiddenLiveArticleCapture/);
+  assert.match(main, /show:\s*false/);
+  assert.match(main, /backgroundThrottling:\s*false/);
+  assert.match(main, /captureLiveArticleFrame[\s\S]*liveArticleCaptureWindow\.webContents\.capturePage/);
+  assert.match(main, /await openHiddenLiveArticleCapture\(liveId\)/);
+  assert.doesNotMatch(main.match(/async function startLiveArticleSession[\s\S]*?\n}\n/)?.[0] || "", /openLivePreview/);
+  assert.match(main, /function safeLiveId[\s\S]*allowedHosts/);
+  assert.match(html, /manual-article-live-id[^>]*maxlength="2048"/);
+  assert.match(html, /視聴ページは画面に表示せず/);
+});
+
+test("AI broadcast article prompt follows the Kick editorial structure while preserving source checks", () => {
+  const ollama = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
+  assert.match(ollama, /Kick-Live-Message-RecorderのAI記事のように/);
+  assert.match(ollama, /summaryは結論と重要点を含むリード文/);
+  assert.match(ollama, /highlights/);
+  assert.match(ollama, /audienceReaction/);
+  assert.match(ollama, /映像・音声・コメントの情報源を混同しない/);
+});
