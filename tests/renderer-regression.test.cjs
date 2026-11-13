@@ -745,3 +745,14 @@ test("AI article cards render a newspaper-style lead, highlights, timeline, and 
   assert.match(ollamaSource, /audienceReaction/);
   assert.match(main, /capturedAt: timestamp/);
 });
+
+
+test("live broadcast article session integrates Whisper.cpp audio capture and final transcription", () => {
+  assert.match(main, /startLiveArticleAudioCapture\(liveId\)/);
+  assert.match(main, /stopLiveArticleAudioCapture\(currentLiveId\)/);
+  assert.match(main, /audioTranscript: liveArticleAudioTranscript/);
+  assert.match(main, /audio-transcribing/);
+  assert.match(renderer, /audio-capturing/);
+  assert.match(renderer, /Whisper\.cpp/);
+  assert.match(html, /音声解析用データは一時保存し、終了後に削除/);
+});

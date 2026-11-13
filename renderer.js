@@ -2046,6 +2046,16 @@ api.onEvent(({ channel, payload }) => {
         : "生放送中：記事の材料を取得中です。コメント・番組情報が揃うと記事を生成します。";
     } else if (payload.state === "capture-error") {
       status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
+    } else if (payload.state === "audio-capturing") {
+      status.textContent = "生放送中：Whisper.cpp用の音声を一時取得しています。停止後に日本語文字起こしを行います。";
+    } else if (payload.state === "audio-transcribing") {
+      status.textContent = "生放送の音声をWhisper.cppで日本語文字起こししています。完了後に記事へ反映します…";
+    } else if (payload.state === "audio-complete") {
+      status.textContent = "Whisper.cppの音声文字起こしが完了しました（" + (Number(payload.segmentCount) || 0) + "区間）。最終記事へ反映します。";
+    } else if (payload.state === "audio-disabled") {
+      status.textContent = payload.message || "Whisper.cpp未設定のため、生放送の音声解析はスキップします。映像とコメントの取得は継続します。";
+    } else if (payload.state === "audio-error") {
+      status.textContent = "生放送の音声解析に失敗しました：" + (payload.message || "不明なエラー") + "。映像とコメントの記事生成は継続します。";
     } else if (payload.state === "error") {
       status.textContent = "記事更新エラー：" + (payload.message || "不明なエラー") + "。次回更新時に再試行します。";
     }
