@@ -3045,6 +3045,13 @@ async function shutdownGracefully() {
     console.error("Streamlink shutdown failed:", error);
   }
 
+  // Stop and transcribe the temporary live audio stream before finalizing the article.
+  try {
+    await stopLiveArticleAudioCapture(currentLiveId);
+  } catch (error) {
+    console.error("Live article audio shutdown failed:", error);
+  }
+
   if (provider) {
     try { await provider.disconnect(); } catch (error) {
       console.error("Comment provider shutdown failed:", error);
