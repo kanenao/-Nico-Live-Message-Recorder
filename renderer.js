@@ -1512,13 +1512,20 @@ function renderBroadcastArticles() {
 }
 
 let broadcastArticles = [];
+let selectedManualArticleVideoPath = "";
+
+async function selectManualArticleVideo() {
+  const status = byId("manual-article-video-name");
+  try { const result = await api.selectArticleVideo(); if (result?.canceled) return; selectedManualArticleVideoPath = result.path || ""; status.textContent = result.name || "動画を選択しました"; }
+  catch (error) { status.textContent = error.message || "動画を選択できませんでした。"; showToast(status.textContent, true); }
+}
 
 async function generateManualBroadcastArticle() {
   const button = byId("manual-article-generate-button");
   const status = byId("manual-article-status");
   const file = byId("manual-article-file").files?.[0];
   button.disabled = true;
-  status.textContent = "記事を生成しています…";
+  status.textContent = selectedManualArticleVideoPath ? "動画の映像フレームを抽出してAI分析しています…" : "記事を生成しています…";
   try {
     const result = await api.generateManualBroadcastArticle({
       broadcasterName: byId("manual-article-broadcaster").value,
@@ -1526,7 +1533,8 @@ async function generateManualBroadcastArticle() {
       programTitle: byId("manual-article-title").value,
       description: byId("manual-article-description").value,
       commentsText: file ? await file.text() : "",
-      fileName: file ? file.name : ""
+      fileName: file ? file.name : "",
+      videoPath: selectedManualArticleVideoPath
     });
     if (!result || result.status !== "generated") {
       status.textContent = result?.reason || "記事を生成できませんでした。";
@@ -1931,6 +1939,7 @@ byId("library-search").addEventListener("input", renderCaptureLibrary);
 byId("library-filter").addEventListener("change", renderCaptureLibrary);
 byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
 byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
+byId("manual-article-video-select-button").addEventListener("click", selectManualArticleVideo);
 byId("manual-article-file").addEventListener("change", () => {
   const file = byId("manual-article-file").files?.[0];
   byId("manual-article-file-name").textContent = file ? file.name + "（" + formatLibraryBytes(file.size) + "）" : "ファイル未選択。番組情報だけでも記事を生成できます。";

@@ -16,6 +16,7 @@ const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", 
 const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const composeExport = require(path.join(root, "electron", "composition-export.cjs"));
+const ollamaSource = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
@@ -323,7 +324,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.41");
+  assert.equal(packageConfig.version, "0.1.0-beta.42");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -644,7 +645,7 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
   assert.match(renderer, /red2: "#cc0033"/);
 });
 
-test("standalone article generation is available without monitor registration and accepts optional JSONL comments", () => {
+test("standalone article generation is available without monitor registration and accepts optional JSONL comments and video frames", () => {
   assert.match(main, /function generateStandaloneBroadcastArticle\(/);
   assert.match(main, /async function enhanceBroadcastArticleWithOllama\(/);
   assert.match(main, /ipcMain\.handle\("articles:generate-manual"/);
@@ -655,4 +656,11 @@ test("standalone article generation is available without monitor registration an
   assert.match(html, /id="manual-article-file"/);
   assert.match(main, /force: true/);
   assert.match(main, /articles", "_manual"/);
+  assert.match(main, /async function extractArticleVideoFrames\(/);
+  assert.match(main, /fps=1\/60,scale=640:-2/);
+  assert.match(main, /articles:select-video/);
+  assert.match(preload, /selectArticleVideo:.*ipcRenderer\.invoke\("articles:select-video"/);
+  assert.match(renderer, /api\.selectArticleVideo\(\)/);
+  assert.match(html, /id="manual-article-video-select-button"/);
+  assert.match(ollamaSource, /images: options\.images\.slice\(0, 12\)/);
 });

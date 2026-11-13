@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.41</span>
+        <span class="version" id="version">v0.1.0-beta.42</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -73,7 +73,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.41</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.42</span></div>
         </div>
       </aside>
 
@@ -175,8 +175,9 @@
               <label class="article-manual-wide">番組タイトル<input id="manual-article-title" type="text" maxlength="300" placeholder="番組・配信のタイトル"></label>
               <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
               <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択。番組情報だけでも記事を生成できます。</small></label>
+              <div class="article-manual-wide article-video-picker"><span>動画ファイル（任意・映像内容をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームを分析します。</small></div></div>
             </div>
-            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。未接続の場合は標準生成へ切り替えます。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
+            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。動画分析には画像対応モデル（例：qwen2.5vl）が必要です。音声の文字起こしは行いません。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
             <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>
           </section>
           <div class="library-summary article-summary">
@@ -595,7 +596,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.1.0-beta.41</strong>
+              <strong id="app-current-version">v0.1.0-beta.42</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -624,7 +625,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.41</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.42</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

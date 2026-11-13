@@ -31,6 +31,7 @@ const {
 } = require("./streamlink-update.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 
 // This is a local desktop media-processing app; allow the selected local video to play for composition.
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
@@ -421,11 +422,14 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
   try {
     const status = await getOllamaStatus({ baseUrl: aiSettings.baseUrl });
     if (!status.connected) throw new Error(status.message || "Ollamaに接続できません。");
-    const model = String(aiSettings.aiArticleModel || "qwen2.5:3b");
-    if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) {
-      throw new Error("指定モデルが未インストールです: " + model);
-    }
-    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext });
+    const configuredModel = String(aiSettings.aiArticleModel || "qwen2.5:3b");
+    const configuredInstalled = status.models.find(item => item.name === configuredModel || item.name.startsWith(configuredModel + ":"));
+    const visionPattern = /qwen[23].*vl|llava|vision|gemma3|moondream|minicpm-v/i;
+    const visionModel = options.images && options.images.length ? status.models.find(item => visionPattern.test(item.name)) || (configuredInstalled && visionPattern.test(configuredInstalled.name) ? configuredInstalled : null) : null;
+    if (options.images && options.images.length && !visionModel) throw new Error("動画の映像分析には画像対応モデルが必要です。Ollamaで「ollama pull qwen2.5vl:3b」を実行してください。");
+    const model = options.images && options.images.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
+    if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
+    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: options.images || [] });
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
@@ -479,26 +483,62 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
   return article;
 }
 
+async function extractArticleVideoFrames(videoPath) {
+  const resolvedPath = path.resolve(String(videoPath || ""));
+  if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) throw new Error("選択した動画ファイルが見つかりません。");
+  if (![".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts", ".avi"].includes(path.extname(resolvedPath).toLowerCase())) throw new Error("対応していない動画形式です。MP4 / MKV / WebM / MOV / TS / AVIを選択してください。");
+  if (fs.statSync(resolvedPath).size > 4 * 1024 * 1024 * 1024) throw new Error("記事生成に使う動画は4GB以下にしてください。");
+  const ffmpegPath = getVideoToolStatus().ffmpegPath;
+  if (!ffmpegPath) throw new Error("映像分析にはFFmpegが必要です。アプリ同梱FFmpegまたは設定済みFFmpegを確認してください。");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "nico-article-frames-"));
+  const outputPattern = path.join(directory, "frame-%02d.jpg");
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-y", "-i", resolvedPath, "-vf", "fps=1/60,scale=640:-2", "-frames:v", "12", "-q:v", "6", outputPattern], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = "";
+      const timeout = setTimeout(() => { child.kill(); reject(new Error("動画フレームの抽出がタイムアウトしました。短い動画で再試行してください。")); }, 180000);
+      child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-5000); });
+      child.once("error", error => { clearTimeout(timeout); reject(error); });
+      child.once("close", code => { clearTimeout(timeout); if (code === 0) resolve(); else reject(new Error("動画から映像フレームを抽出できませんでした。" + (stderr ? " " + stderr.trim().slice(-1200) : ""))); });
+    });
+    const names = fs.readdirSync(directory).filter(name => /^frame-\d+\.jpg$/i.test(name)).sort();
+    if (!names.length) throw new Error("動画から分析できる映像フレームが見つかりませんでした。");
+    return { directory, frames: names.map(name => ({ image: fs.readFileSync(path.join(directory, name)).toString("base64") })) };
+  } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
+}
+
 async function generateStandaloneBroadcastArticle(input = {}) {
   const commentsText = String(input.commentsText || "");
   if (commentsText.length > 8 * 1024 * 1024) throw new Error("コメントログは8MB以下のJSONLファイルを指定してください。");
   const records = parseCommentLog(commentsText);
   if (records.length > 20000) throw new Error("コメントログが多すぎます。20,000行以下に分割してください。");
+  const videoPath = String(input.videoPath || "").trim();
+  const videoTitle = videoPath ? path.basename(videoPath, path.extname(videoPath)).slice(0, 300) : "";
   const context = {
     broadcasterName: String(input.broadcasterName || "").trim().slice(0, 80),
     broadcasterId: String(input.broadcasterId || "").trim().slice(0, 40),
     liveId: String(input.liveId || "").trim().slice(0, 32),
-    programTitle: String(input.programTitle || "").trim().slice(0, 300),
+    programTitle: String(input.programTitle || videoTitle).trim().slice(0, 300),
     description: String(input.description || "").trim().slice(0, 3000),
     generatedAt: new Date().toISOString()
   };
-  if (!records.length && !context.programTitle && !context.description) {
+  if (!records.length && !context.programTitle && !context.description && !videoPath) {
     throw new Error("番組タイトル・番組説明・コメントログのいずれかを入力してください。");
   }
   const article = generateBroadcastArticle(records, context);
   if (article.status !== "generated") return article;
   if (!context.broadcasterName && article.broadcasterName === "登録配信者") article.broadcasterName = "未登録配信者";
-  await enhanceBroadcastArticleWithOllama(article, records, context, { force: true });
+  let extracted = null;
+  try {
+    if (videoPath) extracted = await extractArticleVideoFrames(videoPath);
+    await enhanceBroadcastArticleWithOllama(article, records, context, { force: true, images: extracted ? extracted.frames.map(frame => frame.image) : [] });
+    if (videoPath) {
+      article.videoFile = path.resolve(videoPath);
+      article.videoFrameCount = extracted ? extracted.frames.length : 0;
+      article.videoAnalysis = article.aiProvider ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
+      article.note = article.aiProvider ? "自動生成記事です。番組情報・保存コメント・動画から抽出した代表フレームを整理しています。映像の全場面や音声を完全に解析・文字起こししたものではありません。" : "動画から代表フレームを抽出しましたが、画像対応AIモデルによる映像分析は完了していません。音声の文字起こしや全フレーム解析にも対応していません。";
+    }
+  } finally { if (extracted) fs.rmSync(extracted.directory, { recursive: true, force: true }); }
   article.articleSource = "manual";
   article.commentFileName = String(input.fileName || "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 160);
   const directory = path.join(dataRoot(), "articles", "_manual");
@@ -2475,6 +2515,11 @@ ipcMain.handle("library:list", () => listCaptureLibrary());
 ipcMain.handle("articles:list", () => listBroadcastArticles());
 ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
 ipcMain.handle("articles:generate-manual", (_event, input) => generateStandaloneBroadcastArticle(input));
+ipcMain.handle("articles:select-video", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: "記事生成に使う動画を選択", properties: ["openFile"], filters: [{ name: "動画ファイル", extensions: ["mp4", "mkv", "webm", "mov", "m4v", "ts", "avi"] }] });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  return { canceled: false, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
+});
 ipcMain.handle("library:open-item", async (_event, value) => {
   const target = resolveLibraryItemPath(value);
   const error = await shell.openPath(target);
