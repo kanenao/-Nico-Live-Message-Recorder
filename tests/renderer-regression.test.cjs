@@ -864,7 +864,7 @@ test("AI broadcast article prompt follows the Kick editorial structure while pre
 
 
 test("primary recording controls remain bound when Electron event subscription fails", () => {
-  const eventSubscription = renderer.indexOf('try {\\n  if (!api || typeof api.onEvent !== "function"');
+  const eventSubscription = renderer.indexOf('if (!api || typeof api.onEvent !== "function")');
   const primaryBindings = renderer.indexOf('connectButton.addEventListener("click", connectLive)');
   assert.ok(eventSubscription >= 0, "event subscription is guarded");
   assert.ok(primaryBindings > eventSubscription, "primary controls are bound after guarded event subscription");
