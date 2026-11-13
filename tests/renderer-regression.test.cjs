@@ -73,8 +73,9 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.match(renderer, /const monitorAutoQueue = \[\]/);
   assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
-  assert.match(renderer, /monitorAutoProcessing = true;\s*recordButton\.disabled = true/);
-  assert.match(renderer, /if \(!recordStartedAt && videoCaptureState !== "recording"\) \{[\s\S]*?recordButton\.disabled = false;/);
+  assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
+  assert.match(renderer, /finally \{\s*recordStartInProgress = false;
+  assert.match(renderer, /processMonitorAutoQueue\(\);/);\s*recordButton\.disabled = videoCaptureState === "recording" \|\| videoCaptureState === "stopping" \|\| monitorAutoProcessing;/);
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
 
@@ -301,10 +302,10 @@ test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time",
 test("LIVE dashboard cards can start synchronized recording for their selected broadcaster", () => {
   assert.match(renderer, /async function startVideoRecording\(target = null\)/);
   assert.match(renderer, /startVideoRecording\(\{\s*liveId: status\.liveId/);
-  assert.match(renderer, /api\.startCapture\(liveId, quality, selectedTarget \? \{/);
-  assert.match(renderer, /displayName: selectedTarget\.name/);
-  assert.match(renderer, /broadcasterId: selectedTarget\.userId/);
-  assert.match(renderer, /recordButton\.disabled \|\| recordStartedAt \|\| monitorAutoProcessing/);
+  assert.match(renderer, /api\.startCapture\(liveId, quality, \{/);
+  assert.match(renderer, /displayName: selectedTarget && selectedTarget\.name \|\| currentProgramMetadata\.broadcasterName/);
+  assert.match(renderer, /broadcasterId: selectedTarget && \(selectedTarget\.broadcasterId \|\| selectedTarget\.userId\)/);
+  assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
   assert.match(renderer, /live-broadcast-record-button/);
   assert.match(css, /\.live-broadcast-actions/);
   assert.match(html, /LIVE一覧から録画も直接開始できます/);
