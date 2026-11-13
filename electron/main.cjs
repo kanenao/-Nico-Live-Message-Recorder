@@ -1225,6 +1225,7 @@ async function openHiddenLiveArticleCapture(value) {
     width: 960,
     height: 540,
     show: false,
+    offscreen: true,
     frame: false,
     backgroundColor: "#080d18",
     autoHideMenuBar: true,
@@ -3340,6 +3341,7 @@ app.whenReady().then(async () => {
 
 async function shutdownGracefully() {
   stopMonitor();
+  closeHiddenLiveArticleCapture();
   if (livePreviewWindow && !livePreviewWindow.isDestroyed()) {
     livePreviewWindow.close();
     livePreviewWindow = null;
