@@ -720,6 +720,13 @@ test("manual article generation can combine Whisper audio transcript, video fram
   assert.match(main, /articles:select-whisper-model/);
   assert.match(preload, /selectArticleWhisperCli/);
   assert.match(preload, /selectArticleWhisperModel/);
+  assert.match(preload, /downloadArticleWhisper/);
+  assert.match(main, /installWhisperAutomatically/);
+  assert.match(main, /runtimeSha256/);
+  assert.match(main, /modelSha1/);
+  assert.match(main, /whisper:download-progress/);
+  assert.match(html, /manual-article-whisper-auto-button/);
+  assert.match(renderer, /downloadArticleWhisper/);
   assert.match(renderer, /selectArticleWhisperCli/);
   assert.match(renderer, /selectArticleWhisperModel/);
   assert.match(html, /manual-article-whisper-cli-button/);

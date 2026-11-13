@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   generateManualBroadcastArticle: (input) => ipcRenderer.invoke("articles:generate-manual", input),
   selectArticleVideo: () => ipcRenderer.invoke("articles:select-video"),
   getArticleWhisperSettings: () => ipcRenderer.invoke("articles:get-whisper-settings"),
+  downloadArticleWhisper: () => ipcRenderer.invoke("articles:download-whisper"),
   selectArticleWhisperCli: () => ipcRenderer.invoke("articles:select-whisper-cli"),
   selectArticleWhisperModel: () => ipcRenderer.invoke("articles:select-whisper-model"),
   startLiveArticleSession: (input) => ipcRenderer.invoke("articles:live-start", input),

@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker, Notification } = require("electron");
 const { spawn, execFileSync } = require("node:child_process");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, createHash } = require("node:crypto");
 const {
   findStreamlinkExecutable,
   findFfmpegExecutable,
@@ -1415,7 +1415,72 @@ function writeAppSettings(patch) {
   return next;
 }
 
-
+const WHISPER_AUTO_DOWNLOAD = Object.freeze({
+  runtimeUrl: "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip",
+  runtimeSha256: "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb",
+  modelUrl: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+  modelSha1: "465707469ff3a37a2b9b8d8f89f2f99de7299dac"
+});
+async function downloadWhisperFile(url, destination, expectedHash, algorithm, stage) {
+  const partialPath = destination + ".download";
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  try { fs.rmSync(partialPath, { force: true }); } catch (_) {}
+  const response = await fetch(url, { redirect: "follow", headers: { "User-Agent": "Nico-Live-Message-Recorder" } });
+  if (!response.ok || !response.body) throw new Error("ダウンロードに失敗しました（HTTP " + response.status + "）。");
+  const total = Number(response.headers.get("content-length")) || 0;
+  const hash = createHash(algorithm);
+  const fd = fs.openSync(partialPath, "w");
+  let received = 0;
+  try {
+    for await (const chunk of response.body) {
+      const buffer = Buffer.from(chunk);
+      fs.writeSync(fd, buffer); hash.update(buffer); received += buffer.length;
+      send("whisper:download-progress", { stage, received, total, percent: total ? Math.min(99, Math.floor(received / total * 100)) : 0 });
+    }
+  } finally { fs.closeSync(fd); }
+  if (hash.digest("hex").toLowerCase() !== expectedHash.toLowerCase()) {
+    fs.rmSync(partialPath, { force: true });
+    throw new Error("ダウンロードしたファイルのハッシュ検証に失敗しました。安全のためセットアップを中止しました。");
+  }
+  fs.renameSync(partialPath, destination);
+}
+function findWhisperCli(directory) {
+  if (!fs.existsSync(directory)) return "";
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const target = path.join(directory, entry.name);
+    if (entry.isFile() && entry.name.toLowerCase() === "whisper-cli.exe") return target;
+    if (entry.isDirectory()) { const found = findWhisperCli(target); if (found) return found; }
+  }
+  return "";
+}
+async function installWhisperAutomatically() {
+  if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Whisper.cppの自動セットアップはWindows x64版に対応しています。");
+  const root = path.join(app.getPath("userData"), "whisper");
+  const runtimeDirectory = path.join(root, "runtime");
+  const modelDirectory = path.join(root, "models");
+  let cliPath = findWhisperCli(runtimeDirectory);
+  const modelPath = path.join(modelDirectory, "ggml-base.bin");
+  if (!cliPath) {
+    send("whisper:download-progress", { stage: "runtime", received: 0, total: 0, percent: 0 });
+    const archivePath = path.join(root, "whisper-bin-x64.zip");
+    await downloadWhisperFile(WHISPER_AUTO_DOWNLOAD.runtimeUrl, archivePath, WHISPER_AUTO_DOWNLOAD.runtimeSha256, "sha256", "runtime");
+    fs.mkdirSync(runtimeDirectory, { recursive: true });
+    const quote = value => "'" + String(value).replace(/'/g, "''") + "'";
+    execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+      "Expand-Archive -LiteralPath " + quote(archivePath) + " -DestinationPath " + quote(runtimeDirectory) + " -Force"],
+      { windowsHide: true, timeout: 120000 });
+    fs.rmSync(archivePath, { force: true });
+    cliPath = findWhisperCli(runtimeDirectory);
+  }
+  if (!cliPath) throw new Error("展開したWhisper.cppから whisper-cli.exe が見つかりませんでした。");
+  if (!fs.existsSync(modelPath) || fs.statSync(modelPath).size < 100 * 1024 * 1024) {
+    send("whisper:download-progress", { stage: "model", received: 0, total: 0, percent: 0 });
+    await downloadWhisperFile(WHISPER_AUTO_DOWNLOAD.modelUrl, modelPath, WHISPER_AUTO_DOWNLOAD.modelSha1, "sha1", "model");
+  }
+  writeAppSettings({ articleWhisperCliPath: cliPath, articleWhisperModelPath: modelPath, articleWhisperManaged: true });
+  send("whisper:download-progress", { stage: "complete", received: 0, total: 0, percent: 100 });
+  return { cliPath, modelPath, cliName: path.basename(cliPath), modelName: path.basename(modelPath) };
+}
 const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   intervalSeconds: 10,
   autoRecord: true,
@@ -2857,8 +2922,9 @@ ipcMain.handle("articles:select-video", async () => {
 });
 ipcMain.handle("articles:get-whisper-settings", () => {
   const settings = readAppSettings();
-  return { cliPath: settings.articleWhisperCliPath || "", modelPath: settings.articleWhisperModelPath || "" };
+  return { cliPath: settings.articleWhisperCliPath || "", modelPath: settings.articleWhisperModelPath || "", managed: Boolean(settings.articleWhisperManaged) };
 });
+ipcMain.handle("articles:download-whisper", async () => installWhisperAutomatically());
 ipcMain.handle("articles:select-whisper-cli", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: "whisper-cli実行ファイルを選択", properties: ["openFile"], filters: [{ name: "実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }] });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };

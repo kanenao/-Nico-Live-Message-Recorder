@@ -1690,9 +1690,25 @@ async function loadArticleWhisperSettings() {
     const settings = await api.getArticleWhisperSettings();
     if (settings.cliPath) byId("manual-article-whisper-cli-name").textContent = settings.cliPath;
     if (settings.modelPath) byId("manual-article-whisper-model-name").textContent = settings.modelPath;
+    if (settings.managed) byId("manual-article-whisper-download-status").textContent = "自動セットアップ済み。録画動画・生放送の記事生成で利用できます。";
   } catch (_) {}
 }
 void loadArticleWhisperSettings();
+async function downloadArticleWhisper() {
+  const button = byId("manual-article-whisper-auto-button");
+  const status = byId("manual-article-whisper-download-status");
+  button.disabled = true; status.textContent = "Whisper.cppの準備を開始しています…";
+  try {
+    const result = await api.downloadArticleWhisper();
+    byId("manual-article-whisper-cli-name").textContent = result.cliPath;
+    byId("manual-article-whisper-model-name").textContent = result.modelPath;
+    status.textContent = "自動セットアップ完了。音声文字起こしを利用できます。";
+    showToast("Whisper.cppと日本語モデルを設定しました。");
+  } catch (error) {
+    status.textContent = error.message || "Whisper.cppの自動セットアップに失敗しました。";
+    showToast(status.textContent, true);
+  } finally { button.disabled = false; }
+}
 
 async function selectArticleWhisperCli() {
   try { const result = await api.selectArticleWhisperCli(); if (result && !result.canceled) { byId("manual-article-whisper-cli-name").textContent = result.name; showToast("Whisper実行ファイルを設定しました。"); } }
@@ -2025,6 +2041,16 @@ api.onEvent(({ channel, payload }) => {
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
     addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
   }
+  if (channel === "whisper:download-progress" && payload) {
+    const status = byId("manual-article-whisper-download-status");
+    const stage = payload.stage === "runtime" ? "Whisper.cpp実行ファイル" : payload.stage === "model" ? "日本語モデル（ggml-base.bin）" : "セットアップ";
+    if (payload.stage === "complete") status.textContent = "ダウンロード・検証・配置が完了しました。";
+    else {
+      const received = (Number(payload.received) || 0) / 1024 / 1024;
+      const total = (Number(payload.total) || 0) / 1024 / 1024;
+      status.textContent = stage + "をダウンロード中… " + received.toFixed(1) + " MB" + (total ? " / " + total.toFixed(1) + " MB（" + (Number(payload.percent) || 0) + "%）" : "");
+    }
+  }
   if (channel === "update:state") renderUpdateState(payload);
   if (channel === "streamlink:update-state") renderStreamlinkUpdateState(payload);
   if (channel === "monitor:state") renderMonitorState(payload);
@@ -2153,6 +2179,7 @@ byId("library-filter").addEventListener("change", renderCaptureLibrary);
 byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
 byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
 byId("manual-article-video-select-button").addEventListener("click", selectManualArticleVideo);
+byId("manual-article-whisper-auto-button").addEventListener("click", downloadArticleWhisper);
 byId("manual-article-whisper-cli-button").addEventListener("click", selectArticleWhisperCli);
 byId("manual-article-whisper-model-button").addEventListener("click", selectArticleWhisperModel);
 byId("manual-article-live-start-button").addEventListener("click", startLiveArticleSession);

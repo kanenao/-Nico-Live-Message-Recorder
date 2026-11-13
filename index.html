@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.53</span>
+        <span class="version" id="version">v0.1.0-beta.54</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -178,9 +178,10 @@
               <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像と音声をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームと音声を分析します。</small></div></div>
               <div class="article-manual-wide article-audio-tools">
                 <strong>無料の音声文字起こし（Whisper.cpp）</strong>
-                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-cli-button" type="button">whisper-cli.exeを選択</button><small id="manual-article-whisper-cli-name">未設定</small></div>
-                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-model-button" type="button">日本語モデルを選択</button><small id="manual-article-whisper-model-name">未設定（ggml-base.bin推奨）</small></div>
-                <p class="hint">Whisper.cppと日本語モデルは別途用意してください。音声はPC内で文字起こしし、Ollamaへ渡します。未設定でも映像・コメントの記事生成は利用できます。</p>
+                <div class="article-audio-tool-row"><button class="button button-primary button-small" id="manual-article-whisper-auto-button" type="button">Whisper.cppと日本語モデルを自動ダウンロード</button><small id="manual-article-whisper-download-status" role="status">初回のみ約160MBをダウンロードします。</small></div>
+                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-cli-button" type="button">whisper-cli.exeを手動選択</button><small id="manual-article-whisper-cli-name">未設定</small></div>
+                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-model-button" type="button">日本語モデルを手動選択</button><small id="manual-article-whisper-model-name">未設定（ggml-base.bin推奨）</small></div>
+                <p class="hint">自動セットアップは公式whisper.cppのWindows x64実行ファイルとHugging Faceの日本語対応baseモデルを取得し、SHA-256／SHA-1を検証してPC内に保存します。音声はPC内で文字起こしし、Ollamaへ渡します。未設定でも映像・コメントの記事生成は利用できます。</p>
               </div>
               <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDを入力して開始すると、通常の録画ファイルを残さずコメントと放送画面を取得します。Whisper.cppを設定すると音声も一時取得し、停止時に日本語文字起こしして最終記事へ反映します。音声解析用データは一時保存し、終了後に削除します（Whisper.cpp用の一時TSデータには映像・音声が含まれます）。映像は30秒ごとに最大12枚を時系列で保持し、qwen2.5vl:3bで映像・音声・コメントを照合します。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
             </div>
