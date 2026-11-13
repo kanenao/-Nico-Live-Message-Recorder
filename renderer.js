@@ -1570,7 +1570,7 @@ async function startLiveArticleSession() {
     liveArticleSessionActive = true;
     button.hidden = true;
     byId("manual-article-live-stop-button").hidden = false;
-    status.textContent = "生放送の記事生成を開始しました。コメント取得中・映像フレームを毎分取得します。録画は行いません。";
+    status.textContent = "生放送の記事生成を開始しました。コメント取得中・映像フレームを30秒ごとに取得します。初回記事を生成しています。録画は行いません。";
     showToast("生放送の記事生成を開始しました。");
   } catch (error) {
     status.textContent = error.message || "生放送記事を開始できませんでした。";
@@ -1924,6 +1924,23 @@ api.onEvent(({ channel, payload }) => {
     renderMonitorTargets();
   }
   if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
+  if (channel === "articles:live-state" && payload) {
+    const status = byId("manual-article-live-status");
+    const frameCount = Number(payload.frameCount) || 0;
+    if (payload.state === "capturing") {
+      status.textContent = "生放送中：映像フレームを取得しました（累計 " + frameCount + " 枚）。30秒ごとに取得します。";
+    } else if (payload.state === "generating") {
+      status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…";
+    } else if (payload.state === "updated") {
+      status.textContent = payload.generated
+        ? "生放送中：記事を更新しました。映像フレーム " + frameCount + " 枚を保持中。次回も約5分後に更新します。"
+        : "生放送中：記事の材料を取得中です。コメント・番組情報が揃うと記事を生成します。";
+    } else if (payload.state === "capture-error") {
+      status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
+    } else if (payload.state === "error") {
+      status.textContent = "記事更新エラー：" + (payload.message || "不明なエラー") + "。次回更新時に再試行します。";
+    }
+  }
   if (channel === "articles:generated") {
     if (!byId("articles-panel").hidden) loadBroadcastArticles();
     const article = payload && payload.article;

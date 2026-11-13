@@ -673,6 +673,9 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /capturePage\(\)/);
   assert.match(main, /5 \* 60 \* 1000/);
   assert.match(main, /30 \* 1000/);
+  assert.match(main, /void refreshLiveBroadcastArticle\(\);/);
+  assert.match(renderer, /channel === "articles:live-state"/);
+  assert.match(renderer, /30秒ごとに取得します/);
   assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
   assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
   assert.match(renderer, /api\.startLiveArticleSession\(/);

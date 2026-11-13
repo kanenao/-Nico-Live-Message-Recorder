@@ -734,10 +734,23 @@ async function refreshLiveBroadcastArticle() {
       writer.write("", error => error ? reject(error) : resolve());
     });
     if (commentWriter !== writer || commentFilePath !== filePath || currentLiveId !== liveId) return null;
-    return await createAndSaveBroadcastArticle(filePath, context, {
+    if (liveArticleSessionActive) {
+      send("articles:live-state", { state: "generating", liveId, frameCount: liveArticleFrames.length });
+    }
+    const article = await createAndSaveBroadcastArticle(filePath, context, {
       force: liveArticleSessionActive,
       images: liveArticleSessionActive ? liveArticleFrames.slice(-12) : []
     });
+    if (liveArticleSessionActive) {
+      send("articles:live-state", {
+        state: "updated",
+        liveId,
+        frameCount: liveArticleFrames.length,
+        generated: Boolean(article && article.status === "generated"),
+        updatedAt: new Date().toISOString()
+      });
+    }
+    return article;
   } catch (error) {
     send("articles:ai-fallback", {
       liveId,
@@ -1139,6 +1152,9 @@ async function startLiveArticleSession(input = {}) {
     if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
     await captureLiveArticleFrame();
     send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length });
+    // Do not wait for the five-minute interval: create the first article as soon as
+    // the live preview and comment connection are ready.
+    void refreshLiveBroadcastArticle();
     return { started: true, liveId, commentFile: commentFilePath, frameCount: liveArticleFrames.length };
   } catch (error) {
     if (provider) { try { provider.disconnect(); } catch (_) {} provider = null; }
