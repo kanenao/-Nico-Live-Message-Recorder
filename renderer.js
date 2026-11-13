@@ -1748,7 +1748,7 @@ async function startLiveArticleSession() {
   const liveId = byId("manual-article-live-id").value.trim();
   if (!liveId) { status.textContent = "生放送の放送IDを入力してください。"; showToast(status.textContent, true); return; }
   button.disabled = true;
-  status.textContent = "生放送画面を開き、コメント接続を開始しています…";
+  status.textContent = "視聴ページを表示せず、非表示の映像取得とコメント接続を開始しています…";
   try {
     const result = await api.startLiveArticleSession({
       liveId,
@@ -1759,7 +1759,7 @@ async function startLiveArticleSession() {
     liveArticleSessionActive = true;
     button.hidden = true;
     byId("manual-article-live-stop-button").hidden = false;
-    status.textContent = "生放送の記事生成を開始しました。コメント取得中・映像フレームを15秒ごとに取得します。初回記事を生成しています。録画は行いません。";
+    status.textContent = "生放送の記事生成を開始しました。視聴ページは表示せず、コメント取得と映像フレーム取得を行います。初回記事を生成しています。録画は行いません。";
     showToast("生放送の記事生成を開始しました。");
   } catch (error) {
     status.textContent = error.message || "生放送記事を開始できませんでした。";
@@ -1777,7 +1777,7 @@ async function stopLiveArticleSession() {
     liveArticleSessionActive = false;
     button.hidden = true;
     byId("manual-article-live-start-button").hidden = false;
-    status.textContent = "生放送の記事生成を終了しました。取得したコメントと映像を使って記事を保存しました。";
+    status.textContent = "生放送の記事生成を終了しました。取得したコメント・映像・音声を使って記事を保存しました。";
     await loadBroadcastArticles();
     showToast("生放送記事を保存しました。");
   } catch (error) {
