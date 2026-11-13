@@ -12,7 +12,7 @@ const {
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const articleExport = require("./article-export.cjs");
-const { transcribeVideoAudio } = require("./audio-transcription.cjs");
+const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
@@ -66,10 +66,20 @@ const LIVE_ARTICLE_MAX_FRAMES = 16;
 let liveArticleSessionActive = false;
 let liveArticleCaptureInProgress = false;
 let liveArticleAudioProcess = null;
+let liveArticleAudioFfmpegProcess = null;
 let liveArticleAudioClosePromise = null;
+let liveArticleAudioFfmpegClosePromise = null;
 let liveArticleAudioRuntimeDirectory = "";
 let liveArticleAudioPath = "";
+let liveArticleAudioSegmentDirectory = "";
+let liveArticleAudioSegmentTimer = null;
+let liveArticleAudioProcessing = false;
+let liveArticleAudioProcessedFiles = new Set();
+let liveArticleAudioTranscriptSegments = [];
 let liveArticleAudioTranscript = null;
+let liveArticleAudioLastArticleUpdateAt = 0;
+const LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS = 25;
+const LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS = 4000;
 let currentBroadcasterName = "";
 let currentBroadcasterId = "";
 let currentProgramInfo = {};
@@ -1204,6 +1214,61 @@ async function captureLiveArticleFrame() {
 }
 
 
+function formatLiveAudioOffset(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  return [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60]
+    .map(value => String(value).padStart(2, "0")).join(":");
+}
+async function processLiveArticleAudioSegments(liveId, includeCurrent = false) {
+  if (liveArticleAudioProcessing || !liveArticleAudioSegmentDirectory) return;
+  liveArticleAudioProcessing = true;
+  try {
+    const names = (await fs.promises.readdir(liveArticleAudioSegmentDirectory))
+      .filter(name => /^audio-\d{5}\.wav$/i.test(name)).sort();
+    const readyNames = includeCurrent ? names : names.slice(0, -1);
+    const settings = readAppSettings();
+    for (const name of readyNames) {
+      if (liveArticleAudioProcessedFiles.has(name)) continue;
+      const audioPath = path.join(liveArticleAudioSegmentDirectory, name);
+      const stat = await fs.promises.stat(audioPath).catch(() => null);
+      if (!stat || stat.size < 1024) { liveArticleAudioProcessedFiles.add(name); continue; }
+      const index = Number((name.match(/(\d{5})/) || [])[1]) || 0;
+      send("articles:live-state", { state: "audio-transcribing", liveId, segment: index + 1 });
+      try {
+        const result = await transcribeAudioFile({
+          audioPath, whisperCliPath: settings.articleWhisperCliPath,
+          modelPath: settings.articleWhisperModelPath
+        });
+        if (result.text) {
+          liveArticleAudioTranscriptSegments.push(
+            "【配信経過 " + formatLiveAudioOffset(index * LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS) + "】\n" + result.text
+          );
+          liveArticleAudioTranscript = {
+            text: liveArticleAudioTranscriptSegments.join("\n").slice(-30000),
+            segmentCount: liveArticleAudioTranscriptSegments.length
+          };
+          send("articles:live-state", {
+            state: "audio-progress", liveId,
+            segmentCount: liveArticleAudioTranscript.segmentCount,
+            characterCount: liveArticleAudioTranscript.text.length,
+            latestOffset: formatLiveAudioOffset((index + 1) * LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS)
+          });
+          if (Date.now() - liveArticleAudioLastArticleUpdateAt >= 60000) {
+            liveArticleAudioLastArticleUpdateAt = Date.now();
+            void refreshLiveBroadcastArticle();
+          }
+        }
+      } catch (error) {
+        send("articles:live-state", { state: "audio-warning", liveId, message: name + ": " + (error.message || String(error)) });
+      } finally {
+        liveArticleAudioProcessedFiles.add(name);
+        await fs.promises.rm(audioPath, { force: true }).catch(() => {});
+      }
+    }
+  } catch (error) {
+    send("articles:live-state", { state: "audio-warning", liveId, message: error.message || String(error) });
+  } finally { liveArticleAudioProcessing = false; }
+}
 async function startLiveArticleAudioCapture(liveId) {
   const settings = readAppSettings();
   const whisperCliPath = String(settings.articleWhisperCliPath || "");
@@ -1219,95 +1284,98 @@ async function startLiveArticleAudioCapture(liveId) {
   }
   const authSession = session.fromPartition("persist:nico-auth");
   const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
-  const userSession = cookies.find(cookie => cookie.name === "user_session")?.value || "";
-  const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
-  const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-article-audio-"));
-  const outputPath = path.join(captureDirectory, liveId + ".ts");
-  const args = buildStreamlinkArgs({
-    configPath: runtime.configPath,
-    liveId,
-    quality: "best",
-    outputPath,
-    ffmpegPath: tools.ffmpegPath,
-    timeshift: false
+  const token = cookies.find(cookie => cookie.name === "user_session")?.value || "";
+  const runtime = createStreamlinkRuntime(app.getPath("temp"), token);
+  const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-audio-"));
+  const segmentDirectory = path.join(captureDirectory, "segments");
+  fs.mkdirSync(segmentDirectory, { recursive: true });
+  const streamArgs = buildStreamlinkArgs({
+    configPath: runtime.configPath, liveId, quality: "best",
+    stdout: true, ffmpegPath: tools.ffmpegPath
   });
-  let child;
+  const ffmpegArgs = [
+    "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-vn",
+    "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+    "-f", "segment", "-segment_time", String(LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS),
+    "-reset_timestamps", "1", "-segment_format", "wav",
+    path.join(segmentDirectory, "audio-%05d.wav")
+  ];
+  let streamChild, ffmpegChild;
   try {
-    child = spawn(tools.streamlinkPath, args, { windowsHide: true, stdio: ["ignore", "ignore", "pipe"], env: runtime.env });
-    await new Promise((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
+    ffmpegChild = spawn(tools.ffmpegPath, ffmpegArgs, { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    await new Promise((resolve, reject) => { ffmpegChild.once("spawn", resolve); ffmpegChild.once("error", reject); });
+    streamChild = spawn(tools.streamlinkPath, streamArgs, {
+      windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: runtime.env
+    });
+    await new Promise((resolve, reject) => { streamChild.once("spawn", resolve); streamChild.once("error", reject); });
+    ffmpegChild.stdin.on("error", () => {});
+    streamChild.stdout.pipe(ffmpegChild.stdin);
+    ffmpegChild.stderr.on("data", chunk => {
+      const message = chunk.toString("utf8").trim();
+      if (message) send("articles:live-state", { state: "audio-warning", liveId, message: message.slice(-500) });
+    });
+    streamChild.stderr.on("data", chunk => {
+      const message = chunk.toString("utf8");
+      if (/error|failed|unable/i.test(message)) send("articles:live-state", { state: "audio-warning", liveId, message: message.trim().slice(-500) });
     });
   } catch (error) {
-    if (child) { try { child.kill(); } catch (_) {} }
+    for (const child of [streamChild, ffmpegChild]) if (child) { try { child.kill(); } catch (_) {} }
     await fs.promises.rm(runtime.runtimeDirectory, { recursive: true, force: true }).catch(() => {});
     await fs.promises.rm(captureDirectory, { recursive: true, force: true }).catch(() => {});
-    send("articles:live-state", { state: "audio-error", liveId, message: "Whisper用の音声取得を開始できませんでした: " + (error.message || String(error)) });
+    send("articles:live-state", { state: "audio-error", liveId, message: "リアルタイム音声取得を開始できませんでした: " + (error.message || String(error)) });
     return { enabled: false, reason: error.message || String(error) };
   }
-  liveArticleAudioProcess = child;
+  liveArticleAudioProcess = streamChild;
+  liveArticleAudioFfmpegProcess = ffmpegChild;
   liveArticleAudioRuntimeDirectory = runtime.runtimeDirectory;
-  liveArticleAudioPath = outputPath;
+  liveArticleAudioPath = captureDirectory;
+  liveArticleAudioSegmentDirectory = segmentDirectory;
+  liveArticleAudioProcessedFiles = new Set();
+  liveArticleAudioTranscriptSegments = [];
   liveArticleAudioTranscript = null;
-  liveArticleAudioClosePromise = new Promise(resolve => child.once("close", (code, signal) => resolve({ code, signal })));
-  if (child.stderr) child.stderr.on("data", chunk => {
-    const message = chunk.toString("utf8");
-    if (/error|failed|unable/i.test(message)) {
-      send("articles:live-state", { state: "audio-warning", liveId, message: message.trim().slice(-500) });
-    }
-  });
-  send("articles:live-state", { state: "audio-capturing", liveId });
-  return { enabled: true, path: outputPath };
+  liveArticleAudioLastArticleUpdateAt = 0;
+  liveArticleAudioClosePromise = new Promise(resolve => streamChild.once("close", (code, signal) => resolve({ code, signal })));
+  liveArticleAudioFfmpegClosePromise = new Promise(resolve => ffmpegChild.once("close", (code, signal) => resolve({ code, signal })));
+  liveArticleAudioSegmentTimer = setInterval(() => void processLiveArticleAudioSegments(liveId, false), LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS);
+  if (typeof liveArticleAudioSegmentTimer.unref === "function") liveArticleAudioSegmentTimer.unref();
+  send("articles:live-state", { state: "audio-capturing", liveId, segmentSeconds: LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS });
+  return { enabled: true, segmentSeconds: LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS };
 }
-
 async function stopLiveArticleAudioCapture(liveId) {
-  const child = liveArticleAudioProcess;
-  const outputPath = liveArticleAudioPath;
-  if (!child) return liveArticleAudioTranscript;
-  send("articles:live-state", { state: "audio-transcribing", liveId });
+  const streamChild = liveArticleAudioProcess;
+  const ffmpegChild = liveArticleAudioFfmpegProcess;
+  const captureDirectory = liveArticleAudioPath;
+  if (!streamChild && !ffmpegChild) return liveArticleAudioTranscript;
+  if (liveArticleAudioSegmentTimer) { clearInterval(liveArticleAudioSegmentTimer); liveArticleAudioSegmentTimer = null; }
+  send("articles:live-state", { state: "audio-finalizing", liveId });
   try {
-    try { child.kill(); } catch (_) {}
-    if (liveArticleAudioClosePromise) {
-      await new Promise(resolve => {
-        const timeout = setTimeout(() => resolve(false), 15000);
-        liveArticleAudioClosePromise.then(() => { clearTimeout(timeout); resolve(true); });
-      });
-    }
-    const settings = readAppSettings();
-    const tools = getVideoToolStatus();
-    if (!outputPath || !fs.existsSync(outputPath) || fs.statSync(outputPath).size < 1024) {
-      throw new Error("生放送から音声データを取得できませんでした。");
-    }
-    if (!tools.ffmpegPath || !settings.articleWhisperCliPath || !settings.articleWhisperModelPath) {
-      throw new Error("FFmpegまたはWhisper.cppの設定が見つかりません。");
-    }
-    liveArticleAudioTranscript = await transcribeVideoAudio({
-      videoPath: outputPath,
-      ffmpegPath: tools.ffmpegPath,
-      whisperCliPath: settings.articleWhisperCliPath,
-      modelPath: settings.articleWhisperModelPath
-    });
-    send("articles:live-state", {
-      state: "audio-complete",
-      liveId,
-      segmentCount: liveArticleAudioTranscript.segmentCount,
-      characterCount: liveArticleAudioTranscript.text.length
-    });
+    if (streamChild) { try { streamChild.kill(); } catch (_) {} }
+    if (liveArticleAudioClosePromise) await Promise.race([liveArticleAudioClosePromise, new Promise(resolve => setTimeout(resolve, 15000))]);
+    if (ffmpegChild && ffmpegChild.stdin && !ffmpegChild.stdin.destroyed) { try { ffmpegChild.stdin.end(); } catch (_) {} }
+    if (liveArticleAudioFfmpegClosePromise) await Promise.race([liveArticleAudioFfmpegClosePromise, new Promise(resolve => setTimeout(resolve, 20000))]);
+    while (liveArticleAudioProcessing) await new Promise(resolve => setTimeout(resolve, 100));
+    await processLiveArticleAudioSegments(liveId, true);
+    if (!liveArticleAudioTranscript || !liveArticleAudioTranscript.text) throw new Error("音声を文字起こしできませんでした。");
+    send("articles:live-state", { state: "audio-complete", liveId, segmentCount: liveArticleAudioTranscript.segmentCount, characterCount: liveArticleAudioTranscript.text.length });
     return liveArticleAudioTranscript;
   } catch (error) {
     send("articles:live-state", { state: "audio-error", liveId, message: error.message || String(error) });
     return null;
   } finally {
     liveArticleAudioProcess = null;
+    liveArticleAudioFfmpegProcess = null;
     liveArticleAudioClosePromise = null;
+    liveArticleAudioFfmpegClosePromise = null;
     liveArticleAudioPath = "";
+    liveArticleAudioSegmentDirectory = "";
+    liveArticleAudioProcessing = false;
+    liveArticleAudioProcessedFiles = new Set();
     const runtimeDirectory = liveArticleAudioRuntimeDirectory;
     liveArticleAudioRuntimeDirectory = "";
-    if (outputPath) await fs.promises.rm(path.dirname(outputPath), { recursive: true, force: true }).catch(() => {});
+    if (captureDirectory) await fs.promises.rm(captureDirectory, { recursive: true, force: true }).catch(() => {});
     if (runtimeDirectory) await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
   }
 }
-
 async function startLiveArticleSession(input = {}) {
   if (timeshiftCommentFetchActive) throw new Error("過去配信のコメント取得中は生放送記事を開始できません。");
   if (provider || commentWriter || liveArticleSessionActive) throw new Error("別のコメント取得セッションが実行中です。先に切断してください。");
