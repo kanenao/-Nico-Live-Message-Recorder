@@ -414,6 +414,25 @@ async function exportCommentSidecars(sourcePath) {
   return written;
 }
 
+function exportTimeshiftAssSidecar(sourcePath) {
+  const source = resolveLibraryItemPath(sourcePath);
+  const commentsRoot = path.resolve(dataRoot(), "comments");
+  const relative = path.relative(commentsRoot, source);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative) ||
+      path.extname(source).toLowerCase() !== ".jsonl") {
+    throw new Error("過去コメントのASS出力にはコメントフォルダー内のJSONLを指定してください。");
+  }
+  const records = [];
+  for (const line of fs.readFileSync(source, "utf8").split(/\r?\n/).filter(Boolean)) {
+    try { records.push(JSON.parse(line)); } catch (_) {}
+  }
+  const generated = generateAssFromRecords(records);
+  const outputPath = source.replace(/\.jsonl$/i, ".ass");
+  fs.writeFileSync(outputPath, "\uFEFF" + generated.content, "utf8");
+  send("comments:exports", { paths: [outputPath] });
+  return { path: outputPath, commentCount: generated.commentCount };
+}
+
 async function moveCommentLogToBroadcasterFolder(sourcePath) {
   if (!sourcePath || !fs.existsSync(sourcePath)) return sourcePath;
   const folder = broadcasterFolderName(currentBroadcasterName, currentBroadcasterId);
@@ -2480,6 +2499,8 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
         commentFile: finalCommentFile,
         commentCount: 0,
         commentsFetched: false,
+        assFilePath: "",
+        assCommentCount: 0,
         commentError
       };
     }
@@ -2541,6 +2562,16 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
 
     await closeCommentWriter();
     finalCommentFile = commentFilePath;
+    let assExport = null;
+    if (options && options.exportAss && commentCount > 0 && finalCommentFile) {
+      try {
+        assExport = exportTimeshiftAssSidecar(finalCommentFile);
+      } catch (error) {
+        const note = "過去コメントのASS字幕作成に失敗しました: " +
+          (error && error.message ? error.message : String(error));
+        commentError = commentError ? commentError + " " + note : note;
+      }
+    }
     send("live:state", { state: "disconnected" });
     return {
       ...video,
@@ -2548,6 +2579,8 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
       commentCount,
       commentsFetched: commentCount > 0,
       commentsTruncated,
+      assFilePath: assExport ? assExport.path : "",
+      assCommentCount: assExport ? assExport.commentCount : 0,
       commentError
     };
   } catch (error) {
