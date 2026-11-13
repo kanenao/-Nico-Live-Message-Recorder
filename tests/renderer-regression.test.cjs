@@ -111,7 +111,7 @@ test("broadcast connection and direct video/audio recording share one integrated
   assert.match(main, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
   assert.match(main, /connectPreparedCommentSession\(liveId\)/);
   assert.match(main, /startVideoInternal\(liveId, quality/);
-  assert.match(renderer, /api\.startCapture\(liveId, quality, selectedTarget \? \{/);
+  assert.match(renderer, /api\.startCapture\(liveId, quality, \{/);
   assert.match(renderer, /currentLiveId = liveId;\s*liveInput\.value = liveId/);
 });
 
@@ -778,7 +778,8 @@ test("Ollama setup downloads the official Windows installer and pulls the select
   assert.match(html, /id="ollama-pull-model-button"/);
   assert.ok(setup.includes("https://ollama.com/download/OllamaSetup.exe"));
   assert.match(setup, /\/api\/pull/);
-  assert.match(setup, /ollama:setup-progress/);
+  assert.match(main, /ollama:setup-progress/);
+  assert.match(setup, /onProgress/);
 });
 
 
@@ -788,7 +789,8 @@ test("article summaries are attached to capture library videos and article delet
   assert.match(main, /録画動画・コメントログは削除されません/);
   assert.match(preload, /deleteBroadcastArticle/);
   assert.match(renderer, /library-article-summary/);
-  assert.match(renderer, /api\.deleteBroadcastArticle/);
+  assert.match(renderer, /api\.deleteBroadcastArticle\(article\.articlePath\)/);
+  assert.match(main, /article\.articlePath = fullPath/);
 });
 test("Streamlink waits for media bytes and preserves stderr when capture startup fails", () => {
   assert.match(main, /const startupDeadline = Date\.now\(\) \+ 25000/);
