@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   getCaptureLibrary: () => ipcRenderer.invoke("library:list"),
   getLibraryThumbnail: (filePath) => ipcRenderer.invoke("library:thumbnail", filePath),
   getBroadcastArticles: () => ipcRenderer.invoke("articles:list"),
+  deleteBroadcastArticle: (articlePath) => ipcRenderer.invoke("articles:delete", articlePath),
   generateBroadcastArticle: (filePath) => ipcRenderer.invoke("articles:generate-from-comment", filePath),
   generateManualBroadcastArticle: (input) => ipcRenderer.invoke("articles:generate-manual", input),
   selectArticleVideo: () => ipcRenderer.invoke("articles:select-video"),
