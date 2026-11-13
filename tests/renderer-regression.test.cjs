@@ -17,6 +17,7 @@ const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "n
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const composeExport = require(path.join(root, "electron", "composition-export.cjs"));
 const ollamaSource = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
+const audioTranscription = fs.readFileSync(path.join(root, "electron", "audio-transcription.cjs"), "utf8");
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
@@ -704,4 +705,24 @@ test("standalone article generation is available without monitor registration an
   assert.ok(main.includes("capturedAt: new Date().toISOString()"));
   assert.match(ollamaSource, /frameTimeline/);
   assert.ok(ollamaSource.includes('frame => typeof frame === "string" ? frame : String(frame && frame.image'));
+});
+
+test("manual article generation can combine Whisper audio transcript, video frames, and Nico comments", () => {
+  assert.match(main, /require\("\.\/audio-transcription\.cjs"\)/);
+  assert.match(main, /transcribeVideoAudio\(/);
+  assert.match(main, /audioTranscript: audioTranscript \? audioTranscript\.text : ""/);
+  assert.match(main, /article\.audioTranscript = String\(options\.audioTranscript\)/);
+  assert.match(main, /articles:select-whisper-cli/);
+  assert.match(main, /articles:select-whisper-model/);
+  assert.match(preload, /selectArticleWhisperCli/);
+  assert.match(preload, /selectArticleWhisperModel/);
+  assert.match(renderer, /selectArticleWhisperCli/);
+  assert.match(renderer, /selectArticleWhisperModel/);
+  assert.match(html, /manual-article-whisper-cli-button/);
+  assert.match(html, /manual-article-whisper-model-button/);
+  assert.match(ollamaSource, /音声認識テキスト/);
+  assert.match(ollamaSource, /映像・音声・コメントの情報源を混同しない/);
+  assert.match(audioTranscription, /"-ac", "1", "-ar", "16000"/);
+  assert.match(audioTranscription, /"-l", "ja"/);
+  assert.match(audioTranscription, /parseWhisperJson/);
 });

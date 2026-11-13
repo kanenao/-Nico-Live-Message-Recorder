@@ -1597,12 +1597,22 @@ async function stopLiveArticleSession() {
   } finally { button.disabled = false; }
 }
 
+async function selectArticleWhisperCli() {
+  try { const result = await api.selectArticleWhisperCli(); if (result && !result.canceled) { byId("manual-article-whisper-cli-name").textContent = result.name; showToast("Whisper実行ファイルを設定しました。"); } }
+  catch (error) { showToast(error.message || "実行ファイルを選択できませんでした。", true); }
+}
+
+async function selectArticleWhisperModel() {
+  try { const result = await api.selectArticleWhisperModel(); if (result && !result.canceled) { byId("manual-article-whisper-model-name").textContent = result.name; showToast("Whisper日本語モデルを設定しました。"); } }
+  catch (error) { showToast(error.message || "日本語モデルを選択できませんでした。", true); }
+}
+
 async function generateManualBroadcastArticle() {
   const button = byId("manual-article-generate-button");
   const status = byId("manual-article-status");
   const file = byId("manual-article-file").files?.[0];
   button.disabled = true;
-  status.textContent = selectedManualArticleVideoPath ? "動画の映像フレームを抽出してAI分析しています…" : "記事を生成しています…";
+  status.textContent = selectedManualArticleVideoPath ? "動画の映像フレームと音声を解析し、コメントと照合しています…" : "記事を生成しています…";
   try {
     const result = await api.generateManualBroadcastArticle({
       broadcasterName: byId("manual-article-broadcaster").value,
@@ -1619,8 +1629,10 @@ async function generateManualBroadcastArticle() {
       return;
     }
     status.textContent = result.aiProvider
-      ? "Ollama（" + result.aiModel + "）で記事を生成・保存しました。" + (result.videoFrameCount ? " 動画の代表フレーム" + result.videoFrameCount + "枚を分析しました。" : "")
-      : "記事を保存しました。" + (result.aiFallbackReason ? " AIは利用できないため標準方式で生成しました。" + (result.aiFallbackReason ? " " + result.aiFallbackReason : "") : "");
+      ? "Ollama（" + result.aiModel + "）で記事を生成・保存しました。" + (result.videoFrameCount ? " 映像" + result.videoFrameCount + "枚を分析。" : "") + (result.audioAnalysis ? " 音声文字起こし" + (result.audioTranscriptSegmentCount || 0) + "区間を反映。" : "")
+      : "記事を保存しました。" + (result.aiFallbackReason ? " AIは利用できないため標準方式で生成しました。 " + result.aiFallbackReason : "");
+    if (result.audioTranscriptionError) status.textContent += " 音声解析: " + result.audioTranscriptionError;
+    else if (result.audioTranscriptionStatus) status.textContent += " " + result.audioTranscriptionStatus;
     showToast("記事を生成しました: " + (result.title || "放送記事"));
     await loadBroadcastArticles();
   } catch (error) {
@@ -2034,6 +2046,8 @@ byId("library-filter").addEventListener("change", renderCaptureLibrary);
 byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
 byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
 byId("manual-article-video-select-button").addEventListener("click", selectManualArticleVideo);
+byId("manual-article-whisper-cli-button").addEventListener("click", selectArticleWhisperCli);
+byId("manual-article-whisper-model-button").addEventListener("click", selectArticleWhisperModel);
 byId("manual-article-live-start-button").addEventListener("click", startLiveArticleSession);
 byId("manual-article-live-stop-button").addEventListener("click", stopLiveArticleSession);
 byId("manual-article-file").addEventListener("change", () => {

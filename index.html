@@ -175,10 +175,16 @@
               <label class="article-manual-wide">番組タイトル<input id="manual-article-title" type="text" maxlength="300" placeholder="番組・配信のタイトル"></label>
               <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
               <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択。番組情報だけでも記事を生成できます。</small></label>
-              <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像内容をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。動画全体から最大12枚の代表フレームを分析します。</small></div></div>
+              <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像と音声をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームと音声を分析します。</small></div></div>
+              <div class="article-manual-wide article-audio-tools">
+                <strong>無料の音声文字起こし（Whisper.cpp）</strong>
+                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-cli-button" type="button">whisper-cli.exeを選択</button><small id="manual-article-whisper-cli-name">未設定</small></div>
+                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-model-button" type="button">日本語モデルを選択</button><small id="manual-article-whisper-model-name">未設定（ggml-base.bin推奨）</small></div>
+                <p class="hint">Whisper.cppと日本語モデルは別途用意してください。音声はPC内で文字起こしし、Ollamaへ渡します。未設定でも映像・コメントの記事生成は利用できます。</p>
+              </div>
               <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDを入力して開始すると、録画せずにコメントと放送画面を取得します。映像は30秒ごとに取得して最大12枚を時系列で保持し、qwen2.5vl:3bで映像とコメントを照合して約5分ごとに記事を更新します。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
             </div>
-            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。映像分析にはOllamaの qwen2.5vl:3b を推奨します（ollama pull qwen2.5vl:3b）。未導入時は画像分析を行わず、コメント中心の記事に切り替わります。音声の文字起こしは行いません。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
+            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。映像分析にはOllamaの qwen2.5vl:3b を推奨します（ollama pull qwen2.5vl:3b）。未導入時は画像分析を行わず、コメント中心の記事に切り替わります。音声分析にはWhisper.cppの実行ファイルと日本語モデルを選択してください。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
             <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>
           </section>
           <div class="library-summary article-summary">
@@ -195,7 +201,7 @@
           <div class="broadcast-articles-list" id="articles-list">
             <div class="article-empty">放送記事を読み込んでいます…</div>
           </div>
-          <p class="hint">記事はこのPC内に保存されます。番組説明に転載・切り抜き・AI利用などを禁止する指定がある場合は生成しません。映像・音声の発言を文字起こししたものではありません。</p>
+          <p class="hint">記事はこのPC内に保存されます。番組説明に転載・切り抜き・AI利用などを禁止する指定がある場合は生成しません。音声はWhisperの自動文字起こしを利用できます。認識誤りがあるため元配信で確認してください。</p>
         </section>
 
         <section class="panel update-panel" id="update-panel" aria-live="polite" hidden data-page="dashboard">

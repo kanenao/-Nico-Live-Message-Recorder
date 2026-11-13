@@ -11,6 +11,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
+const { transcribeVideoAudio } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const {
   normalizeCompositionFormat,
@@ -441,7 +442,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     if (options.images && options.images.length && !visionModel) throw new Error("動画の映像分析には画像対応モデルが必要です。Ollamaで「ollama pull qwen2.5vl:3b」を実行してください。");
     const model = options.images && options.images.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
     if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
-    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: options.images || [] });
+    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: options.images || [], audioTranscript: options.audioTranscript || "" });
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
@@ -476,7 +477,14 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   if (options.images && options.images.length) {
     article.videoFrameCount = options.images.length;
     article.videoAnalysis = article.aiProvider ? "生放送画面から取得した代表フレームを分析済み" : "生放送画面の代表フレームを取得（画像AI分析は未完了）";
-    article.note = "配信中に取得した代表フレームとコメント記録をもとに生成した記事です。音声の文字起こしや全場面の完全な解析ではありません。";
+  }
+  if (options.audioTranscript) {
+    article.audioTranscript = String(options.audioTranscript).slice(0, 30000);
+    article.audioTranscriptSegmentCount = Number(options.audioTranscriptSegmentCount) || 0;
+    article.audioAnalysis = "Whisperローカル音声認識で日本語文字起こし済み";
+  }
+  if ((options.images && options.images.length) || options.audioTranscript) {
+    article.note = "自動生成記事です。映像は代表フレーム、音声はローカル音声認識の結果、コメントは保存ログを根拠に整理しています。認識誤りや見落としがあり得るため、重要な内容は元配信で確認してください。";
   }
 
   if (article.status !== "generated") {
@@ -563,14 +571,35 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   if (article.status !== "generated") return article;
   if (!context.broadcasterName && article.broadcasterName === "登録配信者") article.broadcasterName = "未登録配信者";
   let extracted = null;
+  let audioTranscript = null;
+  let audioTranscriptionError = "";
   try {
-    if (videoPath) extracted = await extractArticleVideoFrames(videoPath);
-    await enhanceBroadcastArticleWithOllama(article, records, context, { force: true, images: extracted ? extracted.frames.map(frame => frame.image) : [] });
+    if (videoPath) {
+      extracted = await extractArticleVideoFrames(videoPath);
+      const audioSettings = readAppSettings();
+      if (audioSettings.articleWhisperCliPath && audioSettings.articleWhisperModelPath) {
+        try {
+          audioTranscript = await transcribeVideoAudio({
+            videoPath,
+            ffmpegPath: getVideoToolStatus().ffmpegPath,
+            whisperCliPath: audioSettings.articleWhisperCliPath,
+            modelPath: audioSettings.articleWhisperModelPath
+          });
+        } catch (error) { audioTranscriptionError = error.message || String(error); }
+      }
+    }
+    await enhanceBroadcastArticleWithOllama(article, records, context, {
+      force: true,
+      images: extracted ? extracted.frames.map(frame => frame.image) : [],
+      audioTranscript: audioTranscript ? audioTranscript.text : "",
+      audioTranscriptSegmentCount: audioTranscript ? audioTranscript.segmentCount : 0
+    });
     if (videoPath) {
       article.videoFile = path.resolve(videoPath);
       article.videoFrameCount = extracted ? extracted.frames.length : 0;
       article.videoAnalysis = article.aiProvider ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
-      article.note = article.aiProvider ? "自動生成記事です。番組情報・保存コメント・動画から抽出した代表フレームを整理しています。映像の全場面や音声を完全に解析・文字起こししたものではありません。" : "動画から代表フレームを抽出しましたが、画像対応AIモデルによる映像分析は完了していません。音声の文字起こしや全フレーム解析にも対応していません。";
+      if (audioTranscriptionError) article.audioTranscriptionError = audioTranscriptionError;
+      if (!audioTranscript && !audioTranscriptionError) article.audioTranscriptionStatus = "未設定（Whisper実行ファイルと日本語モデルを選択すると音声も分析できます）";
     }
   } finally { if (extracted) fs.rmSync(extracted.directory, { recursive: true, force: true }); }
   article.articleSource = "manual";
@@ -2679,6 +2708,20 @@ ipcMain.handle("articles:select-video", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: "記事生成に使う動画を選択", properties: ["openFile"], filters: [{ name: "動画ファイル", extensions: ["mp4", "mkv", "webm", "mov", "m4v", "ts", "avi"] }] });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   return { canceled: false, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
+});
+ipcMain.handle("articles:select-whisper-cli", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: "whisper-cli実行ファイルを選択", properties: ["openFile"], filters: [{ name: "実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }] });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  const selectedPath = result.filePaths[0];
+  writeAppSettings({ articleWhisperCliPath: selectedPath });
+  return { canceled: false, path: selectedPath, name: path.basename(selectedPath) };
+});
+ipcMain.handle("articles:select-whisper-model", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: "Whisper日本語モデル(ggml-*.bin)を選択", properties: ["openFile"], filters: [{ name: "Whisperモデル", extensions: ["bin"] }] });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  const selectedPath = result.filePaths[0];
+  writeAppSettings({ articleWhisperModelPath: selectedPath });
+  return { canceled: false, path: selectedPath, name: path.basename(selectedPath) };
 });
 ipcMain.handle("library:open-item", async (_event, value) => {
   const target = resolveLibraryItemPath(value);
