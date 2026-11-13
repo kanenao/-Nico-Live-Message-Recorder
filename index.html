@@ -160,13 +160,25 @@
           <div class="panel-heading library-heading">
             <div>
               <div class="eyebrow">BROADCAST JOURNAL / LOCAL ARCHIVE</div>
-              <h2>登録配信者の放送記事</h2>
-              <p class="session-description">放送タイトル・番組説明・保存コメントを整理して、配信者ごとの記事として保存します。</p>
+              <h2>放送記事・無料AI記事生成</h2>
+              <p class="session-description">監視リストへの登録や録画は不要です。任意の配信者情報・番組情報・コメントログから記事を作成できます。</p>
             </div>
             <div class="library-heading-actions">
               <button class="button button-primary button-small" id="articles-refresh-button" type="button">記事を更新</button>
             </div>
           </div>
+          <section class="article-manual-generator" aria-labelledby="article-manual-title">
+            <div class="article-manual-heading"><div><h3 id="article-manual-title">登録なしで記事を生成</h3><p>配信者を監視リストに追加せず、記事生成だけ利用できます。</p></div><span class="update-state-badge" data-state="downloaded">無料・ローカルAI対応</span></div>
+            <div class="article-manual-grid">
+              <label>配信者名（任意）<input id="manual-article-broadcaster" type="text" maxlength="80" placeholder="未入力でも生成できます"></label>
+              <label>放送ID（任意）<input id="manual-article-live-id" type="text" maxlength="32" placeholder="lv123456789"></label>
+              <label class="article-manual-wide">番組タイトル<input id="manual-article-title" type="text" maxlength="300" placeholder="番組・配信のタイトル"></label>
+              <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
+              <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択。番組情報だけでも記事を生成できます。</small></label>
+            </div>
+            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。未接続の場合は標準生成へ切り替えます。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
+            <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>
+          </section>
           <div class="library-summary article-summary">
             <div class="library-summary-card"><span>記事数</span><strong id="articles-total">0</strong></div>
             <div class="library-summary-card"><span>配信者数</span><strong id="articles-broadcaster-count">0</strong></div>

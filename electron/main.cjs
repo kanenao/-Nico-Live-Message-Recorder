@@ -10,7 +10,7 @@ const {
   buildStreamlinkArgs
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
-const { generateBroadcastArticle } = require("./articles.cjs");
+const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const {
   normalizeCompositionFormat,
@@ -431,39 +431,8 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
     try { return JSON.parse(line); } catch (_) { return null; }
   }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
-  if (article.status === "generated") {
-    const aiSettings = getMonitorSettings();
-    if (aiSettings.aiArticleEnabled !== false) {
-      const ollamaStatus = await getOllamaStatus({ baseUrl: aiSettings.baseUrl });
-      if (ollamaStatus.connected) {
-        const selectedModel = String(aiSettings.aiArticleModel || "qwen2.5:3b");
-        const installedModel = ollamaStatus.models.some(item => item.name === selectedModel || item.name.startsWith(selectedModel + ":"));
-        if (installedModel) {
-          try {
-            const aiArticle = await generateArticleWithOllama({
-              baseUrl: aiSettings.baseUrl,
-              model: selectedModel,
-              records,
-              context: articleContext
-            });
-            article.title = aiArticle.title;
-            article.summary = aiArticle.summary;
-            article.paragraphs = aiArticle.paragraphs;
-            if (aiArticle.topics.length) article.topics = aiArticle.topics.map(term => ({ term, count: 0 }));
-            article.aiProvider = aiArticle.provider;
-            article.aiModel = aiArticle.model;
-          } catch (error) {
-            article.aiFallbackReason = error.message;
-            send("articles:ai-fallback", { liveId: article.liveId, reason: error.message });
-          }
-        } else {
-          article.aiFallbackReason = "指定モデルが未インストールです: " + selectedModel;
-        }
-      } else {
-        article.aiFallbackReason = "Ollamaに接続できないため、従来方式で記事を生成しました。";
-      }
-    }
-  }
+  await enhanceBroadcastArticleWithOllama(article, records, articleContext);
+
   if (article.status !== "generated") {
     send("articles:skipped", { liveId: article.liveId || context.liveId || "", reason: article.reason });
     return article;
@@ -481,6 +450,35 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
   if (context.videoFile) article.videoFile = context.videoFile;
   else if (previousArticle && previousArticle.videoFile) article.videoFile = previousArticle.videoFile;
   fs.writeFileSync(articlePath, JSON.stringify(article, null, 2), "utf8");
+  send("articles:generated", { article });
+  return article;
+}
+
+async function generateStandaloneBroadcastArticle(input = {}) {
+  const commentsText = String(input.commentsText || "");
+  if (commentsText.length > 8 * 1024 * 1024) throw new Error("コメントログは8MB以下のJSONLファイルを指定してください。");
+  const records = parseCommentLog(commentsText);
+  if (records.length > 20000) throw new Error("コメントログが多すぎます。20,000行以下に分割してください。");
+  const context = {
+    broadcasterName: String(input.broadcasterName || "").trim().slice(0, 80) || "未登録配信者",
+    broadcasterId: String(input.broadcasterId || "").trim().slice(0, 40),
+    liveId: String(input.liveId || "").trim().slice(0, 32),
+    programTitle: String(input.programTitle || "").trim().slice(0, 300),
+    description: String(input.description || "").trim().slice(0, 3000),
+    generatedAt: new Date().toISOString()
+  };
+  if (!records.length && !context.programTitle && !context.description) {
+    throw new Error("番組タイトル・番組説明・コメントログのいずれかを入力してください。");
+  }
+  const article = generateBroadcastArticle(records, context);
+  if (article.status !== "generated") return article;
+  await enhanceBroadcastArticleWithOllama(article, records, context, { force: true });
+  article.articleSource = "manual";
+  article.commentFileName = String(input.fileName || "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 160);
+  const directory = path.join(dataRoot(), "articles", "_manual");
+  fs.mkdirSync(directory, { recursive: true });
+  article.articlePath = path.join(directory, "manual_" + new Date().toISOString().replace(/[.:]/g, "-") + "_" + randomUUID().slice(0, 8) + ".json");
+  fs.writeFileSync(article.articlePath, JSON.stringify(article, null, 2), "utf8");
   send("articles:generated", { article });
   return article;
 }
@@ -2450,6 +2448,7 @@ function resolveLibraryItemPath(value) {
 ipcMain.handle("library:list", () => listCaptureLibrary());
 ipcMain.handle("articles:list", () => listBroadcastArticles());
 ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
+ipcMain.handle("articles:generate-manual", (_event, input) => generateStandaloneBroadcastArticle(input));
 ipcMain.handle("library:open-item", async (_event, value) => {
   const target = resolveLibraryItemPath(value);
   const error = await shell.openPath(target);

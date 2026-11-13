@@ -1513,6 +1513,37 @@ function renderBroadcastArticles() {
 
 let broadcastArticles = [];
 
+async function generateManualBroadcastArticle() {
+  const button = byId("manual-article-generate-button");
+  const status = byId("manual-article-status");
+  const file = byId("manual-article-file").files?.[0];
+  button.disabled = true;
+  status.textContent = "記事を生成しています…";
+  try {
+    const result = await api.generateManualBroadcastArticle({
+      broadcasterName: byId("manual-article-broadcaster").value,
+      liveId: byId("manual-article-live-id").value,
+      programTitle: byId("manual-article-title").value,
+      description: byId("manual-article-description").value,
+      commentsText: file ? await file.text() : "",
+      fileName: file ? file.name : ""
+    });
+    if (!result || result.status !== "generated") {
+      status.textContent = result?.reason || "記事を生成できませんでした。";
+      showToast(status.textContent, true);
+      return;
+    }
+    status.textContent = result.aiProvider
+      ? "Ollama（" + result.aiModel + "）で記事を生成・保存しました。"
+      : "記事を保存しました。" + (result.aiFallbackReason ? " AIは利用できないため標準方式で生成しました。" : "");
+    showToast("記事を生成しました: " + (result.title || "放送記事"));
+    await loadBroadcastArticles();
+  } catch (error) {
+    status.textContent = error.message || "記事を生成できませんでした。";
+    showToast(status.textContent, true);
+  } finally { button.disabled = false; }
+}
+
 async function loadBroadcastArticles() {
   const button = byId("articles-refresh-button");
   if (button) button.disabled = true;
@@ -1899,6 +1930,11 @@ byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
 byId("library-filter").addEventListener("change", renderCaptureLibrary);
 byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
+byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
+byId("manual-article-file").addEventListener("change", () => {
+  const file = byId("manual-article-file").files?.[0];
+  byId("manual-article-file-name").textContent = file ? file.name + "（" + formatLibraryBytes(file.size) + "）" : "ファイル未選択。番組情報だけでも記事を生成できます。";
+});
 byId("articles-search").addEventListener("input", renderBroadcastArticles);
 byId("library-open-folder-button").addEventListener("click", async () => {
   try {
