@@ -1118,11 +1118,12 @@ async function startLiveArticleSession(input = {}) {
     description: String(input.description || "").trim().slice(0, 3000)
   };
   liveArticleFrames = [];
-  await prepareCommentSession(liveId, displayName, "", programInfo);
+  liveArticleSessionActive = true;
   try {
+    await prepareCommentSession(liveId, displayName, "", programInfo);
     await openLivePreview(liveId);
     await connectPreparedCommentSession(liveId);
-    liveArticleSessionActive = true;
+    await new Promise(resolve => setTimeout(resolve, 8000));
     if (articleUpdateTimer) clearInterval(articleUpdateTimer);
     articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, 5 * 60 * 1000);
     if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
@@ -1171,6 +1172,7 @@ ipcMain.handle("live:connect", async (_event, value, options = {}) => {
   return connectPreparedCommentSession(liveId);
 });
 ipcMain.handle("live:disconnect", async () => {
+  if (liveArticleSessionActive) return stopLiveArticleSession();
   if (timeshiftCommentFetchActive) {
     throw new Error("過去配信のコメント取得中は切断できません。");
   }

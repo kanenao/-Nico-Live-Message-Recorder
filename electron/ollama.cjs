@@ -73,7 +73,7 @@ async function generateArticleWithOllama(options = {}) {
     "放送ID: " + String(context.liveId || "不明"),
     "番組説明: " + String(context.description || "なし").slice(0, 1200),
     "コメント記録(JSON): " + JSON.stringify(comments),
-    options.images && options.images.length ? "画像は動画全体から均等間隔で抽出した代表フレームです。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間の動きを推測しないでください。" : ""
+    options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間の動きを推測しないでください。" : ""
   ].join("\n\n");
   const data = await requestJson(baseUrl + "/api/chat", {
     method: "POST",
