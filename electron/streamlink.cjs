@@ -170,7 +170,7 @@ function createStreamlinkRuntime(tempRoot, userSession) {
 function buildStreamlinkArgs(options) {
   const liveId = normalizeLiveId(options.liveId);
   if (!options.configPath) throw new Error("Streamlink用の設定ファイルがありません。");
-  if (!options.outputPath) throw new Error("録画ファイルの保存先がありません。");
+  if (!options.stdout && !options.outputPath) throw new Error("録画ファイルの保存先がありません。");
 
   const args = [
     "--config", options.configPath,
@@ -186,11 +186,9 @@ function buildStreamlinkArgs(options) {
     // Streamlink's nicolive plugin supports VOD/timeshift URLs. Offset 0 starts at the archive beginning.
     args.push("--niconico-timeshift-offset", "0");
   }
-  args.push(
-    "--output", options.outputPath,
-    "https://live.nicovideo.jp/watch/" + liveId,
-    normalizeQuality(options.quality)
-  );
+  if (options.stdout) args.push("--stdout");
+  else args.push("--output", options.outputPath);
+  args.push("https://live.nicovideo.jp/watch/" + liveId, normalizeQuality(options.quality));
   return args;
 }
 
