@@ -646,6 +646,7 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
 
 test("standalone article generation is available without monitor registration and accepts optional JSONL comments", () => {
   assert.match(main, /function generateStandaloneBroadcastArticle\(/);
+  assert.match(main, /async function enhanceBroadcastArticleWithOllama\(/);
   assert.match(main, /ipcMain\.handle\("articles:generate-manual"/);
   assert.match(preload, /generateManualBroadcastArticle:.*ipcRenderer\.invoke\("articles:generate-manual"/);
   assert.match(renderer, /function generateManualBroadcastArticle\(/);

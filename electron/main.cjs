@@ -414,6 +414,31 @@ async function moveCommentLogToBroadcasterFolder(sourcePath) {
   return destinationPath;
 }
 
+async function enhanceBroadcastArticleWithOllama(article, records, articleContext, options = {}) {
+  if (!article || article.status !== "generated") return article;
+  const aiSettings = getMonitorSettings();
+  if (!options.force && aiSettings.aiArticleEnabled === false) return article;
+  try {
+    const status = await getOllamaStatus({ baseUrl: aiSettings.baseUrl });
+    if (!status.connected) throw new Error(status.message || "Ollamaに接続できません。");
+    const model = String(aiSettings.aiArticleModel || "qwen2.5:3b");
+    if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) {
+      throw new Error("指定モデルが未インストールです: " + model);
+    }
+    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext });
+    article.title = result.title;
+    article.summary = result.summary;
+    article.paragraphs = result.paragraphs;
+    if (result.topics.length) article.topics = result.topics.map(term => ({ term, count: 0 }));
+    article.aiProvider = result.provider;
+    article.aiModel = result.model;
+  } catch (error) {
+    article.aiFallbackReason = error.message || String(error);
+    send("articles:ai-fallback", { liveId: article.liveId, reason: article.aiFallbackReason });
+  }
+  return article;
+}
+
 async function createAndSaveBroadcastArticle(commentPath, context = {}) {
   if (!commentPath || !fs.existsSync(commentPath)) {
     return { status: "skipped", reason: "コメントログが見つかりません。" };
