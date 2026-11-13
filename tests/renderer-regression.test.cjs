@@ -177,6 +177,10 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.doesNotMatch(preload, /checkStreamlinkUpdate|installStreamlinkUpdate/);
   assert.match(renderer, /function setActivePage\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
+  assert.match(renderer, /const groups = new Map\(\)/);
+  assert.match(renderer, /api\.getLibraryThumbnail\(thumbnailItem\.path\)/);
+  assert.match(main, /ipcMain\.handle\("library:thumbnail"/);
+  assert.match(preload, /getLibraryThumbnail:.*ipcRenderer\.invoke\("library:thumbnail"/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
   assert.match(renderer, /自動ダウンロード・SHA-256検証中/);
   assert.match(renderer, /次回の確認時に再試行します/);

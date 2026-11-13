@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.48</span>
+        <span class="version" id="version">v0.1.0-beta.50</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -147,8 +147,8 @@
               </select>
             </label>
           </div>
-          <div class="library-list-header">
-            <span>ファイル</span><span>配信者</span><span>種類</span><span>更新日時</span><span>サイズ</span><span>操作</span>
+          <div class="library-broadcaster-grid" id="library-list" aria-live="polite">
+            <div class="library-empty">保存ファイルを読み込んでいます…</div>
           </div>
           <div class="library-list" id="library-list">
             <div class="library-empty">保存ファイルを読み込んでいます…</div>
@@ -201,7 +201,7 @@
           <div class="broadcast-articles-list" id="articles-list">
             <div class="article-empty">放送記事を読み込んでいます…</div>
           </div>
-          <p class="hint">記事はこのPC内に保存されます。番組説明に転載・切り抜き・AI利用などを禁止する指定がある場合は生成しません。音声はWhisperの自動文字起こしを利用できます。認識誤りがあるため元配信で確認してください。</p>
+          <p class="hint">コメントログだけで生成した記事は、配信者の発言を文字起こししたものではありません。記事はこのPC内に保存されます。番組説明に転載・切り抜き・AI利用などを禁止する指定がある場合は生成しません。音声はWhisperの自動文字起こしを利用できます。認識誤りがあるため元配信で確認してください。</p>
         </section>
 
         <section class="panel update-panel" id="update-panel" aria-live="polite" hidden data-page="dashboard">

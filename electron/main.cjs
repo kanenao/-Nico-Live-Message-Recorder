@@ -2701,6 +2701,23 @@ function resolveLibraryItemPath(value) {
 }
 
 ipcMain.handle("library:list", () => listCaptureLibrary());
+ipcMain.handle("library:thumbnail", (_event, value) => {
+  try {
+    const target = resolveLibraryItemPath(value);
+    if (!LIBRARY_VIDEO_EXTENSIONS.has(path.extname(target).toLowerCase())) return "";
+    const settings = readAppSettings();
+    const ffmpegPath = findBundledFfmpegExecutable() || findFfmpegExecutable({ customPath: settings.ffmpegPath });
+    if (!ffmpegPath) return "";
+    const image = execFileSync(ffmpegPath, [
+      "-hide_banner", "-loglevel", "error", "-ss", "00:00:01", "-i", target,
+      "-frames:v", "1", "-vf", "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2",
+      "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"
+    ], { windowsHide: true, timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
+    return image && image.length ? "data:image/jpeg;base64," + image.toString("base64") : "";
+  } catch (_) {
+    return "";
+  }
+});
 ipcMain.handle("articles:list", () => listBroadcastArticles());
 ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
 ipcMain.handle("articles:generate-manual", (_event, input) => generateStandaloneBroadcastArticle(input));

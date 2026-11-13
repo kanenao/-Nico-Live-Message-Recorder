@@ -40,6 +40,7 @@ let monitorIsRunning = false;
 const monitorAutoQueue = [];
 let monitorAutoProcessing = false;
 let captureLibraryItems = [];
+const expandedLibraryBroadcasters = new Set();
 
 function showToast(message, isError) {
   const toast = byId("toast");
@@ -1327,7 +1328,62 @@ function renderCaptureLibrary() {
     return;
   }
 
+  const groups = new Map();
   for (const item of items) {
+    const broadcaster = String(item.broadcaster || "配信者名未取得").trim() || "配信者名未取得";
+    if (!groups.has(broadcaster)) groups.set(broadcaster, []);
+    groups.get(broadcaster).push(item);
+  }
+
+  for (const [broadcaster, broadcasterItems] of groups) {
+    const card = document.createElement("section");
+    card.className = "library-broadcaster-card";
+    const heading = document.createElement("div");
+    heading.className = "library-broadcaster-heading";
+    const thumb = document.createElement("div");
+    thumb.className = "library-broadcaster-thumb";
+    thumb.textContent = "N";
+    const thumbnailItem = broadcasterItems.find(item => item.type === "video") ||
+      captureLibraryItems.find(item => item.broadcaster === broadcaster && item.type === "video");
+    if (thumbnailItem && api.getLibraryThumbnail) {
+      api.getLibraryThumbnail(thumbnailItem.path).then(dataUrl => {
+        if (dataUrl && thumb.isConnected) {
+          const image = document.createElement("img");
+          image.alt = broadcaster + " の録画サムネイル";
+          image.src = dataUrl;
+          thumb.replaceChildren(image);
+        }
+      }).catch(() => {});
+    }
+    const identity = document.createElement("div");
+    identity.className = "library-broadcaster-identity";
+    const name = document.createElement("strong");
+    name.textContent = broadcaster;
+    const videoCount = broadcasterItems.filter(item => item.type === "video").length;
+    const commentCount = broadcasterItems.filter(item => item.type === "comment").length;
+    const meta = document.createElement("span");
+    meta.textContent = "動画 " + videoCount + " 件 · コメント " + commentCount + " 件 · " +
+      formatLibraryDate(broadcasterItems[0]?.modifiedAt);
+    identity.append(name, meta);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "button button-secondary button-small library-broadcaster-toggle";
+    const expanded = expandedLibraryBroadcasters.has(broadcaster);
+    toggle.textContent = expanded ? "録画を閉じる" : "録画を見る";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.addEventListener("click", () => {
+      if (expandedLibraryBroadcasters.has(broadcaster)) expandedLibraryBroadcasters.delete(broadcaster);
+      else expandedLibraryBroadcasters.add(broadcaster);
+      renderCaptureLibrary();
+    });
+    heading.append(thumb, identity, toggle);
+    card.appendChild(heading);
+    const contents = document.createElement("div");
+    contents.className = "library-broadcaster-files";
+    contents.hidden = !expanded;
+    card.appendChild(contents);
+
+    for (const item of broadcasterItems) {
     const row = document.createElement("div");
     row.className = "library-row";
     const file = document.createElement("div");
@@ -1405,7 +1461,9 @@ function renderCaptureLibrary() {
       actions.appendChild(deleteButton);
     }
     row.appendChild(actions);
-    list.appendChild(row);
+    contents.appendChild(row);
+    }
+    list.appendChild(card);
   }
 }
 
