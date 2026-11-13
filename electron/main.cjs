@@ -49,6 +49,8 @@ let isQuitting = false;
 let monitorPowerSaveBlockerId = null;
 let loginWindow = null;
 let livePreviewWindow = null;
+let liveArticleCaptureWindow = null;
+let liveArticleCaptureWindowLiveId = "";
 let livePreviewId = "";
 let provider = null;
 let timeshiftCommentFetchActive = false;
@@ -125,9 +127,22 @@ function dataRoot() {
 }
 
 function safeLiveId(value) {
-  const match = String(value || "").trim().match(/(?:lv)?(\d{5,})/i);
-  if (!match) throw new Error("放送IDまたは視聴URLを入力してください。");
-  return "lv" + match[1];
+  const raw = String(value || "").trim();
+  if (!raw) throw new Error("放送IDまたは視聴URLを入力してください。");
+  const bare = raw.match(/^(?:lv)?(\d{5,})$/i);
+  if (bare) return "lv" + bare[1];
+  let parsed;
+  try { parsed = new URL(raw); } catch (_) {}
+  if (parsed) {
+    const host = parsed.hostname.toLowerCase();
+    const allowedHosts = new Set(["live.nicovideo.jp", "www.nicovideo.jp", "nicovideo.jp", "nico.ms"]);
+    const match = parsed.pathname.match(/(?:^|\/)watch\/(?:lv)?(\d{5,})(?:\/|$)/i)
+      || parsed.pathname.match(/(?:^|\/)(?:lv)(\d{5,})(?:\/|$)/i);
+    if (["http:", "https:"].includes(parsed.protocol) && allowedHosts.has(host) && match) {
+      return "lv" + match[1];
+    }
+  }
+  throw new Error("ニコニコの放送ID（lv123456789）または視聴URL全体を入力してください。");
 }
 
 function stamp() {
@@ -1202,11 +1217,64 @@ async function connectPreparedCommentSession(liveId) {
   }
 }
 
+async function openHiddenLiveArticleCapture(value) {
+  const liveId = safeLiveId(value);
+  const url = "https://live.nicovideo.jp/watch/" + liveId;
+  closeHiddenLiveArticleCapture();
+  const capture = new BrowserWindow({
+    width: 960,
+    height: 540,
+    show: false,
+    frame: false,
+    backgroundColor: "#080d18",
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: "persist:nico-auth",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false
+    }
+  });
+  liveArticleCaptureWindow = capture;
+  liveArticleCaptureWindowLiveId = liveId;
+  capture.webContents.setAudioMuted(true);
+  capture.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  capture.on("closed", () => {
+    if (liveArticleCaptureWindow === capture) {
+      liveArticleCaptureWindow = null;
+      liveArticleCaptureWindowLiveId = "";
+    }
+  });
+  try {
+    await capture.loadURL(url);
+    if (capture.isDestroyed()) throw new Error("記事用の非表示映像ウィンドウが閉じられました。");
+    return { liveId, hidden: true };
+  } catch (error) {
+    if (!capture.isDestroyed()) capture.destroy();
+    if (liveArticleCaptureWindow === capture) {
+      liveArticleCaptureWindow = null;
+      liveArticleCaptureWindowLiveId = "";
+    }
+    throw error;
+  }
+}
+function closeHiddenLiveArticleCapture() {
+  const capture = liveArticleCaptureWindow;
+  liveArticleCaptureWindow = null;
+  liveArticleCaptureWindowLiveId = "";
+  if (capture && !capture.isDestroyed()) {
+    try { capture.destroy(); } catch (_) {}
+  }
+  return { closed: true };
+}
+
 async function captureLiveArticleFrame() {
-  if (!liveArticleSessionActive || liveArticleCaptureInProgress || !livePreviewWindow || livePreviewWindow.isDestroyed() || livePreviewId !== currentLiveId) return null;
+  if (!liveArticleSessionActive || liveArticleCaptureInProgress || !liveArticleCaptureWindow ||
+      liveArticleCaptureWindow.isDestroyed() || liveArticleCaptureWindowLiveId !== currentLiveId) return null;
   liveArticleCaptureInProgress = true;
   try {
-    const image = await livePreviewWindow.webContents.capturePage();
+    const image = await liveArticleCaptureWindow.webContents.capturePage();
     if (!image || image.isEmpty()) return null;
     const resized = image.resize({ width: 640 });
     const encoded = resized.toJPEG(62).toString("base64");
@@ -1402,7 +1470,7 @@ async function startLiveArticleSession(input = {}) {
   liveArticleSessionActive = true;
   try {
     await prepareCommentSession(liveId, displayName, "", programInfo);
-    await openLivePreview(liveId);
+    await openHiddenLiveArticleCapture(liveId);
     await connectPreparedCommentSession(liveId);
     await startLiveArticleAudioCapture(liveId);
     await new Promise(resolve => setTimeout(resolve, 8000));
@@ -1423,7 +1491,7 @@ async function startLiveArticleSession(input = {}) {
     if (provider) { try { provider.disconnect(); } catch (_) {} provider = null; }
     await stopLiveArticleAudioCapture(liveId);
     await closeCommentWriter();
-    closeLivePreview();
+    closeHiddenLiveArticleCapture();
     liveArticleSessionActive = false;
     liveArticleFrames = [];
     send("articles:live-state", { state: "error", liveId, message: error.message || String(error) });
@@ -1452,7 +1520,7 @@ async function stopLiveArticleSession() {
   liveArticleFrames = [];
   liveArticleAudioTranscript = null;
   currentLiveId = "";
-  closeLivePreview();
+  closeHiddenLiveArticleCapture();
   send("articles:live-state", { state: "stopped", liveId });
   return { stopped: true, liveId };
 }
