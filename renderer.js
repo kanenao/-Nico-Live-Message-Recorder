@@ -441,9 +441,12 @@ async function startVideoRecording(target = null) {
       startRecordClock();
     }
     if (timeshift && result.commentCount > 0) {
+      const assFailure = result.commentError && result.commentError.includes("ASS字幕作成に失敗しました:")
+        ? " " + result.commentError.slice(result.commentError.indexOf("ASS字幕作成に失敗しました:"))
+        : "";
       const assSummary = result.assFilePath
         ? " ASS字幕 " + result.assCommentCount.toLocaleString("ja-JP") + "件を保存しました。"
-        : "";
+        : assFailure;
       showToast("タイムシフトの映像・音声録画と過去コメント " +
         result.commentCount.toLocaleString("ja-JP") + "件の保存を開始しました。" + assSummary);
       if (result.commentsTruncated) {
