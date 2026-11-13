@@ -647,7 +647,11 @@ function listBroadcastArticles() {
       if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".json") continue;
       try {
         const article = JSON.parse(fs.readFileSync(fullPath, "utf8"));
-        if (article && article.status === "generated" && article.schemaVersion === 1) items.push(article);
+        if (article && article.status === "generated" && article.schemaVersion === 1) {
+          // articlePath is runtime metadata used by the delete action; older JSON files do not store it.
+          article.articlePath = fullPath;
+          items.push(article);
+        }
       } catch (_) {
         // Ignore incomplete or older article files.
       }
