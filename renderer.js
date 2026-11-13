@@ -2041,20 +2041,6 @@ api.onEvent(({ channel, payload }) => {
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
     addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
   }
-  if (channel === "ollama:setup-progress" && payload) {
-    const message = byId("ollama-status-message");
-    if (message) {
-      if (payload.stage === "installer") {
-        const received = (Number(payload.received) || 0) / 1024 / 1024;
-        const total = (Number(payload.total) || 0) / 1024 / 1024;
-        message.textContent = "Ollamaインストーラーをダウンロード中… " + received.toFixed(1) + " MB" + (total ? " / " + total.toFixed(1) + " MB（" + (Number(payload.percent) || 0) + "%）" : "");
-      } else if (payload.stage === "model") {
-        const completed = Number(payload.completed) || 0;
-        const total = Number(payload.total) || 0;
-        message.textContent = "モデル " + payload.model + " を取得中… " + (payload.status || "準備中") + (total ? "（" + Math.round(completed / total * 100) + "%）" : "");
-      }
-    }
-  }
   if (channel === "whisper:download-progress" && payload) {
     const status = byId("manual-article-whisper-download-status");
     const stage = payload.stage === "runtime" ? "Whisper.cpp実行ファイル" : payload.stage === "model" ? "日本語モデル（ggml-base.bin）" : "セットアップ";
@@ -2145,36 +2131,6 @@ byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
 byId("save-settings-button").addEventListener("click", saveSettings);
 byId("ollama-check-button").addEventListener("click", () => void checkOllamaStatus());
-byId("ollama-install-button").addEventListener("click", async () => {
-  const button = byId("ollama-install-button");
-  const message = byId("ollama-status-message");
-  button.disabled = true;
-  if (message) message.textContent = "公式Ollamaインストーラーをダウンロードしています…";
-  try {
-    const result = await api.downloadOllamaInstaller();
-    if (message) message.textContent = "インストーラーを起動しました。画面の案内に沿ってインストールし、完了後に「Ollama接続を確認」を押してください。";
-    showToast("Ollamaインストーラーを起動しました。");
-  } catch (error) {
-    if (message) message.textContent = error.message || "Ollamaのダウンロードに失敗しました。";
-    showToast(message.textContent, true);
-  } finally { button.disabled = false; }
-});
-byId("ollama-pull-model-button").addEventListener("click", async () => {
-  const button = byId("ollama-pull-model-button");
-  const model = byId("setting-ai-article-model").value.trim() || "qwen2.5:3b";
-  const message = byId("ollama-status-message");
-  button.disabled = true;
-  if (message) message.textContent = model + " をダウンロードしています…";
-  try {
-    await api.pullOllamaModel(model);
-    if (message) message.textContent = model + " のダウンロードが完了しました。";
-    await checkOllamaStatus();
-    showToast(model + " をOllamaに追加しました。");
-  } catch (error) {
-    if (message) message.textContent = error.message || "モデルのダウンロードに失敗しました。";
-    showToast(message.textContent, true);
-  } finally { button.disabled = false; }
-});
 byId("settings-modal").addEventListener("click", (event) => {
   if (event.target === byId("settings-modal")) closeSettings();
 });

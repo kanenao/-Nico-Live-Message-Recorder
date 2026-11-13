@@ -13,7 +13,6 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { transcribeVideoAudio } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
-const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
   normalizeCompositionQuality,
@@ -1995,24 +1994,6 @@ function stopMonitor() {
 
 ipcMain.handle("monitor:get-state", () => getMonitorState());
 ipcMain.handle("ollama:get-status", () => getOllamaStatus());
-ipcMain.handle("ollama:download-installer", async () => {
-  const installerPath = await downloadOllamaInstaller({
-    directory: path.join(app.getPath("userData"), "ollama"),
-    onProgress: (progress) => send("ollama:setup-progress", progress)
-  });
-  const launchError = await shell.openPath(installerPath);
-  if (launchError) throw new Error("Ollamaインストーラーを起動できませんでした: " + launchError);
-  return { installerPath, launched: true };
-});
-ipcMain.handle("ollama:pull-model", async (_event, input) => {
-  const settings = getMonitorSettings();
-  const model = String(input && input.model || settings.aiArticleModel || "qwen2.5:3b").trim();
-  const result = await pullOllamaModel({
-    baseUrl: settings.baseUrl || "http://127.0.0.1:11434", model,
-    onProgress: (progress) => send("ollama:setup-progress", progress)
-  });
-  return result;
-});
 
 ipcMain.handle("monitor:save-settings", (_event, values) => saveMonitorSettings(values));
 

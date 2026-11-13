@@ -776,7 +776,7 @@ test("Ollama setup downloads the official Windows installer and pulls the select
   assert.match(renderer, /ollama-pull-model-button/);
   assert.match(html, /id="ollama-install-button"/);
   assert.match(html, /id="ollama-pull-model-button"/);
-  assert.match(setup, /https:\\/\\/ollama\.com\\/download\\/OllamaSetup\.exe/);
+  assert.ok(setup.includes("https://ollama.com/download/OllamaSetup.exe"));
   assert.match(setup, /\/api\/pull/);
   assert.match(setup, /ollama:setup-progress/);
 });
