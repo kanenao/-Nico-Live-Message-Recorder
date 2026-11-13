@@ -39,6 +39,7 @@ const monitorHandledDetections = new Set();
 let monitorIsRunning = false;
 const monitorAutoQueue = [];
 let monitorAutoProcessing = false;
+let recordStartInProgress = false;
 let captureLibraryItems = [];
 const expandedLibraryBroadcasters = new Set();
 
@@ -349,7 +350,7 @@ function formatDuration(milliseconds) {
 
 async function startVideoRecording(target = null) {
   const selectedTarget = target && typeof target === "object" && target.liveId ? target : null;
-  if (recordButton.disabled || recordStartedAt || monitorAutoProcessing) {
+  if (recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
     showToast("別の配信を録画中、または録画準備中です。終了後に開始してください。", true);
     return;
   }
@@ -389,6 +390,7 @@ async function startVideoRecording(target = null) {
       " · " + liveId + " · LIVE一覧から録画開始";
   }
   renderSessionProgramInfo();
+  recordStartInProgress = true;
   recordButton.disabled = true;
   renderLiveBroadcasts();
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
@@ -454,6 +456,10 @@ async function startVideoRecording(target = null) {
     setVideoState(false);
     if (!connected) setConnection("error");
     showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
+  } finally {
+    recordStartInProgress = false;
+    recordButton.disabled = videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
+    renderLiveBroadcasts();
   }
   processMonitorAutoQueue();
 }
@@ -652,7 +658,7 @@ function getLiveBroadcastItems() {
     byLiveId.set(status.liveId, { ...status, isRecording: false });
   }
   const activeCapture = currentCaptureTarget && currentCaptureTarget.liveId &&
-    (recordButton.disabled || Boolean(recordStartedAt) ||
+    (recordStartInProgress || Boolean(recordStartedAt) ||
       videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing);
   if (activeCapture) {
     const capture = currentCaptureTarget;
@@ -758,7 +764,7 @@ function renderLiveBroadcasts() {
     const record = document.createElement("button");
     record.type = "button";
     record.className = "button button-primary button-small live-broadcast-record-button";
-    const recordingBusy = !status.isRecording && (recordButton.disabled || Boolean(recordStartedAt) ||
+    const recordingBusy = !status.isRecording && (recordStartInProgress || Boolean(recordStartedAt) ||
       videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing);
     record.disabled = Boolean(status.isRecording) || recordingBusy;
     record.textContent = status.isRecording
@@ -1254,7 +1260,7 @@ async function processMonitorAutoQueue() {
     if (!recordStartedAt && videoCaptureState !== "recording") {
       currentCaptureTarget = null;
       renderSessionProgramInfo();
-      recordButton.disabled = false;
+      recordButton.disabled = recordStartInProgress || videoCaptureState === "stopping";
     }
     renderLiveBroadcasts();
     if (monitorAutoQueue.length > 0 && !recordButton.disabled) {
