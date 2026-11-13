@@ -842,6 +842,8 @@ test("article export is exposed through a save dialog and preload bridge", () =>
 test("live article capture uses a hidden window and does not open the visible watch preview", () => {
   assert.match(main, /async function openHiddenLiveArticleCapture/);
   assert.match(main, /show:\s*false/);
+  assert.match(main, /offscreen:\s*true/);
+  assert.match(main, /async function shutdownGracefully[\s\S]*closeHiddenLiveArticleCapture/);
   assert.match(main, /backgroundThrottling:\s*false/);
   assert.match(main, /captureLiveArticleFrame[\s\S]*liveArticleCaptureWindow\.webContents\.capturePage/);
   assert.match(main, /await openHiddenLiveArticleCapture\(liveId\)/);
