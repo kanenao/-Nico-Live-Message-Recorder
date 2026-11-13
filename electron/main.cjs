@@ -79,6 +79,7 @@ let streamlinkRuntimeDirectory = "";
 let streamlinkOutputPath = "";
 let streamlinkFinalOutputPath = "";
 let streamlinkFfmpegPath = "";
+let streamlinkStderr = "";
 let streamlinkStopRequested = false;
 let composeWriter = null;
 let composeFilePath = "";
@@ -2203,6 +2204,7 @@ async function finalizeStreamlinkRecording(exit) {
   streamlinkBroadcasterName = "";
   streamlinkBroadcasterId = "";
   streamlinkFfmpegPath = "";
+  const finalStderr = streamlinkStderr; streamlinkStderr = "";
   if (runtimeDirectory) {
     await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
   }
@@ -2218,9 +2220,9 @@ async function finalizeStreamlinkRecording(exit) {
   send("video:state", { recording: false, ...result });
 
   if (!streamlinkStopRequested && exit.code !== 0) {
-    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態、視聴権限、Streamlinkのバージョンを確認してください。");
+    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\n詳細: " + finalStderr.trim().slice(-1800) : ""));
   } else if (!hasOutput) {
-    send("app:error", "録画データが作成されませんでした。放送IDと視聴権限、Streamlinkの対応状況を確認してください。");
+    send("app:error", "録画データが作成されませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\nStreamlink詳細: " + finalStderr.trim().slice(-1800) : ""));
   }
   return result;
 }
@@ -2359,7 +2361,8 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   streamlinkBroadcasterId = currentBroadcasterId;
   streamlinkFfmpegPath = ffmpegPath || "";
   streamlinkStopRequested = false;
-  if (child.stderr) child.stderr.on("data", () => {});
+  streamlinkStderr = "";
+  if (child.stderr) child.stderr.on("data", chunk => { streamlinkStderr = (streamlinkStderr + chunk.toString("utf8")).slice(-12000); });
 
   streamlinkFinalizePromise = new Promise((resolve) => {
     child.once("close", (code, signal) => resolve({ code, signal }));
@@ -2374,6 +2377,19 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     throw new Error("Streamlinkを起動できませんでした: " + error.message);
   });
 
+  const startupDeadline = Date.now() + 25000;
+  let outputReady = false;
+  while (Date.now() < startupDeadline) {
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) { outputReady = true; break; }
+    if (child.exitCode !== null || child.signalCode !== null) break;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  if (!outputReady) {
+    const detail = streamlinkStderr.trim().slice(-1800);
+    if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGINT"); } catch (_) {} }
+    if (streamlinkFinalizePromise) await streamlinkFinalizePromise.catch(() => {});
+    throw new Error("Streamlinkは起動しましたが、録画データを受信できませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (detail ? "\nStreamlink詳細: " + detail : ""));
+  }
   const startedAt = new Date().toISOString();
   if (currentLiveId === liveId) {
     appendMarker("videoStart", {
@@ -2882,6 +2898,20 @@ function listCaptureLibrary() {
       }
     }
   }
+  const savedArticles = listBroadcastArticles().items;
+  for (const item of items) {
+    if (item.type !== "video") continue;
+    const article = savedArticles.find(candidate =>
+      (candidate.videoFile && path.resolve(candidate.videoFile) === path.resolve(item.path)) ||
+      (candidate.liveId && item.liveId && String(candidate.liveId).toLowerCase() === item.liveId.toLowerCase())
+    );
+    if (article) item.article = {
+      articlePath: article.articlePath || "",
+      title: article.title || article.programTitle || article.liveId || "放送記事",
+      summary: article.summary || (Array.isArray(article.paragraphs) ? article.paragraphs[0] : "") || "",
+      topics: Array.isArray(article.topics) ? article.topics.slice(0, 5).map(topic => topic.term).filter(Boolean) : []
+    };
+  }
   items.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
   return {
     root,
@@ -2930,6 +2960,28 @@ ipcMain.handle("library:thumbnail", (_event, value) => {
   } catch (_) {
     return "";
   }
+});
+function resolveBroadcastArticlePath(value) {
+  const root = path.resolve(dataRoot(), "articles"), target = path.resolve(String(value || ""));
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative) || path.extname(target).toLowerCase() !== ".json") throw new Error("記事フォルダー内のJSONファイルを指定してください。");
+  let realTarget;
+  try { realTarget = fs.realpathSync(target); if (!fs.statSync(realTarget).isFile()) throw new Error("ファイルではありません。"); }
+  catch (error) { throw new Error("記事ファイルが見つかりません: " + error.message); }
+  const realRelative = path.relative(root, realTarget);
+  if (!realRelative || realRelative.startsWith("..") || path.isAbsolute(realRelative)) throw new Error("記事保存フォルダー外のファイルは削除できません。");
+  return realTarget;
+}
+ipcMain.handle("articles:delete", async (_event, value) => {
+  const target = resolveBroadcastArticlePath(value);
+  const confirmation = await dialog.showMessageBox(mainWindow, {
+    type: "warning", buttons: ["キャンセル", "記事だけ削除"], defaultId: 0, cancelId: 0,
+    title: "放送記事の削除", message: "この放送記事を削除しますか？",
+    detail: "削除するのは記事JSONだけです。録画動画・コメントログは削除されません。"
+  });
+  if (confirmation.response !== 1) return { cancelled: true };
+  await fs.promises.unlink(target);
+  return { deleted: true, fileName: path.basename(target) };
 });
 ipcMain.handle("articles:list", () => listBroadcastArticles());
 ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
