@@ -92,19 +92,20 @@
     const maximumCommentFont = Math.min(120, Math.max(10, Math.round(baseFontSize * 1.22)));
     const lineHeight = Math.max(24, Math.ceil(maximumCommentFont * 1.22 + outlineWidth * 2 + 8));
 
-    // Scrolling comments use nearly the whole video height, while fixed comments
-    // remain close to the upper/lower edge like the NicoNico display.
-    const scrollTop = edge;
-    const scrollBottom = height - edge;
+    // Keep two fixed-comment rows at the top and bottom. The reserved band
+    // includes a line-height margin so large comments do not touch scrolling rows.
+    const fixedLaneCount = 2;
+    const fixedBandHeight = Math.max(lineHeight * (fixedLaneCount + 1), Math.round(height * 0.22));
+    const scrollTop = Math.max(edge, fixedBandHeight);
+    const scrollBottom = Math.min(height - edge, height - fixedBandHeight);
     const usableScrollHeight = Math.max(lineHeight, scrollBottom - scrollTop);
     const availableScrollRows = Math.max(1, Math.floor(usableScrollHeight / lineHeight));
     const scrollLaneCount = Math.max(1, Math.min(rowLimit, availableScrollRows));
     const occupiedHeight = scrollLaneCount * lineHeight;
     const verticalOffset = Math.max(0, Math.floor((usableScrollHeight - occupiedHeight) / 2));
-    const fixedLaneCount = 1;
-    const topY = Math.max(Math.round(lineHeight / 2), Math.round(edge * 0.72));
-    const topLaneYs = [topY];
-    const bottomLaneYs = [height - topY];
+    const topLaneYs = Array.from({ length: fixedLaneCount }, (_, lane) =>
+      Math.round(fixedBandHeight * (lane + 1) / (fixedLaneCount + 1)));
+    const bottomLaneYs = topLaneYs.map(y => height - y);
     const scrollLaneYs = Array.from({ length: scrollLaneCount }, (_, lane) =>
       scrollTop + verticalOffset + Math.round(lineHeight / 2) + lane * lineHeight);
 
@@ -147,5 +148,13 @@
     return Math.max(1, Math.ceil((text / pixelsPerSecond) * 1000));
   }
 
-  return { timestampMs, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway };
+  function normalizeCommentDisplayText(value) {
+    return String(value == null ? "" : value)
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  return { timestampMs, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
 });

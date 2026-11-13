@@ -2277,7 +2277,9 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     const fontFamily = ["ＭＳ Ｐゴシック", "Meiryo", "Yu Gothic UI", "BIZ UDPGothic", "Arial"].includes(options.fontFamily)
       ? options.fontFamily : "ＭＳ Ｐゴシック";
     context.font = "bold " + fontSize + "px \"" + fontFamily + "\", sans-serif";
-    const textWidth = Math.ceil(context.measureText(comment.text).width) + 20;
+    const displayText = window.nicoCommentComposition.normalizeCommentDisplayText(comment.text);
+    if (!displayText) continue;
+    const textWidth = Math.ceil(context.measureText(displayText).width) + 20;
     const startMs = comment.timeMs;
 
     if (isFixed) {
@@ -2287,7 +2289,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
       const lane = reservation.lane;
       const y = isTop ? layout.topLaneYs[lane] : layout.bottomLaneYs[lane];
       schedule.push({
-        ...comment, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
+        ...comment, text: displayText, startMs: reservation.startMs, endMs: reservation.endMs, fontSize, color,
         textWidth, mode: isTop ? "top" : "bottom", y
       });
       continue;
@@ -2304,6 +2306,7 @@ function createCommentOverlaySchedule(comments, context, width, height, options 
     const y = layout.scrollLaneYs[lane];
     schedule.push({
       ...comment,
+      text: displayText,
       startMs: reservation.startMs,
       endMs: reservation.startMs + durationMs,
       fontSize, color, textWidth, mode: "scroll", y

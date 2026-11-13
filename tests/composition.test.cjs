@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { prepareCommentTimeline, timestampMs, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway } = require("../composition.js");
+const { prepareCommentTimeline, timestampMs, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText } = require("../composition.js");
 
 test("aligns comments to videoStart rather than sessionStart", () => {
   const result = prepareCommentTimeline([
@@ -91,7 +91,7 @@ test("calculates separate comment bands with spacing for maximum font size and o
     marginPercent: 7,
     rowLimit: 12
   });
-  assert.equal(layout.fixedLaneCount, 1);
+  assert.equal(layout.fixedLaneCount, 2);
   assert.ok(layout.lineHeight >= Math.ceil(51 * 1.22 + 12 + 8));
   assert.ok(layout.scrollLaneYs[0] > layout.topLaneYs[0]);
   assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs[0]);
@@ -105,7 +105,7 @@ test("scales comment bands to output resolution and respects the requested scrol
     marginPercent: 7,
     rowLimit: 3
   });
-  assert.equal(layout.fixedLaneCount, 1);
+  assert.equal(layout.fixedLaneCount, 2);
   assert.ok(layout.scrollLaneCount <= 3);
   assert.ok(layout.topLaneYs[0] < layout.scrollLaneYs[0]);
   assert.ok(layout.scrollLaneYs.at(-1) < layout.bottomLaneYs[0]);
@@ -132,4 +132,23 @@ test("spreads scrolling rows through the video while fixed comments stay at the 
   assert.ok(layout.scrollLaneYs.at(-1) < 1080 - layout.edge);
   assert.ok(layout.topLaneYs[0] < layout.scrollLaneYs[0]);
   assert.ok(layout.bottomLaneYs[0] > layout.scrollLaneYs.at(-1));
+});
+
+
+test("allocates two fixed comment rows above and below the scrolling region", () => {
+  const layout = calculateCommentLaneLayout({
+    height: 1080, baseFontSize: 64, outlineWidth: 5, marginPercent: 7, rowLimit: 12
+  });
+  assert.equal(layout.fixedLaneCount, 2);
+  assert.equal(layout.topLaneYs.length, 2);
+  assert.equal(layout.bottomLaneYs.length, 2);
+  assert.ok(layout.topLaneYs[0] < layout.topLaneYs[1]);
+  assert.ok(layout.topLaneYs[1] < layout.scrollLaneYs[0]);
+  assert.ok(layout.bottomLaneYs[0] > layout.scrollLaneYs.at(-1));
+  assert.ok(layout.bottomLaneYs[0] > layout.bottomLaneYs[1]);
+});
+
+test("normalizes multiline and control-character comments for one-line display", () => {
+  assert.equal(normalizeCommentDisplayText("  こんにちは\\r\\n世界\\t  \u0001 "), "こんにちは 世界");
+  assert.equal(normalizeCommentDisplayText("  "), "");
 });
