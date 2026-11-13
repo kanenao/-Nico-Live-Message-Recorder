@@ -1512,13 +1512,32 @@ function renderBroadcastArticles() {
   if (!list) return;
   list.replaceChildren();
   const query = String(byId("articles-search").value || "").trim().toLowerCase();
+  const statusFilter = byId("articles-status-filter")?.value || "all";
+  const sortMode = byId("articles-sort")?.value || "newest";
   const items = broadcastArticles.filter((article) => {
+    const isLive = article.liveStatus === "live" || article.isLive === true;
+    if (statusFilter === "live" && !isLive) return false;
+    if (statusFilter === "ended" && isLive) return false;
+    if (statusFilter === "manual" && article.articleSource !== "manual") return false;
+    if (statusFilter === "ai" && !article.aiProvider) return false;
+    const topics = (article.topics || []).map((topic) => typeof topic === "string" ? topic : topic.term);
+    const timeline = (article.aiTimeline || []).map((item) => item && item.detail || "");
     const searchable = [
       article.broadcasterName, article.programTitle, article.title, article.liveId,
-      ...(article.topics || []).map((topic) => topic.term)
+      article.summary, article.note, article.aiAudienceReaction, article.videoAnalysis,
+      article.audioAnalysis, article.audioTranscript,
+      ...(article.paragraphs || []), ...(article.aiHighlights || []), ...timeline, ...topics
     ].join(" ").toLowerCase();
     return !query || searchable.includes(query);
+  }).sort((a, b) => {
+    const aTime = Date.parse(a.generatedAt || a.startedAt || 0) || 0;
+    const bTime = Date.parse(b.generatedAt || b.startedAt || 0) || 0;
+    if (sortMode === "oldest") return aTime - bTime;
+    if (sortMode === "comments") return Number(b.commentCount || 0) - Number(a.commentCount || 0);
+    return bTime - aTime;
   });
+  const countLabel = byId("articles-filter-count");
+  if (countLabel) countLabel.textContent = items.length.toLocaleString("ja-JP") + " 件表示 / 全 " + broadcastArticles.length.toLocaleString("ja-JP") + " 件";
 
   if (!items.length) {
     const empty = document.createElement("div");
@@ -1551,6 +1570,21 @@ function renderBroadcastArticles() {
       heading.append(liveBadge);
     }
     heading.append(title, meta);
+    const tags = document.createElement("div");
+    tags.className = "broadcast-article-tags";
+    const addTag = (label, kind = "") => {
+      const tag = document.createElement("span");
+      tag.className = "broadcast-article-tag" + (kind ? " " + kind : "");
+      tag.textContent = label;
+      tags.appendChild(tag);
+    };
+    if (article.aiProvider) addTag("AI生成 · " + article.aiProvider + (article.aiModel ? " / " + article.aiModel : ""), "ai");
+    else addTag("統計・コメント整理記事", "local");
+    if (article.articleSource === "manual") addTag("登録なし・手動生成");
+    if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚", "video");
+    if (article.audioAnalysis || article.audioTranscriptSegmentCount) addTag("音声文字起こし済み", "audio");
+    if (article.liveStatus === "live" || article.isLive) addTag("ライブ更新中", "live");
+    if (tags.childElementCount) heading.appendChild(tags);
 
     const stats = document.createElement("div");
     stats.className = "broadcast-article-stats";
@@ -1612,6 +1646,32 @@ function renderBroadcastArticles() {
     const note = document.createElement("p");
     note.className = "broadcast-article-note";
     note.textContent = article.note || "番組情報と保存済みコメントから自動生成された記事です。";
+    const topicValues = (article.topics || []).map((topic) => typeof topic === "string" ? topic : topic.term).filter(Boolean);
+    if (topicValues.length) {
+      const topics = document.createElement("div");
+      topics.className = "broadcast-article-topics";
+      const label = document.createElement("strong");
+      label.textContent = "注目トピック";
+      topics.appendChild(label);
+      for (const topic of topicValues.slice(0, 10)) {
+        const chip = document.createElement("span");
+        chip.textContent = topic;
+        topics.appendChild(chip);
+      }
+      body.appendChild(topics);
+    }
+    const sourceDetails = [];
+    if (article.videoAnalysis) sourceDetails.push("映像：" + article.videoAnalysis);
+    if (article.audioAnalysis) sourceDetails.push("音声：" + article.audioAnalysis);
+    if (Number(article.aiCommentTotalCount) > 0) {
+      sourceDetails.push("AI参照コメント：" + Number(article.aiCommentSampleCount || 0).toLocaleString("ja-JP") + " / " + Number(article.aiCommentTotalCount).toLocaleString("ja-JP") + "件");
+    }
+    if (sourceDetails.length) {
+      const sources = document.createElement("p");
+      sources.className = "broadcast-article-sources";
+      sources.textContent = sourceDetails.join("　｜　");
+      body.appendChild(sources);
+    }
     body.appendChild(note);
 
     const actions = document.createElement("div");
@@ -2261,6 +2321,8 @@ byId("manual-article-file").addEventListener("change", () => {
   byId("manual-article-file-name").textContent = file ? file.name + "（" + formatLibraryBytes(file.size) + "）" : "ファイル未選択。番組情報だけでも記事を生成できます。";
 });
 byId("articles-search").addEventListener("input", renderBroadcastArticles);
+byId("articles-status-filter").addEventListener("change", renderBroadcastArticles);
+byId("articles-sort").addEventListener("change", renderBroadcastArticles);
 byId("library-open-folder-button").addEventListener("click", async () => {
   try {
     const result = await api.openDataFolder();

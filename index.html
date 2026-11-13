@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.57</span>
+        <span class="version" id="version">v0.1.0-beta.58</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -190,11 +190,28 @@
             <div class="library-summary-card"><span>配信者数</span><strong id="articles-broadcaster-count">0</strong></div>
             <div class="library-summary-card"><span>記事対象コメント</span><strong id="articles-comment-total">0</strong></div>
           </div>
-          <div class="library-toolbar">
+          <div class="library-toolbar article-library-toolbar">
             <label class="library-search-field" for="articles-search">
-              <span>記事を検索</span>
-              <input id="articles-search" type="search" placeholder="配信者名・番組タイトル・放送ID・話題">
+              <span>記事を検索（本文・要約・話題も対象）</span>
+              <input id="articles-search" type="search" placeholder="配信者名・番組タイトル・放送ID・本文・話題">
             </label>
+            <label class="article-filter-field">記事の種類
+              <select id="articles-status-filter">
+                <option value="all">すべての記事</option>
+                <option value="live">ライブ記事</option>
+                <option value="ended">配信終了記事</option>
+                <option value="manual">登録なし・手動生成</option>
+                <option value="ai">AI生成済み</option>
+              </select>
+            </label>
+            <label class="article-filter-field">並び順
+              <select id="articles-sort">
+                <option value="newest">新しい順</option>
+                <option value="oldest">古い順</option>
+                <option value="comments">コメント数が多い順</option>
+              </select>
+            </label>
+            <span id="articles-filter-count" class="article-filter-count" aria-live="polite">0 件表示</span>
           </div>
           <div class="broadcast-articles-list" id="articles-list">
             <div class="article-empty">放送記事を読み込んでいます…</div>
@@ -602,7 +619,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.1.0-beta.57</strong>
+              <strong id="app-current-version">v0.1.0-beta.58</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -631,7 +648,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.57</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.58</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

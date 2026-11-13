@@ -744,6 +744,11 @@ test("AI article cards render a newspaper-style lead, highlights, timeline, and 
   assert.match(renderer, /broadcast-article-highlights/);
   assert.match(renderer, /broadcast-article-timeline/);
   assert.match(renderer, /broadcast-article-reaction/);
+  assert.match(renderer, /articles-status-filter/);
+  assert.match(renderer, /articles-sort/);
+  assert.match(renderer, /broadcast-article-tags/);
+  assert.match(renderer, /broadcast-article-topics/);
+  assert.match(renderer, /article\.summary, article\.note, article\.aiAudienceReaction/);
   assert.match(main, /aiCommentSampleCount/);
   assert.match(main, /aiCommentTotalCount/);
   assert.match(ollamaSource, /selectRepresentativeComments/);
