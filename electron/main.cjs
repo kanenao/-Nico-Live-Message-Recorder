@@ -502,7 +502,7 @@ async function extractArticleVideoFrames(videoPath) {
       probe.once("error", () => { clearTimeout(timeout); resolve(); });
       probe.once("close", () => {
         clearTimeout(timeout);
-        const match = probeText.match(/Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)/i);
+        const match = probeText.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
         if (match) durationSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
         resolve();
       });
@@ -518,7 +518,7 @@ async function extractArticleVideoFrames(videoPath) {
       child.once("error", error => { clearTimeout(timeout); reject(error); });
       child.once("close", code => { clearTimeout(timeout); if (code === 0) resolve(); else reject(new Error("動画から映像フレームを抽出できませんでした。" + (stderr ? " " + stderr.trim().slice(-1200) : ""))); });
     });
-    const names = fs.readdirSync(directory).filter(name => /^frame-\\d+\\.jpg$/i.test(name)).sort();
+    const names = fs.readdirSync(directory).filter(name => /^frame-\d+\.jpg$/i.test(name)).sort();
     if (!names.length) throw new Error("動画から分析できる映像フレームが見つかりませんでした。");
     return { directory, frames: names.map(name => ({ image: fs.readFileSync(path.join(directory, name)).toString("base64") })) };
   } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }

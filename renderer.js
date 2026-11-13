@@ -1542,8 +1542,8 @@ async function generateManualBroadcastArticle() {
       return;
     }
     status.textContent = result.aiProvider
-      ? "Ollama（" + result.aiModel + "）で記事を生成・保存しました。"
-      : "記事を保存しました。" + (result.aiFallbackReason ? " AIは利用できないため標準方式で生成しました。" : "");
+      ? "Ollama（" + result.aiModel + "）で記事を生成・保存しました。" + (result.videoFrameCount ? " 動画の代表フレーム" + result.videoFrameCount + "枚を分析しました。" : "")
+      : "記事を保存しました。" + (result.aiFallbackReason ? " AIは利用できないため標準方式で生成しました。" + (result.aiFallbackReason ? " " + result.aiFallbackReason : "") : "");
     showToast("記事を生成しました: " + (result.title || "放送記事"));
     await loadBroadcastArticles();
   } catch (error) {
