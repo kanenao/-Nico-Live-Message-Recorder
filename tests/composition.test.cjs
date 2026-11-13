@@ -152,3 +152,8 @@ test("normalizes multiline and control-character comments for one-line display",
   assert.equal(normalizeCommentDisplayText("  こんにちは\\r\\n世界\\t  \u0001 "), "こんにちは 世界");
   assert.equal(normalizeCommentDisplayText("  "), "");
 });
+
+
+test("normalizes escaped newline and tab sequences in serialized comment text", () => {
+  assert.equal(normalizeCommentDisplayText("一行目\\r\\n二行目\\t"), "一行目 二行目");
+});

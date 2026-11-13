@@ -673,3 +673,11 @@ button, .button {
   .library-broadcaster-files .library-type,.library-broadcaster-files .library-date,.library-broadcaster-files .library-size { grid-column:1; }
   .library-broadcaster-files .library-actions { grid-column:1 / -1; }
 }
+
+
+/* AI broadcast article editorial layout */
+.broadcast-article-lead { margin: 0 0 16px; padding: 14px 16px; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: rgba(83, 223, 155, 0.07); color: var(--text-primary); font-size: 1.02rem; line-height: 1.85; font-weight: 600; }
+.broadcast-article-highlights, .broadcast-article-timeline { margin: 16px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255, 255, 255, 0.025); }
+.broadcast-article-highlights h4, .broadcast-article-timeline h4 { margin: 0 0 10px; font-size: 0.92rem; }
+.broadcast-article-highlights ul { margin: 0; padding-left: 1.25rem; color: var(--text-secondary); line-height: 1.75; }
+.broadcast-article-timeline p, .broadcast-article-reaction { margin: 8px 0; color: var(--text-secondary); line-height: 1.75; }

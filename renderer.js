@@ -1555,10 +1555,40 @@ function renderBroadcastArticles() {
 
     const body = document.createElement("div");
     body.className = "broadcast-article-body";
+    if (article.summary) {
+      const lead = document.createElement("p");
+      lead.className = "broadcast-article-lead";
+      lead.textContent = article.summary;
+      body.appendChild(lead);
+    }
+    if (Array.isArray(article.aiHighlights) && article.aiHighlights.length) {
+      const highlights = document.createElement("section");
+      highlights.className = "broadcast-article-highlights";
+      const heading = document.createElement("h4");
+      heading.textContent = "この記事の注目点";
+      const list = document.createElement("ul");
+      for (const item of article.aiHighlights) {
+        const row = document.createElement("li"); row.textContent = item; list.appendChild(row);
+      }
+      highlights.append(heading, list); body.appendChild(highlights);
+    }
     for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
       const p = document.createElement("p");
       p.textContent = paragraph;
       body.appendChild(p);
+    }
+    if (Array.isArray(article.aiTimeline) && article.aiTimeline.length) {
+      const timeline = document.createElement("section");
+      timeline.className = "broadcast-article-timeline";
+      const heading = document.createElement("h4"); heading.textContent = "放送の流れ"; timeline.appendChild(heading);
+      for (const item of article.aiTimeline) {
+        const row = document.createElement("p"); row.textContent = [item.time, item.detail].filter(Boolean).join("　"); timeline.appendChild(row);
+      }
+      body.appendChild(timeline);
+    }
+    if (article.aiAudienceReaction) {
+      const reaction = document.createElement("p"); reaction.className = "broadcast-article-reaction";
+      reaction.textContent = "コメント欄の反応：" + article.aiAudienceReaction; body.appendChild(reaction);
     }
     const note = document.createElement("p");
     note.className = "broadcast-article-note";

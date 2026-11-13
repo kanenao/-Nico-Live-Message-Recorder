@@ -730,3 +730,18 @@ test("manual article generation can combine Whisper audio transcript, video fram
   assert.match(audioTranscription, /"-l", "ja"/);
   assert.match(audioTranscription, /parseWhisperJson/);
 });
+
+
+test("AI article cards render a newspaper-style lead, highlights, timeline, and audience reaction", () => {
+  assert.match(renderer, /broadcast-article-lead/);
+  assert.match(renderer, /broadcast-article-highlights/);
+  assert.match(renderer, /broadcast-article-timeline/);
+  assert.match(renderer, /broadcast-article-reaction/);
+  assert.match(main, /aiCommentSampleCount/);
+  assert.match(main, /aiCommentTotalCount/);
+  assert.match(ollamaSource, /selectRepresentativeComments/);
+  assert.match(ollamaSource, /放送時間全体に分散/);
+  assert.match(ollamaSource, /highlights/);
+  assert.match(ollamaSource, /audienceReaction/);
+  assert.match(main, /capturedAt: timestamp/);
+});

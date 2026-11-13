@@ -446,6 +446,12 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
+    article.aiHighlights = result.highlights || [];
+    article.aiTimeline = result.timeline || [];
+    article.aiAudienceReaction = result.audienceReaction || "";
+    article.aiCommentSampleCount = Number(result.commentSampleCount) || 0;
+    article.aiCommentTotalCount = Number(result.commentTotalCount) || 0;
+    if (result.summary) article.summary = result.summary;
     if (result.topics.length) article.topics = result.topics.map(term => ({ term, count: 0 }));
     article.aiProvider = result.provider;
     article.aiModel = result.model;
@@ -545,7 +551,12 @@ async function extractArticleVideoFrames(videoPath) {
     });
     const names = fs.readdirSync(directory).filter(name => /^frame-\d+\.jpg$/i.test(name)).sort();
     if (!names.length) throw new Error("動画から分析できる映像フレームが見つかりませんでした。");
-    return { directory, frames: names.map(name => ({ image: fs.readFileSync(path.join(directory, name)).toString("base64") })) };
+    return { directory, frames: names.map((name, index) => {
+      const seconds = durationSeconds * (index + 0.5) / names.length;
+      const whole = Math.floor(seconds);
+      const timestamp = [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60].map(value => String(value).padStart(2, "0")).join(":");
+      return { image: fs.readFileSync(path.join(directory, name)).toString("base64"), capturedAt: timestamp };
+    }) };
   } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
 }
 
