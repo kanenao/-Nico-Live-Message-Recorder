@@ -25,3 +25,16 @@ ollama pull qwen2.5:3b
 ## Hardware
 
 The model is stored locally and uses the PC's RAM/CPU or supported GPU. Performance depends on available memory and hardware.
+
+## Optional local audio transcription (Whisper.cpp)
+
+Audio transcription is local and free, but requires a Whisper.cpp Windows executable and a multilingual GGML model.
+
+1. Download a Windows build of whisper.cpp from https://github.com/ggml-org/whisper.cpp/releases
+2. Download a multilingual model such as `ggml-base.bin` from https://huggingface.co/ggerganov/whisper.cpp/tree/main
+3. In 放送記事, choose `whisper-cli.exe` and the `ggml-base.bin` model.
+4. Select a recorded video and generate the article. FFmpeg extracts mono 16 kHz audio; Whisper.cpp transcribes Japanese locally; the transcript, representative video frames, and Nico Live comments are sent to local Ollama for article composition.
+
+If Whisper is not configured or fails, article generation continues with the available video frames and comments. Recognition can be inaccurate with music, overlapping speakers, or noisy audio. Review important quotes against the original stream.
+
+Live article sessions currently analyze captured live frames and comments. Live audio capture/transcription is a separate follow-up because the preview window does not currently expose a reliable audio stream to the article pipeline.

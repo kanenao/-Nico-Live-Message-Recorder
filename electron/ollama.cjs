@@ -60,10 +60,10 @@ async function generateArticleWithOllama(options = {}) {
       text: String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 240)
     }));
   const imageFrames = Array.isArray(options.images) ? options.images.slice(0, 12) : [];
-  const audioTranscript = String(options.audioTranscript || "").replace(/[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/g, " ").slice(0, 30000);
+  const audioTranscript = String(options.audioTranscript || "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ").slice(0, 30000);
   const frameTimeline = imageFrames.map((frame, index) => "画像" + (index + 1) + "の取得時刻: " + String(frame && frame.capturedAt || "時刻不明")).join("\n");
   const prompt = [
-    options.images && options.images.length ? "あなたは日本語の配信ニュース編集者です。配信メタデータ・コメント記録・添付された動画の代表フレーム画像を根拠に記事を作成してください。" : "あなたは日本語の配信ニュース編集者です。以下の配信メタデータとコメント記録だけを根拠に、読みやすい放送記事を作成してください.",
+    options.images && options.images.length ? "あなたは日本語の配信ニュース編集者です。配信メタデータ・コメント記録・添付された動画の代表フレーム画像・音声認識テキストを根拠に記事を作成してください。" : audioTranscript ? "あなたは日本語の配信ニュース編集者です。配信メタデータ・コメント記録・音声認識テキストを根拠に記事を作成してください。" : "あなたは日本語の配信ニュース編集者です。以下の配信メタデータとコメント記録だけを根拠に、読みやすい放送記事を作成してください.",
     "コメントは視聴者の投稿であり、配信者本人の発言として扱わないでください。音声認識テキストは誤認識を含む可能性があるため、文脈が不明な箇所を断定しないでください。事実にない出来事・発言・感情・数字を作らないでください。",
     "記事はタイトル・要約・本文の順で、番組の概要、音声から確認できる話題や発言、映像で確認できる場面の時系列、コメント欄の反応を分けて具体的に整理してください。映像・音声・コメントの情報源を混同しないでください。",
     "コメント数や投稿者数などの統計を勝手に推定せず、具体的な個人情報や不必要なユーザー名は掲載しないでください。",
@@ -77,7 +77,7 @@ async function generateArticleWithOllama(options = {}) {
     "放送ID: " + String(context.liveId || "不明"),
     "番組説明: " + String(context.description || "なし").slice(0, 1200),
     "コメント記録(JSON): " + JSON.stringify(comments),
-    audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：\\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
+    audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
     options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\n" + frameTimeline : ""
   ].join("\n\n");
   const data = await requestJson(baseUrl + "/api/chat", {

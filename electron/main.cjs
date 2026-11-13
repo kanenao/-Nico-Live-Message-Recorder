@@ -2709,6 +2709,10 @@ ipcMain.handle("articles:select-video", async () => {
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   return { canceled: false, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
 });
+ipcMain.handle("articles:get-whisper-settings", () => {
+  const settings = readAppSettings();
+  return { cliPath: settings.articleWhisperCliPath || "", modelPath: settings.articleWhisperModelPath || "" };
+});
 ipcMain.handle("articles:select-whisper-cli", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: "whisper-cli実行ファイルを選択", properties: ["openFile"], filters: [{ name: "実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }] });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };

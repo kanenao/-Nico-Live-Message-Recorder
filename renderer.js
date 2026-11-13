@@ -1597,6 +1597,15 @@ async function stopLiveArticleSession() {
   } finally { button.disabled = false; }
 }
 
+async function loadArticleWhisperSettings() {
+  try {
+    const settings = await api.getArticleWhisperSettings();
+    if (settings.cliPath) byId("manual-article-whisper-cli-name").textContent = settings.cliPath;
+    if (settings.modelPath) byId("manual-article-whisper-model-name").textContent = settings.modelPath;
+  } catch (_) {}
+}
+void loadArticleWhisperSettings();
+
 async function selectArticleWhisperCli() {
   try { const result = await api.selectArticleWhisperCli(); if (result && !result.canceled) { byId("manual-article-whisper-cli-name").textContent = result.name; showToast("Whisper実行ファイルを設定しました。"); } }
   catch (error) { showToast(error.message || "実行ファイルを選択できませんでした。", true); }
