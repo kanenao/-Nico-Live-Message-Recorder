@@ -1002,6 +1002,38 @@ function getCompositionEditorOptions() {
   };
 }
 
+function applyNicoCommentPreset() {
+  const values = {
+    "compose-font-scale": 100,
+    "compose-font-size": 75,
+    "compose-speed": 100,
+    "compose-pixels-per-second": 450,
+    "compose-row-limit": 12,
+    "compose-lane-gap": 80,
+    "compose-duration": "auto",
+    "compose-display-mode": "all",
+    "compose-font-family": "ＭＳ Ｐゴシック",
+    "compose-color-mode": "original",
+    "compose-position": 7,
+    "compose-opacity": 100,
+    "compose-outline": 5
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const input = byId(id);
+    if (!input) continue;
+    input.value = String(value);
+    input.dispatchEvent(new Event(input.type === "range" ? "input" : "change", { bubbles: true }));
+  }
+  byId("compose-overlap-protection").checked = true;
+  byId("compose-shadow").checked = true;
+  byId("compose-overlap-protection").dispatchEvent(new Event("change", { bubbles: true }));
+  byId("compose-shadow").dispatchEvent(new Event("change", { bubbles: true }));
+  updateCompositionEditorLabels();
+  drawComposePreviewFrame();
+  setComposePreviewStatus("ニコ生標準プリセットを適用しました");
+  showToast("ニコ生風の標準コメント設定にしました。");
+}
+
 function updateCompositionEditorLabels() {
   for (const [inputId, outputId, suffix] of [
     ["compose-font-scale", "compose-font-value", "%"],
@@ -2625,6 +2657,7 @@ for (const id of ["compose-font-scale", "compose-font-size", "compose-speed", "c
 }
 updateCompositionEditorLabels();
 
+byId("compose-nico-preset").addEventListener("click", applyNicoCommentPreset);
 byId("compose-video-input").addEventListener("change", (event) => {
   const file = event.target.files[0];
   const video = byId("compose-preview-video");

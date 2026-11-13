@@ -181,9 +181,18 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.match(renderer, /次回の確認時に再試行します/);
 });
 
+test("NicoNico standard comment preset applies classic font, size, speed and outline", () => {
+  assert.match(renderer, /function applyNicoCommentPreset\(/);
+  assert.match(renderer, /"compose-font-size": 75/);
+  assert.match(renderer, /"compose-pixels-per-second": 450/);
+  assert.match(renderer, /"compose-outline": 5/);
+  assert.match(renderer, /compose-nico-preset.*addEventListener/);
+  assert.match(html, /id="compose-nico-preset">ニコ生標準にする/);
+});
+
 test("comment video composer exposes timing, layout, appearance and quality controls", () => {
   for (const id of [
-    "compose-font-scale", "compose-speed", "compose-offset", "compose-position",
+    "compose-nico-preset", "compose-font-scale", "compose-speed", "compose-offset", "compose-position",
     "compose-opacity", "compose-display-mode", "compose-color-mode",
     "compose-resolution", "compose-fps", "compose-bitrate", "compose-shadow",
     "compose-row-limit", "compose-duration", "compose-font-family", "compose-outline",

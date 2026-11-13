@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.44</span>
+        <span class="version" id="version">v0.1.0-beta.45</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -367,9 +367,10 @@
             <div class="compose-editor-title">コメント表示・動画出力の設定</div>
             <div class="compose-editor-grid">
               <section class="compose-settings-group">
-                <div class="compose-settings-heading">
-                  <h3>コメント表示</h3>
-                  <p>ニコ生風の文字、文字サイズ、流れる速さ、行数、コメント同士の重なりを調整します。</p>
+                <div class="compose-settings-heading compose-settings-heading-preset">
+                  <div><h3>コメント表示</h3>
+                  <p>ニコ生風の文字、文字サイズ、流れる速さ、行数、コメント同士の重なりを調整します。</p></div>
+                  <button type="button" class="secondary-button compose-nico-preset" id="compose-nico-preset">ニコ生標準にする</button>
                 </div>
                 <div class="compose-settings-group-grid">
 <label class="compose-editor-field">
@@ -378,7 +379,7 @@
               </label>
 <label class="compose-editor-field">
                 <span>基本文字サイズ（1080p） <output id="compose-font-size-value">64 px</output></span>
-                <input id="compose-font-size" type="range" min="18" max="96" step="1" value="64">
+                <input id="compose-font-size" type="range" min="18" max="96" step="1" value="75">
               </label>
 <label class="compose-editor-field">
                 <span>流れる速度 <output id="compose-speed-value">100%</output></span>
@@ -386,7 +387,7 @@
               </label>
 <label class="compose-editor-field">
                 <span>基本スクロール速度（px/秒）</span>
-                <input id="compose-pixels-per-second" type="number" min="80" max="1000" step="10" value="330">
+                <input id="compose-pixels-per-second" type="number" min="80" max="1000" step="10" value="450">
               </label>
 <label class="compose-editor-field">
                 <span>スクロールコメントの最大行数</span>
@@ -454,7 +455,7 @@
               </label>
 <label class="compose-editor-field">
                 <span>文字の縁取り <output id="compose-outline-value">4 px</output></span>
-                <input id="compose-outline" type="range" min="0" max="12" step="1" value="4">
+                <input id="compose-outline" type="range" min="0" max="12" step="1" value="5">
               </label>
 <label class="settings-checkbox compose-shadow-option">
                 <input type="checkbox" id="compose-shadow" checked>
@@ -597,7 +598,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.1.0-beta.44</strong>
+              <strong id="app-current-version">v0.1.0-beta.45</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -626,7 +627,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.44</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.45</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
