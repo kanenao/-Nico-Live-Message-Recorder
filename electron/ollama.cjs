@@ -61,7 +61,7 @@ function selectRepresentativeComments(records, limit = 180) {
 }
 function formatCommentTimestamp(value) {
   if (value == null || value === "") return "時刻不明";
-  if (typeof value === "number" || /^\\d{10,13}$/.test(String(value))) {
+  if (typeof value === "number" || /^\d{10,13}$/.test(String(value))) {
     const numeric = Number(value);
     const date = new Date(numeric < 1000000000000 ? numeric * 1000 : numeric);
     return Number.isNaN(date.getTime()) ? "時刻不明" : date.toISOString();
@@ -75,12 +75,16 @@ async function generateArticleWithOllama(options = {}) {
   if (!model) throw new Error("Ollamaモデルを指定してください。");
   const context = options.context || {};
   const records = Array.isArray(options.records) ? options.records : [];
-  const comments = records.filter(row => row && row.type === "comment" && String(row.content || "").trim())
-    .slice(-180).map(row => ({
-      time: String(row.timestamp || ""),
-      user: String(row.userName || "視聴者").slice(0, 40),
-      text: String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 240)
-    }));
+  const allComments = records.filter(row => row && row.type === "comment" && String(row.content || "").trim());
+  const sampledComments = selectRepresentativeComments(records, 180);
+  const comments = sampledComments.map(row => ({
+    time: formatCommentTimestamp(row.timestamp),
+    text: String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 240)
+  }));
+  const commenterCount = new Set(allComments.map(row => String(row.userId || row.userName || "")).filter(Boolean)).size;
+  const commentCoverage = allComments.length
+    ? "コメント全体" + allComments.length + "件中、放送時間全体に分散した" + comments.length + "件を代表サンプルとして提示。確認できる投稿者数は" + (commenterCount || "未取得") + "人。"
+    : "コメント記録なし。";
   const imageFrames = Array.isArray(options.images) ? options.images.slice(0, 12) : [];
   const audioTranscript = String(options.audioTranscript || "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ").slice(0, 30000);
   const frameTimeline = imageFrames.map((frame, index) => "画像" + (index + 1) + "の取得時刻: " + String(frame && frame.capturedAt || "時刻不明")).join("\n");
