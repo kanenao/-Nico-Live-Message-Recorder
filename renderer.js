@@ -398,14 +398,19 @@ async function startVideoRecording(target = null) {
     const quality = byId("record-quality")?.value || "best";
     let result;
     if (timeshift) {
-      const archive = await api.startVideo(liveId, quality, { timeshift: true });
+      const archive = await api.startVideo(liveId, quality, {
+        timeshift: true,
+        exportAss: Boolean(byId("timeshift-ass-export")?.checked)
+      });
       result = {
         video: archive,
         comment: archive.commentFile ? { commentFile: archive.commentFile } : null,
         commentCount: Number(archive.commentCount) || 0,
         commentsFetched: Boolean(archive.commentsFetched),
         commentsTruncated: Boolean(archive.commentsTruncated),
-        commentError: archive.commentError || ""
+        commentError: archive.commentError || "",
+        assFilePath: archive.assFilePath || "",
+        assCommentCount: Number(archive.assCommentCount) || 0
       };
     } else {
       result = await api.startCapture(liveId, quality, {
@@ -449,6 +454,10 @@ async function startVideoRecording(target = null) {
       showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
     } else {
       showToast("映像録画とコメント取得を同時に開始しました。");
+    }
+    if (timeshift && result.assFilePath) {
+      showToast("過去コメントのASS字幕を保存しました（" +
+        result.assCommentCount.toLocaleString("ja-JP") + "件）: " + result.assFilePath);
     }
   } catch (error) {
     currentCaptureTarget = null;
@@ -2222,6 +2231,8 @@ disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 byId("record-mode").addEventListener("change", () => {
   const timeshift = byId("record-mode").value === "timeshift";
+  const assOption = byId("timeshift-ass-export-option");
+  if (assOption) assOption.style.display = timeshift ? "flex" : "none";
   byId("record-mode-hint").textContent = timeshift
     ? "視聴期限内で、ログイン中アカウントに視聴権限があるタイムシフトを最初から映像・音声と過去コメントを取得します。コメントAPIが利用できない場合も映像録画は継続します。"
     : "配信中の放送は映像・音声とコメントを同時に保存します。コメントだけ保存する場合は「コメントのみ接続」を選んでください。";
