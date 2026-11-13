@@ -686,5 +686,5 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /item.name === "qwen2.5vl:3b"/);
   assert.match(main, /capturedAt: new Date().toISOString()/);
   assert.match(ollamaSource, /frameTimeline/);
-  assert.match(ollamaSource, /frame => typeof frame === "string" ? frame : String(frame && frame.image/);
+  assert.ok(ollamaSource.includes('frame => typeof frame === "string" ? frame : String(frame && frame.image'));
 });
