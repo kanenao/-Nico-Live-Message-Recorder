@@ -441,8 +441,11 @@ async function startVideoRecording(target = null) {
       startRecordClock();
     }
     if (timeshift && result.commentCount > 0) {
+      const assSummary = result.assFilePath
+        ? " ASS字幕 " + result.assCommentCount.toLocaleString("ja-JP") + "件を保存しました。"
+        : "";
       showToast("タイムシフトの映像・音声録画と過去コメント " +
-        result.commentCount.toLocaleString("ja-JP") + "件の保存を開始しました。");
+        result.commentCount.toLocaleString("ja-JP") + "件の保存を開始しました。" + assSummary);
       if (result.commentsTruncated) {
         showToast("過去コメントは取得上限に達したため一部のみ保存しました。", true);
       }
@@ -454,10 +457,6 @@ async function startVideoRecording(target = null) {
       showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
     } else {
       showToast("映像録画とコメント取得を同時に開始しました。");
-    }
-    if (timeshift && result.assFilePath) {
-      showToast("過去コメントのASS字幕を保存しました（" +
-        result.assCommentCount.toLocaleString("ja-JP") + "件）: " + result.assFilePath);
     }
   } catch (error) {
     currentCaptureTarget = null;
