@@ -2188,9 +2188,13 @@ api.onEvent(({ channel, payload }) => {
     } else if (payload.state === "capture-error") {
       status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
     } else if (payload.state === "audio-capturing") {
-      status.textContent = "生放送中：Whisper.cpp用の音声を一時取得しています。停止後に日本語文字起こしを行います。";
+      status.textContent = "生放送中：音声を約25秒ごとに分割し、Whisper.cppで逐次文字起こししています。";
     } else if (payload.state === "audio-transcribing") {
-      status.textContent = "生放送の音声をWhisper.cppで日本語文字起こししています。完了後に記事へ反映します…";
+      status.textContent = "生放送の音声をWhisper.cppで日本語文字起こししています。完了した区間から記事へ反映します…";
+    } else if (payload.state === "audio-progress") {
+      status.textContent = "生放送中：音声をリアルタイム文字起こし中（" + (Number(payload.segmentCount) || 0) + "区間）。コメントも受信時に保存し、記事へ反映します。";
+    } else if (payload.state === "audio-finalizing") {
+      status.textContent = "音声の最後の区間を文字起こししています…";
     } else if (payload.state === "audio-complete") {
       status.textContent = "Whisper.cppの音声文字起こしが完了しました（" + (Number(payload.segmentCount) || 0) + "区間）。最終記事へ反映します。";
     } else if (payload.state === "audio-disabled") {
