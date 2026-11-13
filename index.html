@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.1.0-beta.58</span>
+        <span class="version" id="version">v0.1.0-beta.62</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -73,7 +73,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.53</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.1.0-beta.62</span></div>
         </div>
       </aside>
 
@@ -121,7 +121,7 @@
             <div>
               <div class="eyebrow">RECORDING LIBRARY</div>
               <h2>録画ライブラリ</h2>
-              <p class="session-description">配信者別フォルダーに保存された動画・コメントログを一覧で管理します。</p>
+              <p class="session-description">動画・コメント・放送記事を配信者別にまとめ、再生前に内容を確認できます。</p>
             </div>
             <div class="library-heading-actions">
               <button class="button button-quiet button-small" id="library-open-folder-button" type="button">保存場所を開く</button>
@@ -156,7 +156,6 @@
         <section class="panel broadcast-articles-panel" id="articles-panel" hidden data-page="articles">
           <div class="panel-heading library-heading">
             <div>
-              <div class="eyebrow">BROADCAST JOURNAL / LOCAL ARCHIVE</div>
               <h2>放送記事・無料AI記事生成</h2>
               <p class="session-description">監視リストへの登録や録画は不要です。任意の配信者情報・番組情報・コメントログから記事を作成できます。</p>
             </div>
@@ -296,6 +295,10 @@
                   <option value="live" selected>配信中の放送（映像＋コメント）</option>
                   <option value="timeshift">過去配信（タイムシフト映像＋コメント）</option>
                 </select>
+              </label>
+              <label class="settings-checkbox timeshift-ass-export-option" id="timeshift-ass-export-option" style="display:none">
+                <input type="checkbox" id="timeshift-ass-export" checked>
+                <span>過去コメント取得後にASS字幕（.ass）も自動出力する</span>
               </label>
               <div class="button-row session-actions">
                 <button class="button button-record" id="record-button" type="button">● 接続して映像・音声＋コメントを録画</button>
@@ -619,7 +622,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.1.0-beta.58</strong>
+              <strong id="app-current-version">v0.1.0-beta.62</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -648,7 +651,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.58</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.1.0-beta.62</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
