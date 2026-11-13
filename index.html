@@ -743,9 +743,11 @@
           </label>
           <div class="app-update-status" id="ollama-status-message" role="status">接続先： http://127.0.0.1:11434</div>
           <div class="app-update-actions">
+            <button class="button button-primary button-small" id="ollama-install-button" type="button">Ollamaを自動ダウンロード</button>
+            <button class="button button-outline button-small" id="ollama-pull-model-button" type="button">選択中のAIモデルをダウンロード</button>
             <button class="button button-outline button-small" id="ollama-check-button" type="button">Ollama接続を確認</button>
           </div>
-          <p class="settings-help">初回はWindowsにOllamaをインストールし、ターミナルで <code>ollama pull qwen2.5:3b</code> を実行してください。モデルはPC内に保存されます。</p>
+          <p class="settings-help">初回は「Ollamaを自動ダウンロード」を押すと公式インストーラーを取得して起動します。インストール画面でセットアップを完了後、モデル名（例：qwen2.5:3b／映像分析対応 qwen2.5vl:3b）を指定して「選択中のAIモデルをダウンロード」を押してください。モデルはPC内に保存されます。</p>
         </section>
 
         <section class="settings-section" aria-label="バージョン更新">
