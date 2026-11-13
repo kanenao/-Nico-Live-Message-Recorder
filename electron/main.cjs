@@ -601,7 +601,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
     }
     await enhanceBroadcastArticleWithOllama(article, records, context, {
       force: true,
-      images: extracted ? extracted.frames.map(frame => frame.image) : [],
+      images: extracted ? extracted.frames : [],
       audioTranscript: audioTranscript ? audioTranscript.text : "",
       audioTranscriptSegmentCount: audioTranscript ? audioTranscript.segmentCount : 0
     });
