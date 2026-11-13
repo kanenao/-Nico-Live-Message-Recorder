@@ -11,6 +11,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
+const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
@@ -2988,6 +2989,20 @@ ipcMain.handle("articles:delete", async (_event, value) => {
   return { deleted: true, fileName: path.basename(target) };
 });
 ipcMain.handle("articles:list", () => listBroadcastArticles());
+ipcMain.handle("articles:export-html", async (_event, article) => {
+  if (!article || typeof article !== "object" || Array.isArray(article)) throw new Error("記事データが正しくありません。");
+  const safeTitle = String(article.title || article.programTitle || "放送記事")
+    .replace(/[\\\\/:*?"<>|]/g, "_").trim().slice(0, 100) || "放送記事";
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "放送記事をHTMLで保存",
+    defaultPath: safeTitle + ".html",
+    filters: [{ name: "HTMLファイル", extensions: ["html"] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  const target = path.resolve(result.filePath);
+  await fs.promises.writeFile(target, articleExport.renderArticleHtml(article), "utf8");
+  return { saved: true, filePath: target };
+});
 ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
 ipcMain.handle("articles:generate-manual", (_event, input) => generateStandaloneBroadcastArticle(input));
 ipcMain.handle("articles:select-video", async () => {

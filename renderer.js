@@ -1698,6 +1698,19 @@ function renderBroadcastArticles() {
       });
       actions.appendChild(video);
     }
+    const exportArticle = document.createElement("button");
+    exportArticle.type = "button";
+    exportArticle.className = "button button-outline button-small";
+    exportArticle.textContent = "HTMLで保存";
+    exportArticle.addEventListener("click", async () => {
+      exportArticle.disabled = true;
+      try {
+        const result = await api.exportBroadcastArticleHtml(article);
+        if (result && result.saved) showToast("放送記事をHTMLで保存しました。");
+      } catch (error) { showToast(error.message || "HTMLを書き出せませんでした。", true); }
+      finally { exportArticle.disabled = false; }
+    });
+    actions.appendChild(exportArticle);
     const deleteArticle = document.createElement("button"); deleteArticle.type = "button"; deleteArticle.className = "button button-danger button-small"; deleteArticle.textContent = "記事を削除";
     deleteArticle.title = "記事JSONだけを削除します。録画動画とコメントログは残ります。";
     deleteArticle.addEventListener("click", async () => {

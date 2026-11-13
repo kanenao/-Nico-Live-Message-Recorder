@@ -16,6 +16,7 @@ const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", 
 const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const composeExport = require(path.join(root, "electron", "composition-export.cjs"));
+const articleExport = require(path.join(root, "electron", "article-export.cjs"));
 const ollamaSource = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
 const audioTranscription = fs.readFileSync(path.join(root, "electron", "audio-transcription.cjs"), "utf8");
 
@@ -74,8 +75,7 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
   assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
-  assert.match(renderer, /finally \{\s*recordStartInProgress = false;
-  assert.match(renderer, /processMonitorAutoQueue\(\);/);\s*recordButton\.disabled = videoCaptureState === "recording" \|\| videoCaptureState === "stopping" \|\| monitorAutoProcessing;/);
+  assert.match(renderer, /finally \\{\\s*recordStartInProgress = false;[\\s\\S]*?processMonitorAutoQueue\\(\\);[\\s\\S]*?recordButton\\.disabled = videoCaptureState === "recording" \\|\\| videoCaptureState === "stopping" \\|\\| monitorAutoProcessing;/);
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
 
@@ -807,4 +807,29 @@ test("Streamlink waits for media bytes and preserves stderr when capture startup
 test("duplicate library IDs are removed and package version is displayed in the UI", () => {
   assert.equal((html.match(/id="library-list"/g) || []).length, 1);
   assert.ok(html.includes(packageConfig.version));
+});
+
+
+test("article HTML export escapes untrusted text and includes analysis sections", () => {
+  const html = articleExport.renderArticleHtml({
+    title: '<script>alert("x")</script>',
+    summary: "概要",
+    paragraphs: ["本文の段落"],
+    aiHighlights: ["注目点"],
+    aiTimeline: [{ time: "00:01:02", detail: "場面の説明" }],
+    topics: ["ゲーム"],
+    audioTranscript: "文字起こし"
+  });
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+  for (const value of ["概要", "本文の段落", "注目点", "00:01:02", "場面の説明", "ゲーム", "文字起こし"]) {
+    assert.ok(html.includes(value), "missing exported article content: " + value);
+  }
+});
+test("article export is exposed through a save dialog and preload bridge", () => {
+  assert.match(main, /ipcMain\.handle\("articles:export-html"/);
+  assert.match(main, /dialog\.showSaveDialog/);
+  assert.match(main, /articleExport\.renderArticleHtml/);
+  assert.match(preload, /exportBroadcastArticleHtml:.*ipcRenderer\.invoke\("articles:export-html"/);
+  assert.match(renderer, /api\.exportBroadcastArticleHtml\(article\)/);
 });
