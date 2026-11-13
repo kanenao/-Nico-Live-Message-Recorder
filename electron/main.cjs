@@ -78,6 +78,8 @@ let liveArticleAudioProcessedFiles = new Set();
 let liveArticleAudioTranscriptSegments = [];
 let liveArticleAudioTranscript = null;
 let liveArticleAudioLastArticleUpdateAt = 0;
+let liveArticleCommentRefreshCounter = 0;
+let liveArticleCommentLastRefreshAt = 0;
 const LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS = 25;
 const LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS = 4000;
 let currentBroadcasterName = "";
@@ -772,6 +774,14 @@ function appendEvent(type, item) {
   const record = normalizeEvent(type, item);
   if (commentWriter) commentWriter.write(JSON.stringify(record) + "\n");
   send("live:event", record);
+  if (liveArticleSessionActive && type === "comment") {
+    liveArticleCommentRefreshCounter += 1;
+    if (liveArticleCommentRefreshCounter >= 30 && Date.now() - liveArticleCommentLastRefreshAt >= 60000) {
+      liveArticleCommentRefreshCounter = 0;
+      liveArticleCommentLastRefreshAt = Date.now();
+      void refreshLiveBroadcastArticle();
+    }
+  }
 }
 
 function appendMarker(type, fields = {}) {
@@ -1387,6 +1397,8 @@ async function startLiveArticleSession(input = {}) {
     description: String(input.description || "").trim().slice(0, 3000)
   };
   liveArticleFrames = [];
+  liveArticleCommentRefreshCounter = 0;
+  liveArticleCommentLastRefreshAt = 0;
   liveArticleSessionActive = true;
   try {
     await prepareCommentSession(liveId, displayName, "", programInfo);
