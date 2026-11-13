@@ -60,6 +60,9 @@ let articleUpdateInProgress = false;
 let articleRefreshPending = false;
 let liveArticleCaptureTimer = null;
 let liveArticleFrames = [];
+const LIVE_ARTICLE_FRAME_INTERVAL_MS = 15 * 1000;
+const LIVE_ARTICLE_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
+const LIVE_ARTICLE_MAX_FRAMES = 16;
 let liveArticleSessionActive = false;
 let liveArticleCaptureInProgress = false;
 let liveArticleAudioProcess = null;
@@ -798,7 +801,7 @@ async function refreshLiveBroadcastArticle(options = {}) {
     }
     const article = await createAndSaveBroadcastArticle(filePath, context, {
       force: liveArticleSessionActive || Boolean(options.finalize),
-      images: liveArticleSessionActive || options.finalize ? liveArticleFrames.slice(-12) : [],
+      images: liveArticleSessionActive || options.finalize ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
       audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
       audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
     });
@@ -873,7 +876,7 @@ function closeCommentWriter() {
       try {
         await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
           force: liveArticleSessionActive,
-          images: liveArticleSessionActive ? liveArticleFrames.slice(-12) : [],
+          images: liveArticleSessionActive ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
           audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
           audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
         });
@@ -1189,7 +1192,7 @@ async function captureLiveArticleFrame() {
     const encoded = resized.toJPEG(62).toString("base64");
     if (!encoded) return null;
     liveArticleFrames.push({ image: encoded, capturedAt: new Date().toISOString() });
-    if (liveArticleFrames.length > 12) liveArticleFrames.shift();
+    if (liveArticleFrames.length > LIVE_ARTICLE_MAX_FRAMES) liveArticleFrames.shift();
     send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length, audioCapturing: Boolean(liveArticleAudioProcess) });
     return { frameCount: liveArticleFrames.length };
   } catch (error) {
@@ -1324,10 +1327,10 @@ async function startLiveArticleSession(input = {}) {
     await startLiveArticleAudioCapture(liveId);
     await new Promise(resolve => setTimeout(resolve, 8000));
     if (articleUpdateTimer) clearInterval(articleUpdateTimer);
-    articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, 5 * 60 * 1000);
+    articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, LIVE_ARTICLE_REFRESH_INTERVAL_MS);
     if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
     if (liveArticleCaptureTimer) clearInterval(liveArticleCaptureTimer);
-    liveArticleCaptureTimer = setInterval(() => { void captureLiveArticleFrame(); }, 30 * 1000);
+    liveArticleCaptureTimer = setInterval(() => { void captureLiveArticleFrame(); }, LIVE_ARTICLE_FRAME_INTERVAL_MS);
     if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
     await captureLiveArticleFrame();
     articleRefreshPending = false;

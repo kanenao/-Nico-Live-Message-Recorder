@@ -323,7 +323,7 @@ test("dashboard timestamps accept numeric and ISO dates and display a full start
   assert.match(main, /normalizeMonitorDate, fetchUserBroadcastStatus/);
   assert.match(css, /--accent: #53df9b/);
   assert.match(css, /\.live-broadcast-card/);
-  assert.ok(html.includes(packageConfig.version));
+  assert.ok(html.includes("v" + packageConfig.version));
 });
 
 
@@ -692,13 +692,13 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /async function startLiveArticleSession\(/);
   assert.match(main, /async function stopLiveArticleSession\(/);
   assert.match(main, /capturePage\(\)/);
-  assert.match(main, /5 \* 60 \* 1000/);
-  assert.match(main, /30 \* 1000/);
+  assert.match(main, /LIVE_ARTICLE_REFRESH_INTERVAL_MS = 2 \* 60 \* 1000/);
+  assert.match(main, /LIVE_ARTICLE_FRAME_INTERVAL_MS = 15 \* 1000/);\n  assert.match(main, /LIVE_ARTICLE_MAX_FRAMES = 16/);
   assert.match(main, /void refreshLiveBroadcastArticle\(\);/);
   assert.match(main, /articleRefreshPending = true/);
   assert.match(main, /state: "error", liveId/);
   assert.match(renderer, /channel === "articles:live-state"/);
-  assert.match(renderer, /30秒ごとに取得します/);
+  assert.match(renderer, /15秒ごとに取得します/);
   assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
   assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
   assert.match(renderer, /api\.startLiveArticleSession\(/);
