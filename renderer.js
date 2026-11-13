@@ -2108,7 +2108,9 @@ async function installAppUpdate() {
   }
 }
 
-api.onEvent(({ channel, payload }) => {
+try {
+  if (!api || typeof api.onEvent !== "function") throw new Error("Electron preload bridge のイベントAPIを利用できません。");
+  api.onEvent(({ channel, payload }) => {
   if (channel === "live:event") renderEvent(payload);
   if (channel === "live:metadata") updateMetadata(payload);
   if (channel === "live:state") {
@@ -2219,9 +2221,17 @@ api.onEvent(({ channel, payload }) => {
   );
   if (channel === "auth:status") refreshAuthStatus();
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
-});
+  });
+} catch (error) {
+  console.error("Nico Live Message Recorder event bridge initialization failed:", error);
+  showToast("アプリ内部のイベント接続に失敗しました。アプリを再起動してください: " + (error.message || error), true);
+}
 
+// Register primary capture controls even if event subscription fails. This prevents
+// one preload/event-listener error from aborting all subsequent button bindings.
 connectButton.addEventListener("click", connectLive);
+ disconnectButton.addEventListener("click", disconnectLive);
+ recordButton.addEventListener("click", startVideoRecording);
 disconnectButton.addEventListener("click", disconnectLive);
 recordButton.addEventListener("click", startVideoRecording);
 byId("record-mode").addEventListener("change", () => {
