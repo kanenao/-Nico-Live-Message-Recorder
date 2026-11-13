@@ -657,7 +657,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /force: true/);
   assert.match(main, /articles", "_manual"/);
   assert.match(main, /async function extractArticleVideoFrames\(/);
-  assert.match(main, /fps=1\/60,scale=640:-2/);
+  assert.match(main, /const frameRate = \(targetFrames \/ durationSeconds\)/);
   assert.match(main, /articles:select-video/);
   assert.match(preload, /selectArticleVideo:.*ipcRenderer\.invoke\("articles:select-video"/);
   assert.match(renderer, /api\.selectArticleVideo\(\)/);
