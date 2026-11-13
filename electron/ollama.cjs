@@ -60,7 +60,7 @@ async function generateArticleWithOllama(options = {}) {
       text: String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 240)
     }));
   const imageFrames = Array.isArray(options.images) ? options.images.slice(0, 12) : [];
-  const frameTimeline = imageFrames.map((frame, index) => "画像" + (index + 1) + "の取得時刻: " + String(frame && frame.capturedAt || "時刻不明")).join("\\n");
+  const frameTimeline = imageFrames.map((frame, index) => "画像" + (index + 1) + "の取得時刻: " + String(frame && frame.capturedAt || "時刻不明")).join("\n");
   const prompt = [
     options.images && options.images.length ? "あなたは日本語の配信ニュース編集者です。配信メタデータ・コメント記録・添付された動画の代表フレーム画像を根拠に記事を作成してください。" : "あなたは日本語の配信ニュース編集者です。以下の配信メタデータとコメント記録だけを根拠に、読みやすい放送記事を作成してください.",
     "コメントは視聴者の投稿であり、配信者本人の発言として扱わないでください。事実にない出来事・発言・感情・数字を作らないでください。",
@@ -76,7 +76,7 @@ async function generateArticleWithOllama(options = {}) {
     "放送ID: " + String(context.liveId || "不明"),
     "番組説明: " + String(context.description || "なし").slice(0, 1200),
     "コメント記録(JSON): " + JSON.stringify(comments),
-    options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\\n" + frameTimeline : ""
+    options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\n" + frameTimeline : ""
   ].join("\n\n");
   const data = await requestJson(baseUrl + "/api/chat", {
     method: "POST",

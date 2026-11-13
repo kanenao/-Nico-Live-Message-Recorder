@@ -673,7 +673,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(preload, /selectArticleVideo:.*ipcRenderer\.invoke\("articles:select-video"/);
   assert.match(renderer, /api\.selectArticleVideo\(\)/);
   assert.match(html, /id="manual-article-video-select-button"/);
-  assert.match(ollamaSource, /images: options\.images\.slice\(0, 12\)/);
+  assert.match(ollamaSource, /images: imageFrames.map/);
   assert.match(main, /item.name === "qwen2.5vl:3b"/);
   assert.match(main, /capturedAt: new Date().toISOString()/);
   assert.match(ollamaSource, /frameTimeline/);
