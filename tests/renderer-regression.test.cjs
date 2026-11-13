@@ -752,6 +752,7 @@ test("live broadcast article session integrates Whisper.cpp audio capture and fi
   assert.match(main, /stopLiveArticleAudioCapture\(currentLiveId\)/);
   assert.match(main, /audioTranscript: liveArticleAudioTranscript/);
   assert.match(main, /audio-transcribing/);
+  assert.match(main, /audioCapturing: Boolean\(liveArticleAudioProcess\)/);
   assert.match(renderer, /audio-capturing/);
   assert.match(renderer, /Whisper\.cpp/);
   assert.match(html, /音声解析用データは一時保存し、終了後に削除/);

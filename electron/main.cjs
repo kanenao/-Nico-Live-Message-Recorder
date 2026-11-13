@@ -1183,7 +1183,7 @@ async function captureLiveArticleFrame() {
     if (!encoded) return null;
     liveArticleFrames.push({ image: encoded, capturedAt: new Date().toISOString() });
     if (liveArticleFrames.length > 12) liveArticleFrames.shift();
-    send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length });
+    send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length, audioCapturing: Boolean(liveArticleAudioProcess) });
     return { frameCount: liveArticleFrames.length };
   } catch (error) {
     send("articles:live-state", { state: "capture-error", liveId: currentLiveId, message: error.message || String(error) });
@@ -1258,7 +1258,10 @@ async function stopLiveArticleAudioCapture(liveId) {
   try {
     try { child.kill(); } catch (_) {}
     if (liveArticleAudioClosePromise) {
-      await Promise.race([liveArticleAudioClosePromise, new Promise(resolve => setTimeout(resolve, 15000))]);
+      await new Promise(resolve => {
+        const timeout = setTimeout(() => resolve(false), 15000);
+        liveArticleAudioClosePromise.then(() => { clearTimeout(timeout); resolve(true); });
+      });
     }
     const settings = readAppSettings();
     const tools = getVideoToolStatus();

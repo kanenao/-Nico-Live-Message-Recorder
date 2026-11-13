@@ -2037,9 +2037,9 @@ api.onEvent(({ channel, payload }) => {
     const status = byId("manual-article-live-status");
     const frameCount = Number(payload.frameCount) || 0;
     if (payload.state === "capturing") {
-      status.textContent = "生放送中：映像フレームを取得しました（累計 " + frameCount + " 枚）。30秒ごとに取得します。";
+      status.textContent = "生放送中：映像フレームを取得しました（累計 " + frameCount + " 枚）。30秒ごとに取得します。" + (payload.audioCapturing ? " Whisper.cpp用の音声も一時取得中です。" : "");
     } else if (payload.state === "generating") {
-      status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…";
+      status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…" + (payload.audioCapturing ? " 音声も取得中です。" : "");
     } else if (payload.state === "updated") {
       status.textContent = payload.generated
         ? "生放送中：記事を更新しました。映像フレーム " + frameCount + " 枚を保持中。次回も約5分後に更新します。"
