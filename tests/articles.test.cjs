@@ -112,3 +112,15 @@ test("article status can remain unknown when only comment capture was stopped", 
   assert.equal(article.isLive, false);
   assert.equal(article.endedAt, "");
 });
+
+test("article generation accepts an unregistered broadcaster and title-only metadata", () => {
+  const article = generateBroadcastArticle([], {
+    broadcasterName: "未登録の配信者",
+    programTitle: "単発記事用の番組",
+    description: "監視登録も録画も行わず記事だけを作成する。"
+  });
+  assert.equal(article.status, "generated");
+  assert.equal(article.broadcasterName, "未登録の配信者");
+  assert.equal(article.commentCount, 0);
+  assert.ok(article.paragraphs.some(paragraph => paragraph.includes("コメントログはありません")));
+});

@@ -323,7 +323,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.40");
+  assert.equal(packageConfig.version, "0.1.0-beta.41");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -642,4 +642,16 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
   assert.match(composition, /function calculateScrollCommentHeadway\(/);
   assert.match(renderer, /calculateScrollCommentHeadway\(/);
   assert.match(renderer, /red2: "#cc0033"/);
+});
+
+test("standalone article generation is available without monitor registration and accepts optional JSONL comments", () => {
+  assert.match(main, /function generateStandaloneBroadcastArticle\(/);
+  assert.match(main, /ipcMain\.handle\("articles:generate-manual"/);
+  assert.match(preload, /generateManualBroadcastArticle:.*ipcRenderer\.invoke\("articles:generate-manual"/);
+  assert.match(renderer, /function generateManualBroadcastArticle\(/);
+  assert.match(renderer, /api\.generateManualBroadcastArticle\(/);
+  assert.match(html, /id="manual-article-generate-button"/);
+  assert.match(html, /id="manual-article-file"/);
+  assert.match(main, /force: true/);
+  assert.match(main, /articles", "_manual"/);
 });
