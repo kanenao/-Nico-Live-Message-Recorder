@@ -175,7 +175,7 @@
               <label class="article-manual-wide">番組タイトル<input id="manual-article-title" type="text" maxlength="300" placeholder="番組・配信のタイトル"></label>
               <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
               <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択。番組情報だけでも記事を生成できます。</small></label>
-              <div class="article-manual-wide article-video-picker"><span>動画ファイル（任意・映像内容をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームを分析します。</small></div></div>
+              <div class="article-manual-wide article-video-picker"><span>動画ファイル（任意・映像内容をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。動画全体から最大12枚の代表フレームを分析します。</small></div></div>
             </div>
             <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。動画分析には画像対応モデル（例：qwen2.5vl）が必要です。音声の文字起こしは行いません。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
             <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>

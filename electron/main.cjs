@@ -493,15 +493,32 @@ async function extractArticleVideoFrames(videoPath) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "nico-article-frames-"));
   const outputPattern = path.join(directory, "frame-%02d.jpg");
   try {
+    let durationSeconds = 0;
+    await new Promise(resolve => {
+      const probe = spawn(ffmpegPath, ["-hide_banner", "-i", resolvedPath], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+      let probeText = "";
+      const timeout = setTimeout(() => { probe.kill(); resolve(); }, 30000);
+      probe.stderr.on("data", chunk => { probeText = (probeText + chunk.toString()).slice(-12000); });
+      probe.once("error", () => { clearTimeout(timeout); resolve(); });
+      probe.once("close", () => {
+        clearTimeout(timeout);
+        const match = probeText.match(/Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)/i);
+        if (match) durationSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+        resolve();
+      });
+    });
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) throw new Error("動画の長さを取得できませんでした。動画ファイルが正常か確認してください。");
+    const targetFrames = Math.min(12, Math.max(1, Math.floor(durationSeconds)));
+    const frameRate = (targetFrames / durationSeconds).toFixed(8);
     await new Promise((resolve, reject) => {
-      const child = spawn(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-y", "-i", resolvedPath, "-vf", "fps=1/60,scale=640:-2", "-frames:v", "12", "-q:v", "6", outputPattern], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+      const child = spawn(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-y", "-i", resolvedPath, "-vf", "fps=" + frameRate + ",scale=640:-2", "-frames:v", String(targetFrames), "-q:v", "6", outputPattern], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
       let stderr = "";
       const timeout = setTimeout(() => { child.kill(); reject(new Error("動画フレームの抽出がタイムアウトしました。短い動画で再試行してください。")); }, 180000);
       child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-5000); });
       child.once("error", error => { clearTimeout(timeout); reject(error); });
       child.once("close", code => { clearTimeout(timeout); if (code === 0) resolve(); else reject(new Error("動画から映像フレームを抽出できませんでした。" + (stderr ? " " + stderr.trim().slice(-1200) : ""))); });
     });
-    const names = fs.readdirSync(directory).filter(name => /^frame-\d+\.jpg$/i.test(name)).sort();
+    const names = fs.readdirSync(directory).filter(name => /^frame-\\d+\\.jpg$/i.test(name)).sort();
     if (!names.length) throw new Error("動画から分析できる映像フレームが見つかりませんでした。");
     return { directory, frames: names.map(name => ({ image: fs.readFileSync(path.join(directory, name)).toString("base64") })) };
   } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
