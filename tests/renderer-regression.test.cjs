@@ -324,7 +324,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "0.1.0-beta.42");
+  assert.equal(packageConfig.version, "0.1.0-beta.43");
   assert.ok(html.includes(packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
@@ -659,6 +659,17 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /async function extractArticleVideoFrames\(/);
   assert.match(main, /const frameRate = \(targetFrames \/ durationSeconds\)/);
   assert.match(main, /articles:select-video/);
+  assert.match(main, /async function startLiveArticleSession\(/);
+  assert.match(main, /async function stopLiveArticleSession\(/);
+  assert.match(main, /capturePage\(\)/);
+  assert.match(main, /5 \* 60 \* 1000/);
+  assert.match(main, /60 \* 1000/);
+  assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
+  assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
+  assert.match(renderer, /api\.startLiveArticleSession\(/);
+  assert.match(renderer, /api\.stopLiveArticleSession\(/);
+  assert.match(html, /id="manual-article-live-start-button"/);
+  assert.match(html, /id="manual-article-live-stop-button"/);
   assert.match(preload, /selectArticleVideo:.*ipcRenderer\.invoke\("articles:select-video"/);
   assert.match(renderer, /api\.selectArticleVideo\(\)/);
   assert.match(html, /id="manual-article-video-select-button"/);

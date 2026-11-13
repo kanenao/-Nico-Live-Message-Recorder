@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   generateBroadcastArticle: (filePath) => ipcRenderer.invoke("articles:generate-from-comment", filePath),
   generateManualBroadcastArticle: (input) => ipcRenderer.invoke("articles:generate-manual", input),
   selectArticleVideo: () => ipcRenderer.invoke("articles:select-video"),
+  startLiveArticleSession: (input) => ipcRenderer.invoke("articles:live-start", input),
+  stopLiveArticleSession: () => ipcRenderer.invoke("articles:live-stop"),
   openLibraryItem: (filePath) => ipcRenderer.invoke("library:open-item", filePath),
   showLibraryItem: (filePath) => ipcRenderer.invoke("library:show-item", filePath),
   deleteLibraryVideo: (filePath) => ipcRenderer.invoke("library:delete-video", filePath),

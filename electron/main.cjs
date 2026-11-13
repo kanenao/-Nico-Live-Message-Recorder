@@ -54,6 +54,10 @@ let commentWriter = null;
 let commentFilePath = "";
 let articleUpdateTimer = null;
 let articleUpdateInProgress = false;
+let liveArticleCaptureTimer = null;
+let liveArticleFrames = [];
+let liveArticleSessionActive = false;
+let liveArticleCaptureInProgress = false;
 let currentBroadcasterName = "";
 let currentBroadcasterId = "";
 let currentProgramInfo = {};
@@ -443,7 +447,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
   return article;
 }
 
-async function createAndSaveBroadcastArticle(commentPath, context = {}) {
+async function createAndSaveBroadcastArticle(commentPath, context = {}, options = {}) {
   if (!commentPath || !fs.existsSync(commentPath)) {
     return { status: "skipped", reason: "コメントログが見つかりません。" };
   }
@@ -460,7 +464,12 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}) {
     try { return JSON.parse(line); } catch (_) { return null; }
   }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
-  await enhanceBroadcastArticleWithOllama(article, records, articleContext);
+  await enhanceBroadcastArticleWithOllama(article, records, articleContext, options);
+  if (options.images && options.images.length) {
+    article.videoFrameCount = options.images.length;
+    article.videoAnalysis = article.aiProvider ? "生放送画面から取得した代表フレームを分析済み" : "生放送画面の代表フレームを取得（画像AI分析は未完了）";
+    article.note = "配信中に取得した代表フレームとコメント記録をもとに生成した記事です。音声の文字起こしや全場面の完全な解析ではありません。";
+  }
 
   if (article.status !== "generated") {
     send("articles:skipped", { liveId: article.liveId || context.liveId || "", reason: article.reason });
@@ -718,7 +727,10 @@ async function refreshLiveBroadcastArticle() {
       writer.write("", error => error ? reject(error) : resolve());
     });
     if (commentWriter !== writer || commentFilePath !== filePath || currentLiveId !== liveId) return null;
-    return await createAndSaveBroadcastArticle(filePath, context);
+    return await createAndSaveBroadcastArticle(filePath, context, {
+      force: liveArticleSessionActive,
+      images: liveArticleSessionActive ? liveArticleFrames.slice(-12) : []
+    });
   } catch (error) {
     send("articles:ai-fallback", {
       liveId,
@@ -747,6 +759,7 @@ function closeCommentWriter() {
       return;
     }
     if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
+    if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
     const writer = commentWriter;
     const oldPath = commentFilePath;
     const articleContext = {
@@ -767,7 +780,10 @@ function closeCommentWriter() {
       }
       while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
       try {
-        await createAndSaveBroadcastArticle(commentFilePath, articleContext);
+        await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
+          force: liveArticleSessionActive,
+          images: liveArticleSessionActive ? liveArticleFrames.slice(-12) : []
+        });
       } catch (error) {
         send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
       }
@@ -1069,6 +1085,80 @@ async function connectPreparedCommentSession(liveId) {
     throw new Error(error && error.message ? error.message : "コメント接続に失敗しました。");
   }
 }
+
+async function captureLiveArticleFrame() {
+  if (!liveArticleSessionActive || liveArticleCaptureInProgress || !livePreviewWindow || livePreviewWindow.isDestroyed() || livePreviewId !== currentLiveId) return null;
+  liveArticleCaptureInProgress = true;
+  try {
+    const image = await livePreviewWindow.webContents.capturePage();
+    if (!image || image.isEmpty()) return null;
+    const resized = image.resize({ width: 640 });
+    const encoded = resized.toJPEG(62).toString("base64");
+    if (!encoded) return null;
+    liveArticleFrames.push(encoded);
+    if (liveArticleFrames.length > 12) liveArticleFrames.shift();
+    send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length });
+    return { frameCount: liveArticleFrames.length };
+  } catch (error) {
+    send("articles:live-state", { state: "capture-error", liveId: currentLiveId, message: error.message || String(error) });
+    return null;
+  } finally {
+    liveArticleCaptureInProgress = false;
+  }
+}
+
+async function startLiveArticleSession(input = {}) {
+  if (timeshiftCommentFetchActive) throw new Error("過去配信のコメント取得中は生放送記事を開始できません。");
+  if (provider || commentWriter || liveArticleSessionActive) throw new Error("別のコメント取得セッションが実行中です。先に切断してください。");
+  if (streamlinkProcess || streamlinkFinalizePromise) throw new Error("録画中は生放送記事セッションを開始できません。録画停止後に再試行してください。");
+  const liveId = safeLiveId(input.liveId);
+  const displayName = String(input.broadcasterName || "").trim().slice(0, 80);
+  const programInfo = {
+    programTitle: String(input.programTitle || "").trim().slice(0, 300),
+    description: String(input.description || "").trim().slice(0, 3000)
+  };
+  liveArticleFrames = [];
+  await prepareCommentSession(liveId, displayName, "", programInfo);
+  try {
+    await openLivePreview(liveId);
+    await connectPreparedCommentSession(liveId);
+    liveArticleSessionActive = true;
+    if (articleUpdateTimer) clearInterval(articleUpdateTimer);
+    articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, 5 * 60 * 1000);
+    if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
+    if (liveArticleCaptureTimer) clearInterval(liveArticleCaptureTimer);
+    liveArticleCaptureTimer = setInterval(() => { void captureLiveArticleFrame(); }, 60 * 1000);
+    if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
+    await captureLiveArticleFrame();
+    send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length });
+    return { started: true, liveId, commentFile: commentFilePath, frameCount: liveArticleFrames.length };
+  } catch (error) {
+    if (provider) { try { provider.disconnect(); } catch (_) {} provider = null; }
+    await closeCommentWriter();
+    closeLivePreview();
+    liveArticleSessionActive = false;
+    liveArticleFrames = [];
+    send("articles:live-state", { state: "error", liveId, message: error.message || String(error) });
+    throw error;
+  }
+}
+
+async function stopLiveArticleSession() {
+  if (!liveArticleSessionActive && !commentWriter) return { stopped: true, alreadyStopped: true };
+  if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
+  if (provider) { try { provider.disconnect(); } catch (_) {} provider = null; }
+  await closeCommentWriter();
+  const liveId = currentLiveId;
+  liveArticleSessionActive = false;
+  liveArticleFrames = [];
+  currentLiveId = "";
+  closeLivePreview();
+  send("articles:live-state", { state: "stopped", liveId });
+  return { stopped: true, liveId };
+}
+
+ipcMain.handle("articles:live-start", (_event, input) => startLiveArticleSession(input));
+ipcMain.handle("articles:live-stop", () => stopLiveArticleSession());
 
 ipcMain.handle("live:connect", async (_event, value, options = {}) => {
   if (timeshiftCommentFetchActive) {

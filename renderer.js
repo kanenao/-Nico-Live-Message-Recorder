@@ -1513,11 +1513,56 @@ function renderBroadcastArticles() {
 
 let broadcastArticles = [];
 let selectedManualArticleVideoPath = "";
+let liveArticleSessionActive = false;
 
 async function selectManualArticleVideo() {
   const status = byId("manual-article-video-name");
   try { const result = await api.selectArticleVideo(); if (result?.canceled) return; selectedManualArticleVideoPath = result.path || ""; status.textContent = result.name || "動画を選択しました"; }
   catch (error) { status.textContent = error.message || "動画を選択できませんでした。"; showToast(status.textContent, true); }
+}
+
+async function startLiveArticleSession() {
+  const button = byId("manual-article-live-start-button");
+  const status = byId("manual-article-live-status");
+  const liveId = byId("manual-article-live-id").value.trim();
+  if (!liveId) { status.textContent = "生放送の放送IDを入力してください。"; showToast(status.textContent, true); return; }
+  button.disabled = true;
+  status.textContent = "生放送画面を開き、コメント接続を開始しています…";
+  try {
+    const result = await api.startLiveArticleSession({
+      liveId,
+      broadcasterName: byId("manual-article-broadcaster").value,
+      programTitle: byId("manual-article-title").value,
+      description: byId("manual-article-description").value
+    });
+    liveArticleSessionActive = true;
+    button.hidden = true;
+    byId("manual-article-live-stop-button").hidden = false;
+    status.textContent = "生放送の記事生成を開始しました。コメント取得中・映像フレームを毎分取得します。録画は行いません。";
+    showToast("生放送の記事生成を開始しました。");
+  } catch (error) {
+    status.textContent = error.message || "生放送記事を開始できませんでした。";
+    showToast(status.textContent, true);
+  } finally { button.disabled = false; }
+}
+
+async function stopLiveArticleSession() {
+  const button = byId("manual-article-live-stop-button");
+  const status = byId("manual-article-live-status");
+  button.disabled = true;
+  status.textContent = "記事を最終保存して生放送との接続を終了しています…";
+  try {
+    await api.stopLiveArticleSession();
+    liveArticleSessionActive = false;
+    button.hidden = true;
+    byId("manual-article-live-start-button").hidden = false;
+    status.textContent = "生放送の記事生成を終了しました。取得したコメントと映像を使って記事を保存しました。";
+    await loadBroadcastArticles();
+    showToast("生放送記事を保存しました。");
+  } catch (error) {
+    status.textContent = error.message || "生放送記事を停止できませんでした。";
+    showToast(status.textContent, true);
+  } finally { button.disabled = false; }
 }
 
 async function generateManualBroadcastArticle() {
@@ -1940,6 +1985,8 @@ byId("library-filter").addEventListener("change", renderCaptureLibrary);
 byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
 byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
 byId("manual-article-video-select-button").addEventListener("click", selectManualArticleVideo);
+byId("manual-article-live-start-button").addEventListener("click", startLiveArticleSession);
+byId("manual-article-live-stop-button").addEventListener("click", stopLiveArticleSession);
 byId("manual-article-file").addEventListener("change", () => {
   const file = byId("manual-article-file").files?.[0];
   byId("manual-article-file-name").textContent = file ? file.name + "（" + formatLibraryBytes(file.size) + "）" : "ファイル未選択。番組情報だけでも記事を生成できます。";
