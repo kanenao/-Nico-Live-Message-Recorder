@@ -90,12 +90,12 @@
     const rowLimit = Math.max(1, Math.min(24, Math.floor(Number(options.rowLimit) || 12)));
     const edge = Math.round(height * marginPercent / 100);
     const maximumCommentFont = Math.min(120, Math.max(10, Math.round(baseFontSize * 1.22)));
-    const lineHeight = Math.max(24, Math.ceil(maximumCommentFont * 1.22 + outlineWidth * 2 + 8));
+    const lineHeight = Math.max(24, Math.ceil(maximumCommentFont * 1.05 + outlineWidth * 2 + 4));
 
     // Keep two fixed-comment rows at the top and bottom. The reserved band
     // includes a line-height margin so large comments do not touch scrolling rows.
     const fixedLaneCount = 2;
-    const fixedBandHeight = Math.max(lineHeight * (fixedLaneCount + 1), Math.round(height * 0.22));
+    const fixedBandHeight = Math.max(lineHeight * fixedLaneCount, Math.round(height * 0.14));
     const scrollTop = Math.max(edge, fixedBandHeight);
     const scrollBottom = Math.min(height - edge, height - fixedBandHeight);
     const usableScrollHeight = Math.max(lineHeight, scrollBottom - scrollTop);
@@ -104,7 +104,7 @@
     const occupiedHeight = scrollLaneCount * lineHeight;
     const verticalOffset = Math.max(0, Math.floor((usableScrollHeight - occupiedHeight) / 2));
     const topLaneYs = Array.from({ length: fixedLaneCount }, (_, lane) =>
-      Math.round(fixedBandHeight * (lane + 1) / (fixedLaneCount + 1)));
+      Math.round(lineHeight * (lane + 0.5)));
     const bottomLaneYs = topLaneYs.map(y => height - y);
     const scrollLaneYs = Array.from({ length: scrollLaneCount }, (_, lane) =>
       scrollTop + verticalOffset + Math.round(lineHeight / 2) + lane * lineHeight);
