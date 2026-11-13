@@ -780,3 +780,23 @@ test("Ollama setup downloads the official Windows installer and pulls the select
   assert.match(setup, /\/api\/pull/);
   assert.match(setup, /ollama:setup-progress/);
 });
+
+
+test("article summaries are attached to capture library videos and article deletion preserves source recordings", () => {
+  assert.match(main, /const savedArticles = listBroadcastArticles\(\)\.items/);
+  assert.match(main, /ipcMain\.handle\("articles:delete"/);
+  assert.match(main, /録画動画・コメントログは削除されません/);
+  assert.match(preload, /deleteBroadcastArticle/);
+  assert.match(renderer, /library-article-summary/);
+  assert.match(renderer, /api\.deleteBroadcastArticle/);
+});
+test("Streamlink waits for media bytes and preserves stderr when capture startup fails", () => {
+  assert.match(main, /const startupDeadline = Date\.now\(\) \+ 25000/);
+  assert.match(main, /fs\.statSync\(outputPath\)\.size > 0/);
+  assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ chunk\.toString/);
+  assert.match(main, /Streamlink詳細:/);
+});
+test("duplicate library IDs are removed and package version is displayed in the UI", () => {
+  assert.equal((html.match(/id="library-list"/g) || []).length, 1);
+  assert.ok(html.includes(packageConfig.version));
+});
