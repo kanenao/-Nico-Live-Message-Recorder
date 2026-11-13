@@ -764,3 +764,19 @@ test("live broadcast article session integrates Whisper.cpp audio capture and fi
   assert.match(renderer, /Whisper\.cpp/);
   assert.match(html, /音声解析用データは一時保存し、終了後に削除/);
 });
+
+
+test("Ollama setup downloads the official Windows installer and pulls the selected model through the local API", () => {
+  const setup = fs.readFileSync(path.join(root, "electron", "ollama-setup.cjs"), "utf8");
+  assert.match(main, /ollama:download-installer/);
+  assert.match(main, /ollama:pull-model/);
+  assert.match(preload, /downloadOllamaInstaller/);
+  assert.match(preload, /pullOllamaModel/);
+  assert.match(renderer, /ollama-install-button/);
+  assert.match(renderer, /ollama-pull-model-button/);
+  assert.match(html, /id="ollama-install-button"/);
+  assert.match(html, /id="ollama-pull-model-button"/);
+  assert.match(setup, /https:\\/\\/ollama\.com\\/download\\/OllamaSetup\.exe/);
+  assert.match(setup, /\/api\/pull/);
+  assert.match(setup, /ollama:setup-progress/);
+});
