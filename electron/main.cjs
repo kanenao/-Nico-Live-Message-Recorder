@@ -54,6 +54,7 @@ let commentWriter = null;
 let commentFilePath = "";
 let articleUpdateTimer = null;
 let articleUpdateInProgress = false;
+let articleRefreshPending = false;
 let liveArticleCaptureTimer = null;
 let liveArticleFrames = [];
 let liveArticleSessionActive = false;
@@ -716,7 +717,13 @@ function appendMarker(type, fields = {}) {
 }
 
 async function refreshLiveBroadcastArticle() {
-  if (!commentWriter || !commentFilePath || articleUpdateInProgress) return null;
+  if (!commentWriter || !commentFilePath) return null;
+  if (articleUpdateInProgress) {
+    // Keep one refresh queued while Ollama is busy; metadata or comment bursts
+    // must not silently discard the next useful update.
+    articleRefreshPending = true;
+    return null;
+  }
   const writer = commentWriter;
   const filePath = commentFilePath;
   const liveId = currentLiveId;
@@ -756,9 +763,19 @@ async function refreshLiveBroadcastArticle() {
       liveId,
       reason: "配信中の記事更新に失敗しました: " + error.message
     });
+    if (liveArticleSessionActive) {
+      send("articles:live-state", { state: "error", liveId, message: error.message || String(error) });
+    }
     return null;
   } finally {
     articleUpdateInProgress = false;
+    if (articleRefreshPending && commentWriter === writer && commentFilePath === filePath && currentLiveId === liveId) {
+      articleRefreshPending = false;
+      const retryTimer = setTimeout(() => { void refreshLiveBroadcastArticle(); }, 1000);
+      if (typeof retryTimer.unref === "function") retryTimer.unref();
+    } else if (!commentWriter || commentWriter !== writer) {
+      articleRefreshPending = false;
+    }
   }
 }
 
@@ -1151,6 +1168,7 @@ async function startLiveArticleSession(input = {}) {
     liveArticleCaptureTimer = setInterval(() => { void captureLiveArticleFrame(); }, 30 * 1000);
     if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
     await captureLiveArticleFrame();
+    articleRefreshPending = false;
     send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length });
     // Do not wait for the five-minute interval: create the first article as soon as
     // the live preview and comment connection are ready.
