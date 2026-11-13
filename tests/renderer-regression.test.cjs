@@ -343,7 +343,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 
 test("package, UI and CI artifact versions are kept in sync", () => {
   assert.match(packageConfig.version, /^0\.1\.0-beta\.\d+$/);
-  assert.ok(html.includes(packageConfig.version));
+  assert.ok(html.includes("v" + packageConfig.version));
   const betaNumber = packageConfig.version.split(".").pop();
   assert.ok(betaNumber, "package version must be a beta release");
   assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows"));
@@ -693,7 +693,8 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /async function stopLiveArticleSession\(/);
   assert.match(main, /capturePage\(\)/);
   assert.match(main, /LIVE_ARTICLE_REFRESH_INTERVAL_MS = 2 \* 60 \* 1000/);
-  assert.match(main, /LIVE_ARTICLE_FRAME_INTERVAL_MS = 15 \* 1000/);\n  assert.match(main, /LIVE_ARTICLE_MAX_FRAMES = 16/);
+  assert.match(main, /LIVE_ARTICLE_FRAME_INTERVAL_MS = 15 \* 1000/);
+  assert.match(main, /LIVE_ARTICLE_MAX_FRAMES = 16/);
   assert.match(main, /void refreshLiveBroadcastArticle\(\);/);
   assert.match(main, /articleRefreshPending = true/);
   assert.match(main, /state: "error", liveId/);
