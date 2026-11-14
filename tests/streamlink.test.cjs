@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { patchNicoLivePluginSource } = require("../scripts/patch-nicolive.cjs");
 const preparationScript = fs.readFileSync(path.join(__dirname, "..", "scripts", "prepare-streamlink.ps1"), "utf8");
+const { verifyStreamlinkPlugin } = require("../electron/streamlink-probe.cjs");
 const {
   normalizeLiveId,
   normalizeQuality,
@@ -15,6 +16,46 @@ const {
   createStreamlinkRuntime,
   buildStreamlinkArgs
 } = require("../electron/streamlink.cjs");
+
+test("Streamlink preflight confirms the nicolive plugin before starting a recording", async () => {
+  const { EventEmitter } = require("node:events");
+  const { PassThrough } = require("node:stream");
+  let captured;
+  const fakeSpawn = (executable, args, options) => {
+    captured = { executable, args, options };
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    process.nextTick(() => child.emit("close", 0, null));
+    return child;
+  };
+  const result = await verifyStreamlinkPlugin("streamlink.exe", "lv123456789", "runtime/config", {
+    spawnProcess: fakeSpawn
+  });
+  assert.equal(result.checked, true);
+  assert.equal(captured.executable, "streamlink.exe");
+  assert.deepEqual(captured.args, [
+    "--config", "runtime/config",
+    "--can-handle-url", "https://live.nicovideo.jp/watch/lv123456789"
+  ]);
+});
+
+test("Streamlink preflight returns actionable plugin diagnostics", async () => {
+  const { EventEmitter } = require("node:events");
+  const { PassThrough } = require("node:stream");
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    process.nextTick(() => {
+      child.stderr.write("No plugin can handle this URL");
+      child.emit("close", 1, null);
+    });
+    return child;
+  };
+  await assert.rejects(
+    verifyStreamlinkPlugin("streamlink.exe", "lv123456789", "runtime/config", { spawnProcess: fakeSpawn }),
+    /ニコ生URLを処理できません.*No plugin can handle this URL/
+  );
+});
 
 test("normalizeLiveId accepts IDs and watch URLs", () => {
   assert.equal(normalizeLiveId("lv123456789"), "lv123456789");

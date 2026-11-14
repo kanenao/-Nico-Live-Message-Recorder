@@ -980,3 +980,12 @@ test("Streamlink startup reports progress and allows a longer first-media wait",
   assert.match(renderer, /payload && payload\.starting/);
   assert.match(renderer, /Streamlink起動中です。/);
 });
+
+
+test("recording startup runs Streamlink plugin preflight before opening the recording process", () => {
+  const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
+  const probe = fs.readFileSync(path.join(root, "electron", "streamlink-probe.cjs"), "utf8");
+  assert.match(main, /await verifyStreamlinkPlugin\(streamlinkPath, liveId, runtime\.configPath\)/);
+  assert.match(probe, /--can-handle-url/);
+  assert.match(probe, /ニコ生URLを処理できません/);
+});

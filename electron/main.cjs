@@ -16,6 +16,7 @@ const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcrip
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs");
 const { hasNonEmptyFile } = require("./recording-file.cjs");
+const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -2534,6 +2535,13 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     ffmpegPath,
     timeshift
   });
+
+  try {
+    await verifyStreamlinkPlugin(streamlinkPath, liveId, runtime.configPath);
+  } catch (error) {
+    await fs.promises.rm(runtime.runtimeDirectory, { recursive: true, force: true }).catch(() => {});
+    throw new Error("録画開始前のStreamlink確認に失敗しました: " + (error.message || String(error)));
+  }
 
   let child;
   try {
