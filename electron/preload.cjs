@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   retryMonitorTarget: (target) => ipcRenderer.invoke("monitor:retry-target", target),
   openLogin: () => ipcRenderer.invoke("auth:open-login"),
   getAuthStatus: () => ipcRenderer.invoke("auth:status"),
+  setUserSession: (value) => ipcRenderer.invoke("auth:set-user-session", value),
   openWatch: (liveId) => ipcRenderer.invoke("live:open-watch", liveId),
   openLivePreview: (liveId) => ipcRenderer.invoke("preview:open", liveId),
   closeLivePreview: () => ipcRenderer.invoke("preview:close"),

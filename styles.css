@@ -220,7 +220,10 @@ input::placeholder { color: #5f6c88; }
 .settings-heading h2 { margin: 7px 0 0; color: #f1f4ff; font-size: 19px; }
 .settings-fields { display: grid; gap: 15px; padding: 20px 0 6px; }
 .settings-field { display: grid; grid-template-columns: minmax(0,1fr) minmax(150px,.8fr); align-items: center; gap: 15px; color: #b4c0d9; font-size: 11px; }
-.settings-field select { width: 100%; padding: 9px 10px; border: 1px solid rgba(155,175,220,.18); border-radius: 8px; color: #edf2ff; background: #0d1526; outline: none; }
+.settings-field select, .settings-field input { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid rgba(155,175,220,.18); border-radius: 8px; color: #edf2ff; background: #0d1526; outline: none; }
+.settings-field input::placeholder { color: #697895; }
+.settings-field input:focus { border-color: rgba(146,120,255,.72); box-shadow: 0 0 0 3px rgba(146,120,255,.1); }
+.settings-session-field { grid-template-columns: minmax(0,1fr); gap: 7px; }
 .settings-checkbox { display: flex; align-items: center; gap: 10px; color: #aebbd4; font-size: 11px; cursor: pointer; }
 .settings-checkbox input { width: 15px; height: 15px; accent-color: var(--accent); }
 .settings-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; }

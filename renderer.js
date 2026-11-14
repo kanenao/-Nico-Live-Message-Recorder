@@ -330,8 +330,52 @@ async function refreshAuthStatus() {
     const status = await api.getAuthStatus();
     byId("login-state").textContent = status.loggedIn ? "ログイン済み" : "未ログイン";
     byId("login-state").className = "login-state " + (status.loggedIn ? "is-logged-in" : "");
+    const sessionStatus = byId("user-session-status");
+    if (sessionStatus) sessionStatus.textContent = status.loggedIn
+      ? "user_sessionを検出しました（有効性は未確認）"
+      : "user_sessionは未設定です";
   } catch (_) {
     byId("login-state").textContent = "状態を確認できません";
+    const sessionStatus = byId("user-session-status");
+    if (sessionStatus) sessionStatus.textContent = "認証状態を確認できません";
+  }
+}
+
+async function saveUserSession() {
+  const input = byId("setting-user-session");
+  const button = byId("save-user-session-button");
+  const value = input.value.trim();
+  if (!value) {
+    showToast("user_sessionの値を入力してください。", true);
+    input.focus();
+    return;
+  }
+  button.disabled = true;
+  try {
+    await api.setUserSession(value);
+    input.value = "";
+    await refreshAuthStatus();
+    showToast("user_sessionを保存しました。");
+  } catch (error) {
+    showToast(error.message || "user_sessionを保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function clearUserSession() {
+  if (!window.confirm("保存済みのuser_sessionを削除しますか？")) return;
+  const button = byId("clear-user-session-button");
+  button.disabled = true;
+  try {
+    await api.setUserSession("");
+    byId("setting-user-session").value = "";
+    await refreshAuthStatus();
+    showToast("user_sessionを削除しました。");
+  } catch (error) {
+    showToast(error.message || "user_sessionを削除できませんでした。", true);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1160,6 +1204,7 @@ function openSettings() {
   byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
   byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
   void checkOllamaStatus();
+  void refreshAuthStatus();
   byId("settings-modal").hidden = false;
 }
 
@@ -2401,6 +2446,9 @@ byId("open-watch-button").addEventListener("click", async () => {
   if (!liveId) return showToast("放送IDまたは視聴URLを入力してください。", true);
   try { await api.openWatch(liveId); } catch (error) { showToast(error.message, true); }
 });
+
+byId("save-user-session-button").addEventListener("click", saveUserSession);
+byId("clear-user-session-button").addEventListener("click", clearUserSession);
 
 byId("login-button").addEventListener("click", async () => {
   try {

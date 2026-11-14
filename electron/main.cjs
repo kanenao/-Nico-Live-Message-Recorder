@@ -19,6 +19,7 @@ const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs"
 const { hasNonEmptyFile } = require("./recording-file.cjs");
 const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
 const { normalizeNicoCookies, getNicoUserSession } = require("./nico-cookies.cjs");
+const { normalizeUserSessionInput } = require("./nico-session.cjs");
 const { extractNicoUserId, fetchNicoProfileIcon } = require("./nico-profile.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
@@ -1047,6 +1048,35 @@ async function getNicoAuthCookies() {
   const cookies = await authSession.cookies.get({});
   return normalizeNicoCookies(cookies);
 }
+
+ipcMain.handle("auth:set-user-session", async (_event, input) => {
+  const value = normalizeUserSessionInput(input);
+  const authSession = session.fromPartition("persist:nico-auth");
+  if (!value) {
+    await authSession.cookies.remove("https://nicovideo.jp/", "user_session");
+    send("auth:status", { checked: true });
+    return { loggedIn: false, cleared: true };
+  }
+
+  // Store the token in Chromium's persistent cookie store, not settings.json or renderer storage.
+  await authSession.cookies.set({
+    url: "https://nicovideo.jp/",
+    name: "user_session",
+    value,
+    domain: ".nicovideo.jp",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax",
+    expirationDate: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60
+  });
+  const savedValue = getNicoUserSession(await getNicoAuthCookies());
+  if (savedValue !== value) {
+    throw new Error("user_sessionをCookieへ保存できませんでした。値を確認して再試行してください。");
+  }
+  send("auth:status", { checked: true });
+  return { loggedIn: true, saved: true };
+});
 
 ipcMain.handle("auth:open-login", async () => {
   if (loginWindow && !loginWindow.isDestroyed()) {

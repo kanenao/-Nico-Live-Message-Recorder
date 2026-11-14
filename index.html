@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.2.2-alpha.99</span>
+        <span class="version" id="version">v0.3.0-alpha.100</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -663,6 +663,24 @@
           <button class="button button-quiet button-small" id="close-settings-button" type="button" aria-label="閉じる">閉じる</button>
         </div>
         <div class="settings-sections">
+        <section class="settings-section" aria-live="polite">
+          <div class="settings-section-heading">
+            <h3>ニコニコ認証（user_session）</h3>
+            <p>ブラウザーで取得したuser_sessionを手動登録できます。アプリ内ログインと併用できます。</p>
+          </div>
+          <div class="settings-fields">
+            <label class="settings-field settings-session-field">
+              <span>user_sessionの値（または user_session=値）</span>
+              <input type="password" id="setting-user-session" maxlength="4096" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="user_sessionの値を貼り付け">
+            </label>
+            <div class="app-update-actions">
+              <button class="button button-primary button-small" id="save-user-session-button" type="button">user_sessionを保存</button>
+              <button class="button button-quiet button-small" id="clear-user-session-button" type="button">保存済みの値を削除</button>
+            </div>
+            <div class="app-update-status" id="user-session-status" role="status">認証状態を確認中</div>
+          </div>
+          <p class="settings-help">値は画面に再表示せず、設定ファイルにも書き込みません。ニコニコ認証用のCookieとして保存します。ブラウザーの開発者ツールで Application（アプリケーション）→ Cookies → nicovideo.jp → user_session の Value をコピーしてください。Cookie名や「user_session=」を含めて貼り付けても登録できます。</p>
+        </section>
         <section class="settings-section ">
           <div class="settings-section-heading">
             <h3>配信監視・自動録画</h3>

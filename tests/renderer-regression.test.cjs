@@ -1048,3 +1048,19 @@ test("broadcast article cards render video thumbnails and newspaper-style grid",
   assert.match(css, /auto-fill/);
   assert.match(css, /aspect-ratio:16\/9/);
 });
+
+
+test("manual Niconico user_session controls use a dedicated secure cookie IPC", () => {
+  for (const id of ["setting-user-session", "save-user-session-button", "clear-user-session-button", "user-session-status"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing manual session control: " + id);
+  }
+  assert.match(html, /type="password" id="setting-user-session"/);
+  assert.match(renderer, /api\.setUserSession\(value\)/);
+  assert.match(renderer, /api\.setUserSession\(""\)/);
+  assert.match(preload, /setUserSession: \(value\) => ipcRenderer\.invoke\("auth:set-user-session", value\)/);
+  assert.match(main, /ipcMain\.handle\("auth:set-user-session"/);
+  assert.match(main, /authSession\.cookies\.set\(\{/);
+  assert.match(main, /httpOnly: true/);
+  assert.match(main, /authSession\.cookies\.remove\("https:\/\/nicovideo\.jp\//);
+  assert.doesNotMatch(main, /writeAppSettings\(\{[^}]*user_session/i);
+});
