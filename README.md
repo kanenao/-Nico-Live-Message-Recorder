@@ -2,14 +2,19 @@
 
 ニコニコ生放送の映像ストリームとコメントを別々に直接保存し、コメント付き動画を生成できるWindowsデスクトップアプリです。
 
-**β版開発ブランチ：`beta`（現在 0.1.0-beta.88）**
+**β版開発ブランチ：`beta`（現在 0.1.0-beta.89）**
 
 <!-- AUTO-GENERATED: RELEASE-INFO:START -->
 ## 現在のβ版と最近の更新
 
-**現在のβ版：0.1.0-beta.88**
+**現在のβ版：0.1.0-beta.89**
 
 最新の更新内容を8バージョン分掲載しています。過去の全履歴は [CHANGELOG.md](CHANGELOG.md) をご覧ください。
+
+### 0.1.0-beta.89
+- Windows CIで検出された録画開始テストの古い条件を修正。映像録画開始はコメント接続の再試行完了を待たない現行仕様を検証するよう更新
+- コメント接続と映像録画の並行開始について、実装に存在しない `Promise.allSettled` の文字列を要求していた誤った回帰テストを修正
+- β88のCI失敗原因を解消し、テスト成功後にWindowsインストーラー・ZIPのビルドへ進む構成を維持
 
 ### 0.1.0-beta.88
 - ニコニコ認証Cookieの取得をドメイン指定検索から全Cookie取得＋nicovideo.jpドメイン検証へ統一し、ElectronのCookieドメイン表記差（.nicovideo.jp / nicovideo.jp / サブドメイン）に対応
@@ -46,10 +51,6 @@
 ### 0.1.0-beta.82
 - Windows CIで見つかったStreamlink録画開始期限テストの古い期待値を修正し、実装の開始時刻基準（startupStartedAt + 60秒）と一致
 - GitHubの既定ブランチがmainのためトップページに旧READMEが表示される問題を特定。β版のREADME・変更履歴はbetaブランチを正として維持
-
-### 0.1.0-beta.81
-- README同期テストをCommonJS形式に修正し、Windows上のNode.jsテストランナーで確実に実行できるよう改善
-- Streamlinkの初回メディア受信待ちを60秒へ延長した現行仕様に合わせ、回帰テストの期待値を更新
 
 [すべてのバージョン更新履歴を見る](CHANGELOG.md)
 <!-- AUTO-GENERATED: RELEASE-INFO:END -->
