@@ -894,3 +894,11 @@ test("manual capture actions report IPC readiness, pending state, destination, a
   }
   assert.ok(renderer.includes('Electron連携API「" + method + "」を利用できません'));
 });
+
+
+test("capture lifecycle events keep asynchronous video and comment failures visible", () => {
+  assert.match(renderer, /if \(channel === "video:state"\) \{[\s\S]*録画プロセス終了。終了コード/);
+  assert.match(renderer, /if \(channel === "capture:state" && payload\) \{[\s\S]*payload\.videoError/);
+  assert.match(renderer, /映像録画は開始しましたが、コメント取得に失敗しました/);
+  assert.match(renderer, /映像録画とコメント取得の両方が開始しました/);
+});

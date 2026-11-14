@@ -2142,10 +2142,17 @@ try {
   if (channel === "comments:file" && payload && payload.path) {
     byId("comment-file").textContent = "コメント：" + payload.path;
   }
-  if (channel === "video:state") handleVideoState(payload);
+  if (channel === "video:state") {
+    if (payload && payload.recording) setCaptureDetail("映像録画中です。保存先：" + (payload.path || "準備中"));
+    else if (payload && payload.path) setCaptureDetail("録画ファイルを確定しました：" + payload.path);
+    else if (payload && payload.exitCode !== undefined) setCaptureDetail("録画プロセス終了。終了コード：" + payload.exitCode + " ／ 映像ファイル：" + (payload.path || "作成されていません"));
+    handleVideoState(payload);
+  }
   if (channel === "preview:state") renderLivePreviewState(payload);
-  if (channel === "capture:state" && payload && payload.commentError) {
-    byId("capture-status-detail").textContent = "映像録画は開始しましたが、コメント取得に失敗しました: " + payload.commentError;
+  if (channel === "capture:state" && payload) {
+    if (payload.videoError) setCaptureDetail("映像録画の開始に失敗しました：" + payload.videoError);
+    else if (payload.commentError) setCaptureDetail("映像録画は開始しましたが、コメント取得に失敗しました：" + payload.commentError);
+    else if (payload.recording && payload.commentsConnected) setCaptureDetail("映像録画とコメント取得の両方が開始しました。");
   }
   if (channel === "compose:status" && payload) {
     const progress = payload.state === "converting" ? 0 :
