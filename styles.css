@@ -748,3 +748,42 @@ button, .button {
 .kick-article-layout .broadcast-article-topics span { color:#93dcb0; background:#1c3327; }
 .kick-article-layout .broadcast-article-actions { justify-content:flex-start; border-top:1px solid #2b2f38; padding-top:13px; }
 @media(max-width:760px){.kick-article-layout{padding:14px}.kick-article-layout .article-library-toolbar{grid-template-columns:1fr}.kick-article-layout .article-manual-actions{align-items:stretch;flex-direction:column}}
+
+
+/* beta91: Kick-style article workspace layout, preserving Nico article tools */
+.broadcast-articles-panel{display:grid;gap:16px;align-content:start}
+.broadcast-articles-panel>.panel-heading{align-items:flex-start;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.broadcast-articles-panel>.panel-heading h2{font-size:19px;letter-spacing:.01em}
+.broadcast-articles-panel>.panel-heading .session-description{max-width:760px;line-height:1.7}
+.article-manual-generator{gap:15px;padding:19px;border-color:rgba(96,212,198,.25);background:linear-gradient(145deg,rgba(22,42,48,.78),rgba(17,26,43,.92));box-shadow:0 12px 32px rgba(0,0,0,.12)}
+.article-manual-heading{align-items:center;padding-bottom:12px;border-bottom:1px solid rgba(155,175,220,.12)}
+.article-manual-heading h3{font-size:15px}
+.article-manual-heading p{line-height:1.6}
+.article-manual-grid{gap:13px 15px}
+.article-manual-grid label{gap:7px;font-weight:650}
+.article-manual-grid input,.article-manual-grid textarea{min-height:40px;border-color:rgba(155,175,220,.2);background:rgba(5,10,20,.48);transition:border-color .15s ease,box-shadow .15s ease}
+.article-manual-grid input:focus,.article-manual-grid textarea:focus{outline:none;border-color:rgba(96,212,198,.65);box-shadow:0 0 0 3px rgba(96,212,198,.1)}
+.article-manual-grid textarea{min-height:82px}
+.article-video-picker,.article-audio-tools,.article-live-generator{padding:14px;border:1px solid rgba(155,175,220,.14);border-radius:10px;background:rgba(5,10,20,.25)}
+.article-audio-tools{display:grid;gap:10px}
+.article-audio-tools>strong,.article-live-generator>strong{color:#e8f3f0;font-size:12px}
+.article-audio-tool-row{display:flex;align-items:center;flex-wrap:wrap;gap:9px 12px}
+.article-audio-tool-row small{overflow-wrap:anywhere}
+.article-live-generator{gap:10px}
+.article-live-generator p{line-height:1.75}
+.article-live-actions{padding-top:3px}
+.article-manual-actions{align-items:center;padding-top:13px;border-top:1px solid rgba(155,175,220,.12)}
+.article-manual-actions span{max-width:850px;line-height:1.7}
+.article-manual-actions .button{flex:0 0 auto;min-width:142px}
+.article-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
+.article-summary .library-summary-card{min-height:78px;border-color:rgba(155,175,220,.15);background:linear-gradient(145deg,rgba(24,35,58,.72),rgba(10,17,31,.78))}
+.article-library-toolbar{padding:13px;border:1px solid rgba(155,175,220,.13);border-radius:11px;background:rgba(5,10,20,.2)}
+.broadcast-articles-list{gap:14px}
+.broadcast-article-card{padding:19px;border-color:rgba(155,175,220,.16);background:linear-gradient(145deg,rgba(24,35,58,.82),rgba(13,21,36,.96));box-shadow:0 10px 28px rgba(0,0,0,.1)}
+.broadcast-article-heading h3{font-size:16px}
+.broadcast-article-lead{padding:13px 15px;border-left:3px solid var(--accent-2);border-radius:0 8px 8px 0;background:rgba(96,212,198,.055);color:#e0eaf5!important;font-size:13px!important}
+.broadcast-article-highlights,.broadcast-article-timeline{padding:13px 15px;border:1px solid rgba(155,175,220,.13);border-radius:9px;background:rgba(5,10,20,.22)}
+.broadcast-article-highlights h4,.broadcast-article-timeline h4{margin:0 0 9px;color:#dfe8f7;font-size:11px}
+.broadcast-article-highlights ul{margin:0;padding-left:19px;color:#c2ccdb;font-size:11px;line-height:1.8}
+.broadcast-article-reaction{padding:11px 13px;border-radius:8px;background:rgba(146,120,255,.07);color:#d7ccff!important}
+@media(max-width:760px){.article-summary{grid-template-columns:1fr}.article-manual-actions{align-items:stretch}.article-manual-actions .button{width:100%}.article-library-toolbar{grid-template-columns:1fr}.article-library-toolbar .library-search-field{grid-column:auto}}
