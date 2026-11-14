@@ -970,3 +970,11 @@ test("comment log finalization preserves a failed file and checks every write", 
   assert.doesNotMatch(main, /commentWriter\.write\(/);
   assert.match(main, /return writeCommentLine\(writer, JSON\.stringify\(marker\)\)/);
 });
+
+test("Streamlink startup reports progress and allows a longer first-media wait", () => {
+  assert.match(main, /startupDeadline = startupStartedAt \+ 60000/);
+  assert.match(main, /starting: true/);
+  assert.match(main, /配信データ受信待ち：/);
+  assert.match(renderer, /payload && payload\.starting/);
+  assert.match(renderer, /Streamlink起動中です。/);
+});

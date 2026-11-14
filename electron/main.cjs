@@ -2572,18 +2572,39 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     throw new Error("Streamlinkを起動できませんでした: " + error.message);
   });
 
-  const startupDeadline = Date.now() + 25000;
+  const startupStartedAt = Date.now();
+  const startupDeadline = startupStartedAt + 60000;
+  let nextStartupNoticeAt = startupStartedAt + 10000;
   let outputReady = false;
+  send("video:state", {
+    starting: true,
+    liveId,
+    path: outputPath,
+    elapsedMs: 0,
+    message: "Streamlink起動済み。配信データの受信を待っています…"
+  });
   while (Date.now() < startupDeadline) {
     if (hasNonEmptyFile(outputPath)) { outputReady = true; break; }
     if (child.exitCode !== null || child.signalCode !== null) break;
+    const now = Date.now();
+    if (now >= nextStartupNoticeAt) {
+      const elapsedMs = now - startupStartedAt;
+      send("video:state", {
+        starting: true,
+        liveId,
+        path: outputPath,
+        elapsedMs,
+        message: "配信データ受信待ち：" + Math.floor(elapsedMs / 1000) + "秒経過"
+      });
+      nextStartupNoticeAt = now + 10000;
+    }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   if (!outputReady) {
     const detail = streamlinkStderr.trim().slice(-1800);
     if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGINT"); } catch (_) {} }
     if (streamlinkFinalizePromise) await streamlinkFinalizePromise.catch(() => {});
-    throw new Error("Streamlinkは起動しましたが、録画データを受信できませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (detail ? "\nStreamlink詳細: " + detail : ""));
+    throw new Error("Streamlinkは起動しましたが、60秒以内に録画データを受信できませんでした。放送ID・視聴権限・配信状態・Streamlinkの対応状況を確認してください。" + (detail ? "\nStreamlink詳細: " + detail : ""));
   }
   const startedAt = new Date().toISOString();
   if (currentLiveId === liveId) {

@@ -2167,10 +2167,14 @@ try {
     byId("comment-file").textContent = "コメント：" + payload.path;
   }
   if (channel === "video:state") {
-    if (payload && payload.recording) setCaptureDetail("映像録画中です。保存先：" + (payload.path || "準備中"));
-    else if (payload && payload.path) setCaptureDetail("録画ファイルを確定しました：" + payload.path);
-    else if (payload && payload.exitCode !== undefined) setCaptureDetail("録画プロセス終了。終了コード：" + payload.exitCode + " ／ 映像ファイル：" + (payload.path || "作成されていません"));
-    handleVideoState(payload);
+    if (payload && payload.starting) {
+      setCaptureDetail((payload.message || "Streamlink起動中です。") + " 保存先：" + (payload.path || "確認中"));
+    } else {
+      if (payload && payload.recording) setCaptureDetail("映像録画中です。保存先：" + (payload.path || "準備中"));
+      else if (payload && payload.path) setCaptureDetail("録画ファイルを確定しました：" + payload.path);
+      else if (payload && payload.exitCode !== undefined) setCaptureDetail("録画プロセス終了。終了コード：" + payload.exitCode + " ／ 映像ファイル：" + (payload.path || "作成されていません"));
+      handleVideoState(payload);
+    }
   }
   if (channel === "preview:state") renderLivePreviewState(payload);
   if (channel === "capture:state" && payload) {
