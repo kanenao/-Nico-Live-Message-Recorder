@@ -825,6 +825,8 @@ test("Streamlink waits for media bytes and preserves stderr when capture startup
   assert.match(main, /hasNonEmptyFile\(outputPath\)/);
   assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ chunk\.toString/);
   assert.match(main, /Streamlink詳細:/);
+  assert.match(main, /Streamlink終了コード: /);
+  assert.match(main, /Streamlink終了シグナル: /);
 });
 test("Streamlink finalization verifies the final media file before deleting the TS backup", () => {
   const finalizeStart = main.indexOf("async function finalizeStreamlinkRecording");

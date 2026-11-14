@@ -2602,9 +2602,14 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   }
   if (!outputReady) {
     const detail = streamlinkStderr.trim().slice(-1800);
+    const exitDetail = child.exitCode !== null
+      ? "Streamlink終了コード: " + child.exitCode
+      : child.signalCode !== null
+        ? "Streamlink終了シグナル: " + child.signalCode
+        : "Streamlinkは起動中のまま受信待ち時間を超過しました";
     if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGINT"); } catch (_) {} }
     if (streamlinkFinalizePromise) await streamlinkFinalizePromise.catch(() => {});
-    throw new Error("Streamlinkは起動しましたが、60秒以内に録画データを受信できませんでした。放送ID・視聴権限・配信状態・Streamlinkの対応状況を確認してください。" + (detail ? "\nStreamlink詳細: " + detail : ""));
+    throw new Error("Streamlinkは起動しましたが、60秒以内に録画データを受信できませんでした。放送ID・視聴権限・配信状態・Streamlinkの対応状況を確認してください。\n" + exitDetail + (detail ? "\nStreamlink詳細: " + detail : ""));
   }
   const startedAt = new Date().toISOString();
   if (currentLiveId === liveId) {
