@@ -330,23 +330,30 @@ async function connectLive() {
   byId("live-title").textContent = "番組情報を取得中…";
   byId("live-meta").textContent = "コメントサーバーに接続しています";
   try {
+    requireCaptureApi("connectLive");
+    setCaptureDetail("コメント接続要求を送信しました。ニコニコ側の応答を待っています…");
     const result = await api.connectLive(liveId);
     updateMetadata(result.metadata);
     byId("comment-file").textContent = "コメント：" + result.commentFile;
     setConnection("connected");
+    setCaptureDetail("コメント保存先：" + result.commentFile);
     showToast("コメント取得を開始しました。");
   } catch (error) {
     setConnection("error");
+    setCaptureDetail("コメント接続エラー：" + (error.message || String(error)));
     showToast(error.message || "コメント接続に失敗しました。", true);
   }
 }
 
 async function disconnectLive() {
   try {
+    requireCaptureApi("disconnectLive");
     await api.disconnectLive();
     setConnection("disconnected");
+    setCaptureDetail("コメント取得を停止しました。");
     showToast("コメント取得を停止しました。");
   } catch (error) {
+    setCaptureDetail("コメント切断エラー：" + (error.message || String(error)));
     showToast(error.message || "切断に失敗しました。", true);
   }
 }
@@ -405,7 +412,9 @@ async function startVideoRecording(target = null) {
   recordButton.disabled = true;
   renderLiveBroadcasts();
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
+  setCaptureDetail(timeshift ? "タイムシフト録画要求を送信しました。映像・音声と過去コメントの応答を待っています…" : "映像・音声＋コメント録画要求を送信しました。Streamlinkとコメントサーバーの起動を待っています…");
   try {
+    requireCaptureApi(timeshift ? "startVideo" : "startCapture");
     const quality = byId("record-quality")?.value || "best";
     let result;
     if (timeshift) {
@@ -438,7 +447,8 @@ async function startVideoRecording(target = null) {
     }
 
     const video = result.video || {};
-    byId("video-file").textContent = "保存先：" + (video.path || "");\n    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") + (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : ""));
+    byId("video-file").textContent = "保存先：" + (video.path || "");
+    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") + (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : ""));
     // A long archive-comment fetch may outlive the timeshift video itself.
     // Do not overwrite a completed video:state event when the IPC finally returns.
     if (!timeshift || videoCaptureState === "recording") {
@@ -466,6 +476,7 @@ async function startVideoRecording(target = null) {
     renderSessionProgramInfo();
     setVideoState(false);
     if (!connected) setConnection("error");
+    setCaptureDetail("録画開始エラー：" + (error.message || String(error)));
     showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
   } finally {
     recordStartInProgress = false;
