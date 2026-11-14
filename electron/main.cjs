@@ -421,8 +421,7 @@ function recordsToCsv(records) {
       row.userId || "", row.content || row.message || row.itemName || row.id || ""
     ].map(quote).join(","));
   }
-  return "\uFEFF" + rows.join("\r
-");
+  return "\uFEFF" + rows.join("\r\n");
 }
 
 async function exportCommentSidecars(sourcePath) {
@@ -431,8 +430,7 @@ async function exportCommentSidecars(sourcePath) {
   if (!formats.length || !sourcePath || !fs.existsSync(sourcePath)) return [];
 
   const records = [];
-  for (const line of fs.readFileSync(sourcePath, "utf8").split(/\r?
-/).filter(Boolean)) {
+  for (const line of fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).filter(Boolean)) {
     try { records.push(JSON.parse(line)); } catch (_) {}
   }
   const written = [];
@@ -517,8 +515,7 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
     ...context,
     generatedAt: new Date().toISOString()
   };
-  const records = recordsText.split(/\r?
-/).filter(Boolean).map(line => {
+  const records = recordsText.split(/\r?\n/).filter(Boolean).map(line => {
     try { return JSON.parse(line); } catch (_) { return null; }
   }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
@@ -890,8 +887,7 @@ function appendMarkerAndWait(type, fields = {}) {
   const timestamp = new Date().toISOString();
   const marker = { type, liveId: currentLiveId, timestamp, receivedAt: timestamp, ...fields };
   return new Promise((resolve, reject) => {
-    writer.write(JSON.stringify(marker) + "
-", (error) => error ? reject(error) : resolve(marker));
+    writer.write(JSON.stringify(marker) + "\n", (error) => error ? reject(error) : resolve(marker));
   });
 }
 
@@ -1339,12 +1335,10 @@ async function processLiveArticleAudioSegments(liveId, includeCurrent = false) {
         });
         if (result.text) {
           liveArticleAudioTranscriptSegments.push(
-            "【配信経過 " + formatLiveAudioOffset(index * LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS) + "】
-" + result.text
+            "【配信経過 " + formatLiveAudioOffset(index * LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS) + "】\n" + result.text
           );
           liveArticleAudioTranscript = {
-            text: liveArticleAudioTranscriptSegments.join("
-").slice(-30000),
+            text: liveArticleAudioTranscriptSegments.join("\n").slice(-30000),
             segmentCount: liveArticleAudioTranscriptSegments.length
           };
           send("articles:live-state", {
@@ -1863,10 +1857,8 @@ function queueMonitorDetection(payload) {
     const broadcaster = String(payload.displayName || payload.name || ("ユーザー " + payload.userId)).slice(0, 80);
     const title = payload.title ? String(payload.title).slice(0, 120) : "";
     const body = broadcaster + " が配信を開始しました。" +
-      (title ? "
-" + title : "") +
-      "
-" + String(payload.liveId || "");
+      (title ? "\n" + title : "") +
+      "\n" + String(payload.liveId || "");
     showDesktopNotification("配信開始を検知しました", body);
   }
   send("monitor:live-detected", payload);
@@ -1883,8 +1875,7 @@ function notifyMonitorRecordingResult(result) {
   const userId = String(result.userId || "").replace(/\D/g, "").slice(0, 24);
   const key = (userId || "unknown") + ":" + liveId;
   const broadcaster = String(result.name || (userId ? "ユーザー " + userId : "配信者")).slice(0, 80);
-  const detail = String(result.message || "").replace(/[\r
-]+/g, " ").slice(0, 220);
+  const detail = String(result.message || "").replace(/[\r\n]+/g, " ").slice(0, 220);
 
   if (result.status === "failed") {
     // Do not repeat the same failure toast on every automatic retry.
@@ -1894,23 +1885,17 @@ function notifyMonitorRecordingResult(result) {
       monitorFailureNotifications.delete(monitorFailureNotifications.values().next().value);
     }
     const body = broadcaster + " / " + liveId +
-      (detail ? "
-" + detail : "") +
-      "
-次回の監視確認で再試行します。";
+      (detail ? "\n" + detail : "") +
+      "\n次回の監視確認で再試行します。";
     return { shown: showDesktopNotification("自動録画を開始できませんでした", body) };
   }
 
   monitorFailureNotifications.delete(key);
-  const commentError = String(result.commentError || "").replace(/[\r
-]+/g, " ").slice(0, 180);
+  const commentError = String(result.commentError || "").replace(/[\r\n]+/g, " ").slice(0, 180);
   const body = broadcaster + " / " + liveId +
     (commentError
-      ? "
-映像録画：開始済み
-コメント取得：失敗（" + commentError + "）"
-      : "
-映像録画・コメント取得：開始しました。");
+      ? "\n映像録画：開始済み\nコメント取得：失敗（" + commentError + "）"
+      : "\n映像録画・コメント取得：開始しました。");
   return {
     shown: showDesktopNotification(
       commentError ? "映像録画を開始（コメント取得に失敗）" : "自動録画を開始しました",
@@ -2407,11 +2392,9 @@ async function finalizeStreamlinkRecording(exit) {
   send("video:state", { recording: false, ...result });
 
   if (!streamlinkStopRequested && exit.code !== 0) {
-    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "
-詳細: " + finalStderr.trim().slice(-1800) : ""));
+    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\n詳細: " + finalStderr.trim().slice(-1800) : ""));
   } else if (!hasOutput) {
-    send("app:error", "録画データが作成されませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "
-Streamlink詳細: " + finalStderr.trim().slice(-1800) : ""));
+    send("app:error", "録画データが作成されませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\nStreamlink詳細: " + finalStderr.trim().slice(-1800) : ""));
   }
   return result;
 }
@@ -2577,8 +2560,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     const detail = streamlinkStderr.trim().slice(-1800);
     if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGINT"); } catch (_) {} }
     if (streamlinkFinalizePromise) await streamlinkFinalizePromise.catch(() => {});
-    throw new Error("Streamlinkは起動しましたが、録画データを受信できませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (detail ? "
-Streamlink詳細: " + detail : ""));
+    throw new Error("Streamlinkは起動しましたが、録画データを受信できませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (detail ? "\nStreamlink詳細: " + detail : ""));
   }
   const startedAt = new Date().toISOString();
   if (currentLiveId === liveId) {
@@ -2704,13 +2686,7 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
         record.timestamp = event.timestamp;
         record.receivedAt = event.receivedAt || new Date().toISOString();
         record.isHistory = true;
-        if (!commentWriter.write(JSON.stringify(record) + "
-")) {
-          await new Promise((resolve, reject) => {
-            commentWriter.once("drain", resolve);
-            commentWriter.once("error", reject);
-          });
-        }
+        await writeCommentLine(commentWriter, JSON.stringify(record));
       }
       commentCount = archive.commentCount;
       commentsTruncated = archive.truncated;
@@ -2864,8 +2840,7 @@ function transcodeCompositionToMp4(inputPath, outputPath, quality, durationMs) {
         const value = chunk.toString("utf8");
         stderr = (stderr + value).slice(-2400);
         progressBuffer += value;
-        const lines = progressBuffer.split(/\r?
-/);
+        const lines = progressBuffer.split(/\r?\n/);
         progressBuffer = lines.pop() || "";
         for (const line of lines) {
           const match = line.match(/^out_time_(?:ms|us)=(\d+)$/);
@@ -3252,9 +3227,7 @@ ipcMain.handle("library:delete-video", async (_event, value) => {
     type: "warning",
     title: "録画動画を削除",
     message: "この動画ファイルを完全に削除しますか？",
-    detail: path.basename(target) + "
-
-削除した動画は元に戻せません。対応するコメントログは削除されません。",
+    detail: path.basename(target) + "\n\n削除した動画は元に戻せません。対応するコメントログは削除されません。",
     buttons: ["削除する", "キャンセル"],
     defaultId: 1,
     cancelId: 1,
@@ -3289,8 +3262,7 @@ ipcMain.handle("comments:export-csv", async () => {
       writeCommentLine(commentWriter, "").then(resolve, reject);
     });
   }
-  const records = fs.readFileSync(source, "utf8").split(/\\r?\
-/).filter(Boolean)
+  const records = fs.readFileSync(source, "utf8").split(/\\r?\\n/).filter(Boolean)
     .map((line) => { try { return JSON.parse(line); } catch (_) { return null; } })
     .filter(Boolean);
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -3320,8 +3292,7 @@ ipcMain.handle("comments:export-ass", async () => {
     });
   }
   const records = [];
-  const lines = fs.readFileSync(source, "utf8").split(/\r?
-/).filter(Boolean);
+  const lines = fs.readFileSync(source, "utf8").split(/\r?\n/).filter(Boolean);
   for (const line of lines) {
     try { records.push(JSON.parse(line)); } catch (_) { /* skip malformed rows */ }
   }
