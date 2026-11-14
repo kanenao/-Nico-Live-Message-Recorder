@@ -1,3 +1,8 @@
+## 0.1.0-beta.82
+
+- Windows CIで見つかったStreamlink録画開始期限テストの古い期待値を修正し、実装の開始時刻基準（startupStartedAt + 60秒）と一致
+- GitHubの既定ブランチがmainのためトップページに旧READMEが表示される問題を特定。β版のREADME・変更履歴はbetaブランチを正として維持
+
 ## 0.1.0-beta.81
 
 - README同期テストをCommonJS形式に修正し、Windows上のNode.jsテストランナーで確実に実行できるよう改善
