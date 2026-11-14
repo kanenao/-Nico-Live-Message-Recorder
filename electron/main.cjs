@@ -15,6 +15,7 @@ const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs");
+const { hasNonEmptyFile } = require("./recording-file.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -2285,7 +2286,7 @@ function remuxTransportStreamToMp4(inputPath, outputPath, ffmpegPath) {
     }
     child.once("error", reject);
     child.once("close", (code) => {
-      if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+      if (code === 0 && hasNonEmptyFile(outputPath)) {
         resolve(outputPath);
       } else {
         reject(new Error(stderr.trim() || "FFmpegによるMP4変換に失敗しました。"));
@@ -2300,7 +2301,7 @@ async function finalizeStreamlinkRecording(exit) {
   const ffmpegPath = streamlinkFfmpegPath;
   let finalPath = rawPath;
   let converted = false;
-  const hasOutput = rawPath && fs.existsSync(rawPath) && fs.statSync(rawPath).size > 0;
+  const hasOutput = hasNonEmptyFile(rawPath);
 
   if (hasOutput && ffmpegPath) {
     const mp4Path = rawPath.replace(/\.ts$/i, ".mp4");
