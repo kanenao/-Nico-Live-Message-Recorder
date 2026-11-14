@@ -839,10 +839,10 @@ test("Streamlink finalization verifies the final media file before deleting the 
 
 test("changelog headings and entries use real Markdown line breaks", () => {
     assert.doesNotMatch(changelog, /\\n/);
-  assert.match(changelog, /## 0\.1\.0-beta\.66\n\n- 録画・コメント開始時/);
+  assert.match(changelog.replace(/\r\n/g, "\n"), /## 0\.1\.0-beta\.66\n\n- 録画・コメント開始時/);
   assert.match(changelog, /- Electronのイベント購読APIが初期化エラー/);
   assert.match(changelog, /- preload bridgeのイベント接続失敗/);
-  assert.match(changelog, /## 0\.1\.0-beta\.55\n\n- Ollama公式Windowsインストーラー/);
+  assert.match(changelog.replace(/\r\n/g, "\n"), /## 0\.1\.0-beta\.55\n\n- Ollama公式Windowsインストーラー/);
 });
 
 test("duplicate library IDs are removed and package version is displayed in the UI", () => {
@@ -902,9 +902,9 @@ test("AI broadcast article prompt follows the Kick editorial structure while pre
 
 test("primary recording controls remain bound when Electron event subscription fails", () => {
   const eventSubscription = renderer.indexOf('if (!api || typeof api.onEvent !== "function")');
-  const primaryBindings = renderer.indexOf('connectButton.addEventListener("click", connectLive)');
+  const primaryBindings = renderer.indexOf('connectButton.addEventListener("click", () =>');
   assert.ok(eventSubscription >= 0, "event subscription is guarded");
-  assert.ok(primaryBindings > eventSubscription, "primary controls are bound after guarded event subscription");
+  assert.ok(primaryBindings >= 0 && primaryBindings < renderer.indexOf("let connected = false;"), "primary controls are bound before renderer state initialization");
   assert.match(renderer, /Electron preload bridge のイベントAPIを利用できません/);
   assert.match(renderer, /event bridge initialization failed/);
   assert.ok(preload.includes('connectLive: (liveId) => ipcRenderer.invoke("live:connect", liveId)'));
