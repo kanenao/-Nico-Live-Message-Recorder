@@ -3,7 +3,8 @@ const fs = require("node:fs");
 function hasNonEmptyFile(filePath) {
   if (!filePath) return false;
   try {
-    return fs.statSync(filePath).isFile() && fs.statSync(filePath).size > 0;
+    const stats = fs.statSync(filePath);
+    return stats.isFile() && stats.size > 0;
   } catch (_) {
     return false;
   }
