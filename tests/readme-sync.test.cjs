@@ -1,6 +1,6 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 
 test("README version and recent release history are synchronized", () => {
   const result = spawnSync(process.execPath, ["scripts/update-readme.mjs", "--check"], {
