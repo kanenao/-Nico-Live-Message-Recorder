@@ -821,7 +821,7 @@ test("Streamlink finalization verifies the final media file before deleting the 
 });
 
 test("changelog headings and entries use real Markdown line breaks", () => {
-  assert.doesNotMatch(changelog, /\\\\n/);
+    assert.doesNotMatch(changelog, /\\n/);
   assert.match(changelog, /## 0\.1\.0-beta\.66\n\n- 録画・コメント開始時/);
   assert.match(changelog, /- Electronのイベント購読APIが初期化エラー/);
   assert.match(changelog, /- preload bridgeのイベント接続失敗/);
