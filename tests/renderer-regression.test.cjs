@@ -989,3 +989,18 @@ test("recording startup runs Streamlink plugin preflight before opening the reco
   assert.match(probe, /--can-handle-url/);
   assert.match(probe, /ニコ生URLを処理できません/);
 });
+
+
+test("combined capture confirms video before the comment connection retry loop finishes", () => {
+  const handlerStart = main.indexOf('ipcMain.handle("capture:start"');
+  const handlerEnd = main.indexOf('async function stopStreamlinkRecording()', handlerStart);
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, "combined capture handler must exist");
+  const handler = main.slice(handlerStart, handlerEnd);
+  assert.match(handler, /const commentTask =/);
+  assert.match(handler, /const videoTask = startVideoInternal/);
+  assert.match(handler, /video = await videoTask/);
+  assert.match(handler, /commentPending: !commentSettled/);
+  assert.doesNotMatch(handler, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
+  assert.match(renderer, /result\.commentPending && !timeshift/);
+  assert.match(renderer, /コメント接続を継続しています/);
+});
