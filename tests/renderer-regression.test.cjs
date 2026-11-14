@@ -921,6 +921,7 @@ test("comment writer waits for write callbacks and reports failed persistence", 
   const broken = new Writable({
     write(_chunk, _encoding, callback) { callback(new Error("disk full")); }
   });
+  broken.on("error", () => {});
   await assert.rejects(writeCommentLine(broken, '{"type":"comment"}\\n'), /disk full/);
 });
 

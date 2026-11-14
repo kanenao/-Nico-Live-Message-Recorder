@@ -831,9 +831,7 @@ async function refreshLiveBroadcastArticle(options = {}) {
   };
   articleUpdateInProgress = true;
   try {
-    await new Promise((resolve, reject) => {
-      writer.write("", error => error ? reject(error) : resolve());
-    });
+    await writeCommentLine(writer, "");
     if (commentWriter !== writer || commentFilePath !== filePath || currentLiveId !== liveId) return null;
     if (liveArticleSessionActive) {
       send("articles:live-state", { state: "generating", liveId, frameCount: liveArticleFrames.length });
