@@ -877,3 +877,14 @@ test("primary recording controls remain bound when Electron event subscription f
   assert.ok(main.includes('ipcMain.handle("capture:start"'));
   assert.ok(main.includes('ipcMain.handle("video:start"'));
 });
+\n\ntest("manual capture actions report IPC readiness, pending state, destination, and actionable errors", () => {
+  assert.match(renderer, /function requireCaptureApi\\(method\\)/);
+  assert.match(renderer, /Electron連携API「" \\+ method \\+ "」を利用できません/);
+  assert.match(renderer, /function setCaptureDetail\\(message\\)/);
+  assert.match(renderer, /requireCaptureApi\\("connectLive"\\)/);
+  assert.match(renderer, /コメント接続要求を送信しました/);
+  assert.match(renderer, /requireCaptureApi\\(timeshift \\? "startVideo" : "startCapture"\\)/);
+  assert.match(renderer, /Streamlinkとコメントサーバーの起動を待っています/);
+  assert.match(renderer, /録画開始を確認しました。映像保存先/);
+  assert.match(renderer, /録画開始エラー：/);
+});

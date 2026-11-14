@@ -43,6 +43,17 @@ let recordStartInProgress = false;
 let captureLibraryItems = [];
 const expandedLibraryBroadcasters = new Set();
 
+function requireCaptureApi(method) {
+  if (!api || typeof api[method] !== "function") {
+    throw new Error("Electron連携API「" + method + "」を利用できません。アプリを完全終了して最新版を再起動してください。");
+  }
+}
+
+function setCaptureDetail(message) {
+  const detail = byId("capture-status-detail");
+  if (detail) detail.textContent = String(message || "");
+}
+
 function showToast(message, isError) {
   const toast = byId("toast");
   toast.textContent = message;
@@ -427,7 +438,7 @@ async function startVideoRecording(target = null) {
     }
 
     const video = result.video || {};
-    byId("video-file").textContent = "保存先：" + (video.path || "");
+    byId("video-file").textContent = "保存先：" + (video.path || "");\n    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") + (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : ""));
     // A long archive-comment fetch may outlive the timeshift video itself.
     // Do not overwrite a completed video:state event when the IPC finally returns.
     if (!timeshift || videoCaptureState === "recording") {
