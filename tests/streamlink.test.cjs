@@ -15,7 +15,8 @@ const {
   findBundledStreamlinkExecutable,
   findBundledFfmpegExecutable,
   createStreamlinkRuntime,
-  buildStreamlinkArgs
+  buildStreamlinkArgs,
+  formatStreamlinkFailure
 } = require("../electron/streamlink.cjs");
 
 test("Streamlink preflight confirms the nicolive plugin before starting a recording", async () => {
@@ -230,4 +231,17 @@ test("Niconico cookie normalization safely handles empty and invalid cookie coll
   const { normalizeNicoCookies, getNicoUserSession } = require("../electron/nico-cookies.cjs");
   assert.deepEqual(normalizeNicoCookies(null), []);
   assert.equal(getNicoUserSession([]), "");
+});
+
+
+test("Streamlink failures explain Niconico access, authentication, and network diagnostics", () => {
+  const noSession = formatStreamlinkFailure("Failed to get wss_api_url", { hasUserSession: false });
+  assert.match(noSession, /視聴接続情報を取得できません/);
+  assert.match(noSession, /user_session: 未検出/);
+  const forbidden = formatStreamlinkFailure("HTTP Error 403 Forbidden", { hasUserSession: true });
+  assert.match(forbidden, /再ログイン/);
+  assert.match(forbidden, /有効性は未確認/);
+  const network = formatStreamlinkFailure("WebSocket connection timed out");
+  assert.match(network, /通信状態を確認/);
+  assert.match(network, /Streamlink詳細: WebSocket connection timed out/);
 });

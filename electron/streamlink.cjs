@@ -167,6 +167,26 @@ function createStreamlinkRuntime(tempRoot, userSession) {
   };
 }
 
+function formatStreamlinkFailure(stderr, options = {}) {
+  const detail = String(stderr || "").trim();
+  const normalized = detail.toLowerCase();
+  const hasUserSession = options.hasUserSession === true;
+  let guidance = "配信ID・放送の公開状態・視聴権限・ネットワーク接続を確認してください。";
+  if (/failed to get wss_api_url|wss_api_url/.test(normalized)) {
+    guidance = "ニコ生の視聴接続情報を取得できません。放送ID・放送状態・アカウントの視聴権限を確認してください。";
+  } else if (/\b(401|403)\b|unauthorized|forbidden|login required|ログイン/.test(normalized)) {
+    guidance = "ログインまたは視聴権限で拒否された可能性があります。「ニコニコにログイン」から再ログインし、対象放送をブラウザーで視聴できるか確認してください。";
+  } else if (/websocket|timed out|timeout|connection reset|connection refused|network is unreachable/.test(normalized)) {
+    guidance = "配信サーバーとの通信が完了しませんでした。通信状態を確認してから再試行してください。";
+  } else if (/no streams found|no playable streams/.test(normalized)) {
+    guidance = "配信ストリームを取得できません。放送状態・視聴権限・Streamlinkの対応状況を確認してください。";
+  }
+  const authNote = options.hasUserSession === undefined ? "" :
+    "ニコニコ user_session: " + (hasUserSession ? "検出（有効性は未確認）" : "未検出") + "。";
+  return [guidance, authNote, detail ? "Streamlink詳細: " + detail.slice(-1800) : ""]
+    .filter(Boolean).join("\n");
+}
+
 function buildStreamlinkArgs(options) {
   const liveId = normalizeLiveId(options.liveId);
   if (!options.configPath) throw new Error("Streamlink用の設定ファイルがありません。");
@@ -201,5 +221,6 @@ module.exports = {
   findBundledStreamlinkExecutable,
   findBundledFfmpegExecutable,
   createStreamlinkRuntime,
-  buildStreamlinkArgs
+  buildStreamlinkArgs,
+  formatStreamlinkFailure
 };

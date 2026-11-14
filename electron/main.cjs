@@ -7,7 +7,8 @@ const {
   findBundledStreamlinkExecutable,
   findBundledFfmpegExecutable,
   createStreamlinkRuntime,
-  buildStreamlinkArgs
+  buildStreamlinkArgs,
+  formatStreamlinkFailure
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
@@ -2420,7 +2421,7 @@ async function finalizeStreamlinkRecording(exit) {
   send("video:state", { recording: false, ...result });
 
   if (!streamlinkStopRequested && exit.code !== 0) {
-    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\n詳細: " + finalStderr.trim().slice(-1800) : ""));
+    send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。\n" + formatStreamlinkFailure(finalStderr, { exitCode: exit.code }));
   } else if (!hasFinalOutput) {
     send("app:error", "録画データが作成されませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\nStreamlink詳細: " + finalStderr.trim().slice(-1800) : ""));
   }
@@ -2592,7 +2593,10 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     liveId,
     path: outputPath,
     elapsedMs: 0,
-    message: "Streamlink起動済み。配信データの受信を待っています…"
+    message: (userSession
+      ? "ニコニコのログインセッションを検出しました（有効性は未確認）。"
+      : "ニコニコのログインセッションが未検出です。ログイン必須の放送では先にアプリからログインしてください。") +
+      " Streamlink起動済み。配信データの受信を待っています…"
   });
   while (Date.now() < startupDeadline) {
     if (hasNonEmptyFile(outputPath)) { outputReady = true; break; }
@@ -2620,7 +2624,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
         : "Streamlinkは起動中のまま受信待ち時間を超過しました";
     if (child.exitCode === null && child.signalCode === null) { try { child.kill("SIGINT"); } catch (_) {} }
     if (streamlinkFinalizePromise) await streamlinkFinalizePromise.catch(() => {});
-    throw new Error("Streamlinkは起動しましたが、60秒以内に録画データを受信できませんでした。放送ID・視聴権限・配信状態・Streamlinkの対応状況を確認してください。\n" + exitDetail + (detail ? "\nStreamlink詳細: " + detail : ""));
+    throw new Error("Streamlinkは起動しましたが、60秒以内に録画データを受信できませんでした。\n" + exitDetail + "\n" + formatStreamlinkFailure(detail, { hasUserSession: Boolean(userSession), exitCode: child.exitCode }));
   }
   const startedAt = new Date().toISOString();
   if (currentLiveId === liveId) {
