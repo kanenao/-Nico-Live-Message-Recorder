@@ -706,3 +706,45 @@ button, .button {
 .broadcast-article-topics span { padding: 4px 8px; border-radius: 6px; background: rgba(83,223,155,.08); color: #9be7bd; font-size: 10px; }
 .broadcast-article-sources { padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.025); color: var(--text-muted) !important; font-size: 10px !important; }
 @media (max-width: 760px) { .article-library-toolbar { grid-template-columns: 1fr 1fr; } .article-library-toolbar .library-search-field { grid-column: 1 / -1; } .article-filter-count { padding: 0; } }
+
+
+/* beta91: align broadcast journal layout with Kick recorder editorial dashboard */
+.kick-article-layout { display:grid; gap:18px; padding:22px; background:#191c23; border-color:#2a2e37; }
+.kick-article-layout > .panel-heading { align-items:center; margin:0; padding-bottom:17px; border-bottom:1px solid #2b2f38; }
+.kick-article-layout > .panel-heading h2 { color:#eceef4; font-size:20px; letter-spacing:-.25px; }
+.kick-article-layout > .panel-heading .eyebrow { color:#73c99a; letter-spacing:1.7px; }
+.kick-article-layout > .panel-heading .session-description { color:#858e9b; font-size:11px; line-height:1.7; }
+.kick-article-layout .article-manual-generator { gap:16px; padding:20px; border:1px solid #355441; border-radius:12px; background:linear-gradient(135deg,#1b2d25,#191c23 76%); }
+.kick-article-layout .article-manual-heading h3 { color:#edf4ef; font-size:15px; }
+.kick-article-layout .article-manual-heading p { color:#89988f; font-size:11px; }
+.kick-article-layout .article-manual-grid { gap:14px; }
+.kick-article-layout .article-manual-grid label,
+.kick-article-layout .article-video-picker > span { color:#aab2bf; font-size:11px; font-weight:600; }
+.kick-article-layout .article-manual-grid input,
+.kick-article-layout .article-manual-grid textarea { background:#11141a; border:1px solid #343945; border-radius:7px; color:#edf0f5; }
+.kick-article-layout .article-manual-grid input:focus,
+.kick-article-layout .article-manual-grid textarea:focus { outline:none; border-color:#55c98d; }
+.kick-article-layout .article-audio-tools,
+.kick-article-layout .article-live-generator { border-color:#303540; background:#14171d; }
+.kick-article-layout .article-manual-actions { align-items:center; padding-top:14px; border-top:1px solid #2b2f38; }
+.kick-article-layout .article-manual-actions span,
+.kick-article-layout .hint { color:#8993a0; line-height:1.75; }
+.kick-article-layout .article-summary { gap:10px; margin:0; }
+.kick-article-layout .article-summary .library-summary-card { min-height:92px; padding:16px 18px; background:#191c23; border:1px solid #2a2e37; border-radius:10px; }
+.kick-article-layout .article-summary .library-summary-card span { color:#9299a6; font-size:11px; }
+.kick-article-layout .article-summary .library-summary-card strong { color:#eceef4; font-size:25px; }
+.kick-article-layout .article-library-toolbar { padding:14px; border:1px solid #303540; border-radius:9px; background:#14171d; }
+.kick-article-layout .article-library-toolbar input,
+.kick-article-layout .article-library-toolbar select { background:#11141a; border-color:#343945; color:#edf0f5; }
+.kick-article-layout .broadcast-articles-list { display:grid; gap:14px; }
+.kick-article-layout .broadcast-article-card { padding:20px; border:1px solid #2a2e37; border-radius:12px; background:#191c23; }
+.kick-article-layout .broadcast-article-heading h3 { color:#eceef4; font-size:16px; }
+.kick-article-layout .broadcast-article-meta { color:#858e9b; font-size:10px; }
+.kick-article-layout .broadcast-article-stat { background:#11141a; border-color:#2b303a; }
+.kick-article-layout .broadcast-article-stat span { color:#858e9b; font-size:10px; }
+.kick-article-layout .broadcast-article-stat strong { color:#e8edf3; font-size:14px; }
+.kick-article-layout .broadcast-article-body p { color:#c9d0d9; font-size:12px; line-height:1.9; }
+.kick-article-layout .broadcast-article-lead { border-left-color:#55d895; background:#1d2b23; color:#e2eee6; }
+.kick-article-layout .broadcast-article-topics span { color:#93dcb0; background:#1c3327; }
+.kick-article-layout .broadcast-article-actions { justify-content:flex-start; border-top:1px solid #2b2f38; padding-top:13px; }
+@media(max-width:760px){.kick-article-layout{padding:14px}.kick-article-layout .article-library-toolbar{grid-template-columns:1fr}.kick-article-layout .article-manual-actions{align-items:stretch;flex-direction:column}}

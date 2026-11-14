@@ -1025,3 +1025,14 @@ test("all Niconico authentication consumers use shared cookie-domain normalizati
   assert.doesNotMatch(main, /cookies\.get\(\{ domain: "nicovideo\.jp" \}\)/);
   assert.match(main, /getNicoUserSession\(cookies\)/);
 });
+
+
+test("broadcast article page follows the Kick recorder editorial dashboard layout", () => {
+  assert.match(html, /broadcast-articles-panel kick-article-layout/);
+  assert.match(css, /\.kick-article-layout \.article-manual-generator/);
+  assert.match(css, /\.kick-article-layout \.article-library-toolbar/);
+  assert.match(css, /\.kick-article-layout \.broadcast-article-card/);
+  for (const id of ["manual-article-generate-button","manual-article-live-start-button","articles-search","articles-status-filter","articles-sort","articles-list"]) {
+    assert.ok(html.includes('id="' + id + '"'), "article workflow control missing: " + id);
+  }
+});
