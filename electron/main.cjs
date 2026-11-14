@@ -18,6 +18,7 @@ const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs"
 const { hasNonEmptyFile } = require("./recording-file.cjs");
 const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
 const { normalizeNicoCookies, getNicoUserSession } = require("./nico-cookies.cjs");
+const { extractNicoUserId, fetchNicoProfileIcon } = require("./nico-profile.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -3198,7 +3199,15 @@ function resolveLibraryItemPath(value) {
   return realTarget;
 }
 
-ipcMain.handle("library:list", () => listCaptureLibrary());
+const broadcasterProfileIconCache = new Map();
+async function listCaptureLibraryWithProfiles() {
+ const library=listCaptureLibrary(); const ids=new Map();
+ for(const item of library.items){const id=extractNicoUserId(path.basename(path.dirname(item.path)));if(id){item.broadcasterUserId=id;if(!ids.has(id))ids.set(id,null);}}
+ await Promise.all([...ids.keys()].map(async id=>{if(!broadcasterProfileIconCache.has(id))broadcasterProfileIconCache.set(id,fetchNicoProfileIcon(id).catch(()=> ""));ids.set(id,await broadcasterProfileIconCache.get(id));}));
+ for(const item of library.items)if(item.broadcasterUserId)item.profileIconUrl=ids.get(item.broadcasterUserId)||"";
+ return library;
+}
+ipcMain.handle("library:list", () => listCaptureLibraryWithProfiles());
 ipcMain.handle("library:thumbnail", (_event, value) => {
   try {
     const target = resolveLibraryItemPath(value);

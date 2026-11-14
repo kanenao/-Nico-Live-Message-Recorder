@@ -1404,17 +1404,14 @@ function renderCaptureLibrary() {
     const thumb = document.createElement("div");
     thumb.className = "library-broadcaster-thumb";
     thumb.textContent = "N";
-    const thumbnailItem = broadcasterItems.find(item => item.type === "video") ||
-      captureLibraryItems.find(item => item.broadcaster === broadcaster && item.type === "video");
-    if (thumbnailItem && api.getLibraryThumbnail) {
-      api.getLibraryThumbnail(thumbnailItem.path).then(dataUrl => {
-        if (dataUrl && thumb.isConnected) {
-          const image = document.createElement("img");
-          image.alt = broadcaster + " の録画サムネイル";
-          image.src = dataUrl;
-          thumb.replaceChildren(image);
-        }
-      }).catch(() => {});
+    const profileIconUrl = broadcasterItems.find(item => item.profileIconUrl)?.profileIconUrl || "";
+    if (profileIconUrl) {
+      const image = document.createElement("img");
+      image.alt = broadcaster + " のプロフィール画像";
+      image.referrerPolicy = "no-referrer";
+      image.src = profileIconUrl;
+      image.addEventListener("error", () => { image.remove(); thumb.textContent = "N"; }, { once: true });
+      thumb.replaceChildren(image);
     }
     const identity = document.createElement("div");
     identity.className = "library-broadcaster-identity";

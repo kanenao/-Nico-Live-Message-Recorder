@@ -140,6 +140,15 @@ test("broadcast connection and direct video/audio recording share one integrated
   assert.match(renderer, /currentLiveId = liveId;\s*liveInput\.value = liveId/);
 });
 
+test("recording library resolves broadcaster profile icons from Niconico user pages", () => {
+ const profile=require("../electron/nico-profile.cjs");
+ assert.equal(profile.extractNicoUserId("あかね？_351798591"),"351798591");
+ assert.equal(profile.extractNicoUserId("配信者名"),"");
+ assert.equal(profile.extractProfileImageUrl('<meta property="og:image" content="https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/123/a.jpg">'),"https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/123/a.jpg");
+ assert.equal(profile.extractProfileImageUrl('<meta property="og:image" content="http://example.com/a.jpg">'),"");
+ assert.match(main,/listCaptureLibraryWithProfiles/);assert.match(renderer,/item\\.profileIconUrl/);
+});
+
 test("past broadcasts support timeshift video and archived comments", () => {
   assert.match(html, /id="record-mode"/);
   assert.match(html, /過去配信（タイムシフト映像＋コメント）/);
