@@ -29,7 +29,8 @@ test("Streamlink preflight confirms the nicolive plugin before starting a record
     return child;
   };
   const result = await verifyStreamlinkPlugin("streamlink.exe", "lv123456789", "runtime/config", {
-    spawnProcess: fakeSpawn
+    spawnProcess: fakeSpawn,
+    env: { CUSTOM_STREAMLINK_RUNTIME: "isolated" }
   });
   assert.equal(result.checked, true);
   assert.equal(captured.executable, "streamlink.exe");
@@ -37,6 +38,7 @@ test("Streamlink preflight confirms the nicolive plugin before starting a record
     "--config", "runtime/config",
     "--can-handle-url", "https://live.nicovideo.jp/watch/lv123456789"
   ]);
+  assert.equal(captured.options.env.CUSTOM_STREAMLINK_RUNTIME, "isolated");
 });
 
 test("Streamlink preflight returns actionable plugin diagnostics", async () => {

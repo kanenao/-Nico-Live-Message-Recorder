@@ -21,7 +21,8 @@ function verifyStreamlinkPlugin(executablePath, liveId, configPath, options = {}
     try {
       child = spawnProcess(executablePath, ["--config", configPath, "--can-handle-url", url], {
         windowsHide: true,
-        stdio: ["ignore", "ignore", "pipe"]
+        stdio: ["ignore", "ignore", "pipe"],
+        env: options.env || process.env
       });
     } catch (error) {
       finish(new Error("Streamlinkを起動できません: " + (error.message || String(error))));
@@ -44,7 +45,7 @@ function verifyStreamlinkPlugin(executablePath, liveId, configPath, options = {}
       }
       const detail = stderr.trim();
       finish(new Error("Streamlinkがニコ生URLを処理できません（終了コード " + code + (signal ? " / " + signal : "") + "）。" +
-        (detail ? "\\nStreamlink詳細: " + detail : " ニコ生プラグインが含まれるStreamlinkか確認してください。")));
+        (detail ? "\nStreamlink詳細: " + detail : " ニコ生プラグインが含まれるStreamlinkか確認してください。")));
     });
   });
 }

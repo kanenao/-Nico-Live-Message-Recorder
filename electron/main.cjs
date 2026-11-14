@@ -2540,7 +2540,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   });
 
   try {
-    await verifyStreamlinkPlugin(streamlinkPath, liveId, runtime.configPath);
+    await verifyStreamlinkPlugin(streamlinkPath, liveId, runtime.configPath, { env: runtime.env });
   } catch (error) {
     await fs.promises.rm(runtime.runtimeDirectory, { recursive: true, force: true }).catch(() => {});
     throw new Error("録画開始前のStreamlink確認に失敗しました: " + (error.message || String(error)));
