@@ -39,7 +39,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -51,6 +51,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Synchronize README version and release history
+        if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
+        shell: pwsh
+        run: |
+          npm run docs:update
+          if ($LASTEXITCODE -ne 0) { throw "README synchronization failed." }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "docs: sync README version and release history [skip ci]"
+            git push
+          }
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Run application tests

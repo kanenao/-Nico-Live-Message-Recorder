@@ -12,7 +12,8 @@
     "pack": "npm run prepare:streamlink && electron-builder --dir",
     "test": "node --test",
     "prepare:streamlink": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-streamlink.ps1",
-    "dist:win:release": "npm run prepare:streamlink && electron-builder --win nsis zip --publish always"
+    "dist:win:release": "npm run prepare:streamlink && electron-builder --win nsis zip --publish always",
+    "docs:update": "node scripts/update-readme.mjs"
   },
   "dependencies": {
     "@n-air-app/nicolive-comment-protobuf": "github:Segu-g/nicolive-comment-protobuf#v2025.602.163750-segument",
