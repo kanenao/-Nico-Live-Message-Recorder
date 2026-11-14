@@ -49,7 +49,7 @@ test("main and renderer JavaScript files pass Node syntax checks", () => {
 test("release workflow is tag-triggered and can be run manually", () => {
   const workflowPath = path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-release.yml");
   const workflow = fs.readFileSync(workflowPath, "utf8");
-  assert.match(workflow, /tags:\s*\n\s*- "v\*"/);
+  assert.match(workflow, /tags:\s*\n\s*- "v\*-beta\*"/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /GH_TOKEN:\s*\$\{\{ secrets\.GITHUB_TOKEN \}\}/);

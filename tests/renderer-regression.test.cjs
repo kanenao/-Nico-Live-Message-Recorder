@@ -926,7 +926,7 @@ test("comment writer waits for write callbacks and reports failed persistence", 
 });
 
 test("comment log finalization preserves a failed file and checks every write", () => {
-  assert.match(main, /writeCommentLine\(writer, JSON\.stringify\(record\)/);
+  assert.match(main, /void writeCommentLine\(commentWriter, JSON\.stringify\(record\)/);
   assert.match(main, /await finishCommentWriter\(writer\)/);
   assert.match(main, /未完成ファイルは元の場所に残しています/);
   assert.match(main, /await writeCommentLine\(commentWriter, JSON\.stringify\(record\)/);
