@@ -146,7 +146,7 @@ test("recording library resolves broadcaster profile icons from Niconico user pa
  assert.equal(profile.extractNicoUserId("配信者名"),"");
  assert.equal(profile.extractProfileImageUrl('<meta property="og:image" content="https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/123/a.jpg">'),"https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/123/a.jpg");
  assert.equal(profile.extractProfileImageUrl('<meta property="og:image" content="http://example.com/a.jpg">'),"");
- assert.match(main,/listCaptureLibraryWithProfiles/);assert.match(renderer,/item\\.profileIconUrl/);
+ assert.match(main,/listCaptureLibraryWithProfiles/);assert.match(renderer,/profileIconUrl/);
 });
 
 test("past broadcasts support timeshift video and archived comments", () => {
@@ -212,7 +212,7 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.match(renderer, /function setActivePage\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
   assert.match(renderer, /const groups = new Map\(\)/);
-  assert.match(renderer, /api\.getLibraryThumbnail\(thumbnailItem\.path\)/);
+  assert.match(renderer, /api\.getLibraryThumbnail\(article\.videoFile\)/);
   assert.match(main, /ipcMain\.handle\("library:thumbnail"/);
   assert.match(preload, /getLibraryThumbnail:.*ipcRenderer\.invoke\("library:thumbnail"/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
