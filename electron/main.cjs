@@ -2802,19 +2802,48 @@ ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => 
     await prepareCommentSession(liveId, requestedName, requestedId, programInfo);
   }
 
-  // Both operations are launched in the same main-process turn. The JSONL
-  // session marker exists before Streamlink can write its videoStart marker.
-  const commentTask = reuseComments
+  // Start both tasks together, but do not make the video-start response wait
+  // for the comment provider's retry loop. The UI can confirm recording as soon
+  // as Streamlink has received media; comment connection reports asynchronously.
+  let commentResult = null;
+  let commentError = "";
+  let commentSettled = false;
+  const commentTask = (reuseComments
     ? Promise.resolve({ liveId, commentFile: commentFilePath, reused: true })
-    : connectPreparedCommentSession(liveId);
+    : connectPreparedCommentSession(liveId)
+  ).then((value) => {
+    commentResult = value;
+    commentSettled = true;
+    send("capture:state", {
+      liveId,
+      commentsConnected: true,
+      recording: Boolean(streamlinkProcess && streamlinkLiveId === liveId),
+      commentPending: false,
+      commentError: ""
+    });
+    return value;
+  }).catch((error) => {
+    commentError = String(error && error.message || error);
+    commentSettled = true;
+    send("capture:state", {
+      liveId,
+      commentsConnected: false,
+      recording: Boolean(streamlinkProcess && streamlinkLiveId === liveId),
+      commentPending: false,
+      commentError
+    });
+    return null;
+  });
   const videoTask = startVideoInternal(liveId, quality, requestedName, requestedId);
-  const [comments, video] = await Promise.allSettled([commentTask, videoTask]);
-
-  if (video.status === "rejected") {
-    const message = video.reason && video.reason.message ? video.reason.message : String(video.reason);
+  let video;
+  try {
+    video = await videoTask;
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
     // If this one-click operation opened a new comment session but video could
     // not start, do not leave a comment-only session running unexpectedly.
-    if (!reuseComments && comments.status === "fulfilled") {
+    await commentTask;
+    if (!reuseComments && commentResult) {
       if (provider) {
         try { provider.disconnect(); } catch (_) {}
         provider = null;
@@ -2825,28 +2854,28 @@ ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => 
     }
     send("capture:state", {
       liveId,
-      commentsConnected: reuseComments && comments.status === "fulfilled",
+      commentsConnected: reuseComments && Boolean(commentResult),
       recording: false,
-      commentError: comments.status === "rejected"
-        ? String(comments.reason && comments.reason.message || comments.reason) : "",
+      commentPending: false,
+      commentError,
       videoError: message
     });
     throw new Error(message);
   }
 
-  const commentError = comments.status === "rejected"
-    ? String(comments.reason && comments.reason.message || comments.reason) : "";
   const result = {
     liveId,
-    comment: comments.status === "fulfilled" ? comments.value : null,
-    video: video.value,
-    commentsConnected: comments.status === "fulfilled",
+    comment: commentResult,
+    video,
+    commentsConnected: Boolean(commentResult),
+    commentPending: !commentSettled,
     commentError
   };
   send("capture:state", {
     liveId,
     commentsConnected: result.commentsConnected,
     recording: true,
+    commentPending: result.commentPending,
     commentError
   });
   return result;
