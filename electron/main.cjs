@@ -791,7 +791,7 @@ function updateCurrentBroadcaster(metadata, liveId) {
 
 function appendEvent(type, item) {
   const record = normalizeEvent(type, item);
-  if (commentWriter) commentWriter.write(JSON.stringify(record) + "\n");
+  if (commentWriter) {\n    void writeCommentLine(commentWriter, JSON.stringify(record)).catch((error) => {\n      commentWriterError = error;\n      send("app:error", `コメント保存に失敗しました: ${error.message}`);\n    });\n  }
   send("live:event", record);
   if (liveArticleSessionActive && type === "comment") {
     liveArticleCommentRefreshCounter += 1;
@@ -807,7 +807,7 @@ function appendMarker(type, fields = {}) {
   if (!commentWriter) return;
   const timestamp = new Date().toISOString();
   const marker = { type, liveId: currentLiveId, timestamp, receivedAt: timestamp, ...fields };
-  commentWriter.write(JSON.stringify(marker) + "\n");
+  void writeCommentLine(commentWriter, JSON.stringify(marker)).catch((error) => {\n    commentWriterError = error;\n    send("app:error", `コメント保存に失敗しました: ${error.message}`);\n  });
 }
 
 async function refreshLiveBroadcastArticle(options = {}) {
