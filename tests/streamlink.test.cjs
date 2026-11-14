@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { patchNicoLivePluginSource } = require("../scripts/patch-nicolive.cjs");
+const slSource = fs.readFileSync(path.join(__dirname, "..", "electron", "streamlink.cjs"), "utf8");
 const preparationScript = fs.readFileSync(path.join(__dirname, "..", "scripts", "prepare-streamlink.ps1"), "utf8");
 const { verifyStreamlinkPlugin } = require("../electron/streamlink-probe.cjs");
 const {
@@ -63,6 +64,12 @@ test("normalizeLiveId accepts IDs and watch URLs", () => {
   assert.equal(normalizeLiveId("lv123456789"), "lv123456789");
   assert.equal(normalizeLiveId("https://live.nicovideo.jp/watch/lv123456789"), "lv123456789");
   assert.throws(() => normalizeLiveId("not-a-live-id"));
+});
+
+test("Streamlink keeps plugin cache enabled for Niconico authentication and cookie persistence", () => {
+  const args = buildStreamlinkArgs({ configPath: "config", liveId: "lv123456789", quality: "best", outputPath: "capture.ts" });
+  assert.equal(args.includes("--no-plugin-cache"), false);
+  assert.match(slSource, /plugin cache enabled/);
 });
 
 test("timeshift mode requests the beginning of the Nico Live archive", () => {

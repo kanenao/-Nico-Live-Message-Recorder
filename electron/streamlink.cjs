@@ -174,7 +174,7 @@ function buildStreamlinkArgs(options) {
 
   const args = [
     "--config", options.configPath,
-    "--no-plugin-cache",
+    // Keep Streamlink plugin cache enabled: the nicolive plugin uses it for authentication/session cookies.
     "--loglevel", "info",
     "--retry-streams", "3",
     "--retry-max", "20",
