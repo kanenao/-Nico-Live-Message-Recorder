@@ -1,3 +1,5 @@
+const fs = require("node:fs");
+
 function hasNonEmptyFile(filePath) {
   if (!filePath) return false;
   try {
