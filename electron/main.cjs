@@ -281,8 +281,8 @@ function sendUpdateState(state, details = {}) {
 function configureAutoUpdater() {
   if (!isAutoUpdateSupported()) return false;
 
-  // The GitHub publisher writes beta.yml; only beta and newer stable releases are accepted.
-  autoUpdater.channel = "beta";
+  // The GitHub publisher writes alpha.yml; only beta and newer stable releases are accepted.
+  autoUpdater.channel = "alpha";
   autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
@@ -3424,7 +3424,7 @@ app.whenReady().then(async () => {
     if (typeof streamlinkUpdateTimer.unref === "function") streamlinkUpdateTimer.unref();
   }
   if (configureAutoUpdater()) {
-    // Check shortly after startup, then refresh the beta channel every six hours.
+    // Check shortly after startup, then refresh the alpha channel every six hours.
     setTimeout(() => checkForUpdatesNow().catch(() => {}), 8000);
     const updateTimer = setInterval(() => checkForUpdatesNow().catch(() => {}), 6 * 60 * 60 * 1000);
     if (typeof updateTimer.unref === "function") updateTimer.unref();

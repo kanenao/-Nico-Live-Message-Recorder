@@ -65,7 +65,7 @@ jobs:
             git commit -m "docs: sync README version and release history [skip ci]"
             git push
           }
-      - name: Mirror beta README and changelog to repository home page
+      - name: Mirror alpha README and changelog to repository home page
         if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
         shell: pwsh
         run: |
@@ -81,7 +81,7 @@ jobs:
           git -C $mainDir add README.md CHANGELOG.md
           git -C $mainDir diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git -C $mainDir commit -m "docs: mirror latest beta README and changelog [skip ci]"
+            git -C $mainDir commit -m "docs: mirror latest alpha README and changelog [skip ci]"
             if ($LASTEXITCODE -ne 0) { throw "Could not commit mirrored beta documentation." }
             git -C $mainDir push origin HEAD:main
             if ($LASTEXITCODE -ne 0) { throw "Could not push mirrored documentation to main." }

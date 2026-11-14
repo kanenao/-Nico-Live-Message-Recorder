@@ -13,7 +13,7 @@ let readme = fs.readFileSync(readmePath, "utf8").replace(/\r\n/g, "\n");
 const entries = [];
 let current = null;
 for (const line of changelog.split("\n")) {
-  const heading = line.match(/^## (0\.1\.0-beta\.\d+)\s*$/);
+  const heading = line.match(/^## (0\.1\.0-(?:alpha|beta)\.\d+)\s*$/);
   if (heading) {
     if (current) entries.push(current);
     current = { version: heading[1], bullets: [] };
@@ -34,9 +34,9 @@ if (!entries.some((entry) => entry.version === version)) {
 const recent = entries.slice(0, 8);
 const generated = [
   "<!-- AUTO-GENERATED: RELEASE-INFO:START -->",
-  "## 現在のβ版と最近の更新",
+  "## 現在の" + (version.includes("-alpha.") ? "α版" : "β版") + "と最近の更新",
   "",
-  "**現在のβ版：" + version + "**",
+  "**現在の" + (version.includes("-alpha.") ? "α版：" : "β版：") + version + "**",
   "",
   "最新の更新内容を" + recent.length + "バージョン分掲載しています。過去の全履歴は [CHANGELOG.md](CHANGELOG.md) をご覧ください。",
   "",
@@ -50,14 +50,14 @@ const generated = [
 ].join("\n");
 
 const tick = String.fromCharCode(96);
-const versionLinePattern = new RegExp("\\*\\*β版開発ブランチ：" + tick + "beta" + tick + "（現在 [^）]+）\\*\\*");
-const currentVersionLine = "**β版開発ブランチ：" + tick + "beta" + tick + "（現在 " + version + "）**";
+const versionLinePattern = /\*\*現在の配布チャンネル：[^*]+\*\*/;
+const currentVersionLine = "**現在の配布チャンネル：" + (version.includes("-alpha.") ? "α版" : "β版") + "（開発ブランチ：" + tick + "beta" + tick + "、バージョン：" + version + "）**";
 readme = readme.replace(versionLinePattern, currentVersionLine);
 const marker = /<!-- AUTO-GENERATED: RELEASE-INFO:START -->[\s\S]*?<!-- AUTO-GENERATED: RELEASE-INFO:END -->/;
 if (marker.test(readme)) {
   readme = readme.replace(marker, generated);
 } else {
-  if (!readme.includes(currentVersionLine)) throw new Error("Could not locate README beta version line.");
+  if (!readme.includes(currentVersionLine)) throw new Error("Could not locate README release channel line.");
   readme = readme.replace(currentVersionLine, currentVersionLine + "\n\n" + generated);
 }
 readme = readme.replace(/^## 更新履歴\s*$/m, "## 初期β版の更新履歴（β41以前）");
