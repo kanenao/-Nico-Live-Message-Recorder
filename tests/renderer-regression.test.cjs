@@ -130,7 +130,10 @@ test("broadcast connection and direct video/audio recording share one integrated
   assert.match(panel, /コメント切断/);
   assert.match(preload, /startCapture:.*ipcRenderer\.invoke\("capture:start"/);
   assert.match(main, /ipcMain\.handle\("capture:start"/);
-  assert.match(main, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
+  assert.match(main, /const commentTask = \(reuseComments/);
+  assert.match(main, /const videoTask = startVideoInternal\(liveId, quality/);
+  assert.match(main, /video = await videoTask/);
+  assert.match(main, /commentPending: !commentSettled/);
   assert.match(main, /connectPreparedCommentSession\(liveId\)/);
   assert.match(main, /startVideoInternal\(liveId, quality/);
   assert.match(renderer, /api\.startCapture\(liveId, quality, \{/);
