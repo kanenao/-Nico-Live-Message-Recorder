@@ -55,7 +55,7 @@ test("Streamlink preflight returns actionable plugin diagnostics", async () => {
   };
   await assert.rejects(
     verifyStreamlinkPlugin("streamlink.exe", "lv123456789", "runtime/config", { spawnProcess: fakeSpawn }),
-    /ニコ生URLを処理できません.*No plugin can handle this URL/
+    /ニコ生URLを処理できません[\s\S]*No plugin can handle this URL/
   );
 });
 
