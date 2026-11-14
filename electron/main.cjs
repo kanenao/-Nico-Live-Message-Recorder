@@ -14,6 +14,7 @@ const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
+const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -57,6 +58,7 @@ let timeshiftCommentFetchActive = false;
 let currentLiveId = "";
 let commentWriter = null;
 let commentFilePath = "";
+let commentWriterError = null;
 let articleUpdateTimer = null;
 let articleUpdateInProgress = false;
 let articleRefreshPending = false;
@@ -715,8 +717,10 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
     broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
   commentFilePath = path.join(directory, liveId + "_" + stamp() + ".jsonl");
+  commentWriterError = null;
   commentWriter = fs.createWriteStream(commentFilePath, { flags: "wx" });
   commentWriter.on("error", (error) => {
+    commentWriterError = error;
     send("app:error", "コメントファイルの保存に失敗しました: " + error.message);
   });
   appendMarker("sessionStart", {
@@ -881,46 +885,51 @@ function appendMarkerAndWait(type, fields = {}) {
   });
 }
 
-function closeCommentWriter() {
-  return new Promise((resolve) => {
-    if (!commentWriter) {
-      resolve();
-      return;
-    }
-    if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
-    if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
-    const writer = commentWriter;
-    const oldPath = commentFilePath;
-    const articleContext = {
-      liveId: currentLiveId,
-      broadcasterName: currentBroadcasterName,
-      broadcasterId: currentBroadcasterId,
-      ...currentProgramInfo,
-      liveStatus: streamlinkProcess && streamlinkLiveId === currentLiveId ? "live" : "unknown"
-    };
-    commentWriter = null;
-    writer.end(async () => {
-      try {
-        commentFilePath = await moveCommentLogToBroadcasterFolder(oldPath);
-        send("comments:file", { path: commentFilePath });
-        await exportCommentSidecars(commentFilePath);
-      } catch (error) {
-        send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
-      }
-      while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
-      try {
-        await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
-          force: liveArticleSessionActive,
-          images: liveArticleSessionActive ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
-          audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
-          audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
-        });
-      } catch (error) {
-        send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
-      }
-      resolve();
+async function closeCommentWriter() {
+  if (!commentWriter) return;
+  if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
+  if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
+  const writer = commentWriter;
+  const oldPath = commentFilePath;
+  const articleContext = {
+    liveId: currentLiveId,
+    broadcasterName: currentBroadcasterName,
+    broadcasterId: currentBroadcasterId,
+    ...currentProgramInfo,
+    liveStatus: streamlinkProcess && streamlinkLiveId === currentLiveId ? "live" : "unknown"
+  };
+  commentWriter = null;
+  let writeFailure = commentWriterError;
+  commentWriterError = null;
+  try {
+    await finishCommentWriter(writer);
+  } catch (error) {
+    writeFailure = writeFailure || error;
+  }
+  if (writeFailure) {
+    commentFilePath = oldPath;
+    send("app:error", "コメントログを正常に確定できませんでした。未完成ファイルは元の場所に残しています: " + writeFailure.message);
+    return;
+  }
+  try {
+    commentFilePath = await moveCommentLogToBroadcasterFolder(oldPath);
+    send("comments:file", { path: commentFilePath });
+    await exportCommentSidecars(commentFilePath);
+  } catch (error) {
+    commentFilePath = oldPath;
+    send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
+  }
+  while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
+  try {
+    await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
+      force: liveArticleSessionActive,
+      images: liveArticleSessionActive ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
+      audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
+      audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
     });
-  });
+  } catch (error) {
+    send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
+  }
 }
 
 function makeWindow() {
@@ -3249,7 +3258,7 @@ ipcMain.handle("comments:export-csv", async () => {
   }
   if (commentWriter) {
     await new Promise((resolve, reject) => {
-      commentWriter.write("", (error) => error ? reject(error) : resolve());
+      writeCommentLine(commentWriter, "").then(resolve, reject);
     });
   }
   const records = fs.readFileSync(source, "utf8").split(/\\r?\\n/).filter(Boolean)

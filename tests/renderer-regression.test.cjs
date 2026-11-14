@@ -902,3 +902,31 @@ test("capture lifecycle events keep asynchronous video and comment failures visi
   assert.match(renderer, /映像録画は開始しましたが、コメント取得に失敗しました/);
   assert.match(renderer, /映像録画とコメント取得の両方が開始しました/);
 });
+
+
+test("comment writer waits for write callbacks and reports failed persistence", async () => {
+  const { Writable } = require("node:stream");
+  const { writeCommentLine, finishCommentWriter } = require(path.join(root, "electron", "comment-writer.cjs"));
+  const chunks = [];
+  const writer = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(chunk.toString("utf8"));
+      callback();
+    }
+  });
+  await writeCommentLine(writer, '{"type":"comment"}\\n');
+  await finishCommentWriter(writer);
+  assert.equal(chunks.join(""), '{"type":"comment"}\\n');
+  assert.equal(writer.writableFinished, true);
+  const broken = new Writable({
+    write(_chunk, _encoding, callback) { callback(new Error("disk full")); }
+  });
+  await assert.rejects(writeCommentLine(broken, '{"type":"comment"}\\n'), /disk full/);
+});
+
+test("comment log finalization preserves a failed file and checks every write", () => {
+  assert.match(main, /writeCommentLine\(writer, JSON\.stringify\(record\)/);
+  assert.match(main, /await finishCommentWriter\(writer\)/);
+  assert.match(main, /未完成ファイルは元の場所に残しています/);
+  assert.match(main, /await writeCommentLine\(commentWriter, JSON\.stringify\(record\)/);
+});
