@@ -773,9 +773,12 @@ function updateCurrentBroadcaster(metadata, liveId) {
     programTitle: readField(["programTitle", "title", "liveTitle"]) || currentProgramInfo.programTitle || "",
     description: readField(["programDescription", "description", "summary"]) || currentProgramInfo.description || "",
     startedAt: readField(["startedAt", "beginTime", "startTime"]) || currentProgramInfo.startedAt || "",
-    endedAt: readField(["endedAt", "endTime"]) || currentProgramInfo.endedAt || ""
+    endedAt: readField(["endedAt", "endTime"]) || currentProgramInfo.endedAt || "",
+    // nicomget exposes Niconico's current audience count as watchCount.
+    visitorCount: readField(["visitorCount", "watchCount", "viewers", "viewerCount", "totalVisitors", "viewCount", "totalViewCount"]) ||
+      currentProgramInfo.visitorCount || ""
   };
-  if (Object.keys(nextInfo).some((key) => nextInfo[key] && nextInfo[key] !== currentProgramInfo[key])) {
+  if (Object.keys(nextInfo).some((key) => nextInfo[key] !== "" && nextInfo[key] !== undefined && nextInfo[key] !== currentProgramInfo[key])) {
     currentProgramInfo = nextInfo;
     if (commentWriter) {
       appendMarker("programMetadata", {
@@ -1177,7 +1180,8 @@ async function prepareCommentSession(liveId, displayName = "", broadcasterId = "
     programTitle: String(programInfo.programTitle || programInfo.title || "").slice(0, 300),
     description: String(programInfo.description || "").slice(0, 3000),
     startedAt: String(programInfo.startedAt || ""),
-    endedAt: String(programInfo.endedAt || "")
+    endedAt: String(programInfo.endedAt || ""),
+    visitorCount: String(programInfo.visitorCount ?? programInfo.watchCount ?? programInfo.viewers ?? "")
   };
   openCommentWriter(liveId, displayName, broadcasterId);
   send("live:state", { state: "connecting" });

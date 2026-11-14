@@ -45,6 +45,26 @@ test("generates a broadcaster article from program metadata and saved comments",
   assert.ok(article.note.includes("文字起こししたものではなく"));
 });
 
+test("uses nicomget watchCount as the visitor count in the article and its text", () => {
+  const article = generateBroadcastArticle(log([
+    { type: "sessionStart", liveId: "lv123456789" },
+    { type: "programMetadata", programTitle: "視聴者数テスト", watchCount: 1234 },
+    { type: "comment", content: "こんにちは", userId: "1" }
+  ]));
+  assert.equal(article.visitorCount, 1234);
+  assert.ok(article.paragraphs.some(paragraph => paragraph.includes("来場者数は1,234人")));
+});
+
+test("accepts visitor count from live article context", () => {
+  const article = generateBroadcastArticle([], {
+    liveId: "lv123456789",
+    programTitle: "ライブ記事",
+    visitorCount: 56
+  });
+  assert.equal(article.visitorCount, 56);
+  assert.ok(article.paragraphs.some(paragraph => paragraph.includes("来場者数は56人")));
+});
+
 test("does not generate articles when the program description prohibits reposting or AI use", () => {
   assert.equal(isArticleOptOut("雑談", "転載禁止の放送です"), "転載禁止");
   assert.equal(isArticleOptOut("雑談", "生成AI禁止"), "生成AI禁止");

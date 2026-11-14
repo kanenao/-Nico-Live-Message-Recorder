@@ -21,6 +21,12 @@ const articleExport = require(path.join(root, "electron", "article-export.cjs"))
 const ollamaSource = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
 const audioTranscription = fs.readFileSync(path.join(root, "electron", "audio-transcription.cjs"), "utf8");
 
+test("Niconico watchCount is propagated into saved article metadata", () => {
+  assert.match(main, /visitorCount:\s*readField\(\["visitorCount", "watchCount"/);
+  assert.match(main, /visitorCount:\s*String\(programInfo\.visitorCount \?\? programInfo\.watchCount/);
+  assert.match(renderer, /\["visitorCount", "viewerCount", "viewers", "watchCount"/);
+});
+
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
   const end = renderer.indexOf("function setComposePreviewStatus(", start);

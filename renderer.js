@@ -271,7 +271,7 @@ function updateMetadata(metadata) {
   const broadcasterName = String(readValue(["broadcasterName", "providerName"]) || provider.name || "").trim();
   const broadcasterId = String(readValue(["broadcasterId", "providerId"]) || provider.id || "").trim();
   const startedAt = readValue(["startedAt", "beginTime", "startTime"]);
-  const viewerCount = readValue(["viewerCount", "viewers", "watchCount", "currentViewers", "totalViewers"]);
+  const viewerCount = readValue(["visitorCount", "viewerCount", "viewers", "watchCount", "currentViewers", "totalViewers", "totalVisitors", "viewCount"]);
   currentProgramMetadata = {
     ...currentProgramMetadata,
     liveId: currentLiveId,
