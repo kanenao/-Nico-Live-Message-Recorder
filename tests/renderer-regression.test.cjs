@@ -15,6 +15,7 @@ const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
 const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 const composeExport = require(path.join(root, "electron", "composition-export.cjs"));
 const articleExport = require(path.join(root, "electron", "article-export.cjs"));
 const ollamaSource = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
@@ -817,6 +818,14 @@ test("Streamlink finalization verifies the final media file before deleting the 
   assert.match(finalize, /if \(!hasFinalOutput && finalPath !== rawPath && hasNonEmptyFile\(rawPath\)\)/);
   assert.ok(finalize.indexOf("let hasFinalOutput = hasNonEmptyFile(finalPath)") < finalize.indexOf("await fs.promises.unlink(rawPath)"));
   assert.match(finalize, /incomplete: !streamlinkStopRequested/);
+});
+
+test("changelog headings and entries use real Markdown line breaks", () => {
+  assert.doesNotMatch(changelog, /\\\\n/);
+  assert.match(changelog, /## 0\.1\.0-beta\.66\n\n- 録画・コメント開始時/);
+  assert.match(changelog, /- Electronのイベント購読APIが初期化エラー/);
+  assert.match(changelog, /- preload bridgeのイベント接続失敗/);
+  assert.match(changelog, /## 0\.1\.0-beta\.55\n\n- Ollama公式Windowsインストーラー/);
 });
 
 test("duplicate library IDs are removed and package version is displayed in the UI", () => {
