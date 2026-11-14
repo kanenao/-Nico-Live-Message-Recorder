@@ -372,7 +372,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.match(packageConfig.version, /^0\\.1\\.0-alpha\\.\\d+$/);
+  assert.match(packageConfig.version, /^\d+\.\d+\.\d+-alpha\.\d+$/);
   assert.ok(html.includes("v" + packageConfig.version));
   const alphaNumber = packageConfig.version.split(".").pop();
   assert.ok(alphaNumber, "package version must be an alpha release");

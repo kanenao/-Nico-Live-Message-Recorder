@@ -8,14 +8,14 @@ test("production dependencies include electron-updater", () => {
   assert.equal(packageJson.dependencies["electron-updater"], "6.8.12");
 });
 
-test("GitHub beta channel is configured for auto-update metadata", () => {
+test("GitHub alpha channel is configured for auto-update metadata", () => {
   assert.equal(packageJson.build.generateUpdatesFilesForAllChannels, true);
   assert.deepEqual(packageJson.build.win.publish, [{
     provider: "github",
     owner: "kanenao",
     repo: "-Nico-Live-Message-Recorder",
     releaseType: "prerelease",
-    channel: "beta"
+    channel: "alpha"
   }]);
 });
 
@@ -49,7 +49,7 @@ test("main and renderer JavaScript files pass Node syntax checks", () => {
 test("release workflow is tag-triggered and can be run manually", () => {
   const workflowPath = path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-release.yml");
   const workflow = fs.readFileSync(workflowPath, "utf8");
-  assert.match(workflow, /tags:\s*\n\s*- "v\*-beta\*"/);
+  assert.match(workflow, /tags:\s*\n\s*- "v\*-alpha\*"/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /GH_TOKEN:\s*\$\{\{ secrets\.GITHUB_TOKEN \}\}/);

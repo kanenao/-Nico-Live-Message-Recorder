@@ -13,7 +13,7 @@ let readme = fs.readFileSync(readmePath, "utf8").replace(/\r\n/g, "\n");
 const entries = [];
 let current = null;
 for (const line of changelog.split("\n")) {
-  const heading = line.match(/^## (0\.1\.0-(?:alpha|beta)\.\d+)\s*$/);
+  const heading = line.match(/^## (\d+\.\d+\.\d+-(?:alpha|beta)\.\d+)\s*$/);
   if (heading) {
     if (current) entries.push(current);
     current = { version: heading[1], bullets: [] };
