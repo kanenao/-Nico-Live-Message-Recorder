@@ -8,6 +8,30 @@ const recordButton = byId("record-button");
 const stopRecordButton = byId("stop-record-button");
 const commentList = byId("comment-list");
 
+// Register the three primary capture controls before any optional UI startup work.
+// A failure in later renderer initialization must never leave these buttons inert.
+function reportCaptureButtonError(action, error) {
+  const detail = action + "に失敗しました：" + (error && error.message ? error.message : String(error));
+  try { setCaptureDetail(detail); } catch (_) {}
+  try { showToast(detail, true); } catch (_) {}
+  console.error("[capture-ui]", detail, error);
+}
+if (connectButton) {
+  connectButton.addEventListener("click", () => {
+    Promise.resolve().then(connectLive).catch((error) => reportCaptureButtonError("放送接続", error));
+  });
+}
+if (recordButton) {
+  recordButton.addEventListener("click", () => {
+    Promise.resolve().then(() => startVideoRecording()).catch((error) => reportCaptureButtonError("映像・音声録画", error));
+  });
+}
+if (disconnectButton) {
+  disconnectButton.addEventListener("click", () => {
+    Promise.resolve().then(disconnectLive).catch((error) => reportCaptureButtonError("コメント切断", error));
+  });
+}
+
 let connected = false;
 let recordStartedAt = 0;
 let recordClock = null;
@@ -2258,9 +2282,7 @@ try {
 
 // Register primary capture controls even if event subscription fails. This prevents
 // one preload/event-listener error from aborting all subsequent button bindings.
-connectButton.addEventListener("click", connectLive);
-disconnectButton.addEventListener("click", disconnectLive);
-recordButton.addEventListener("click", startVideoRecording);
+// Primary capture controls are registered at the top of this file.
 byId("record-mode").addEventListener("change", () => {
   const timeshift = byId("record-mode").value === "timeshift";
   byId("record-mode-hint").textContent = timeshift

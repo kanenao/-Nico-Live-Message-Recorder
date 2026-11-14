@@ -102,6 +102,17 @@ test("monitor prefers the authenticated follow-list API and retains public-histo
 });
 
 
+test("primary capture buttons are bound before renderer initialization can fail", () => {
+  const connectBinding = renderer.indexOf('connectButton.addEventListener("click"');
+  const recordBinding = renderer.indexOf('recordButton.addEventListener("click"');
+  const disconnectBinding = renderer.indexOf('disconnectButton.addEventListener("click"');
+  const firstStateInitialization = renderer.indexOf("let connected = false;");
+  assert.ok(connectBinding >= 0 && connectBinding < firstStateInitialization);
+  assert.ok(recordBinding >= 0 && recordBinding < firstStateInitialization);
+  assert.ok(disconnectBinding >= 0 && disconnectBinding < firstStateInitialization);
+  assert.match(renderer, /reportCaptureButtonError\("映像・音声録画", error\)/);
+});
+
 test("broadcast connection and direct video/audio recording share one integrated panel", () => {
   const panelStart = html.indexOf('<section class="panel session-panel"');
   const panelEnd = html.indexOf("</section>", panelStart);
