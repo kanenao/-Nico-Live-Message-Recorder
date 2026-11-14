@@ -877,7 +877,9 @@ test("primary recording controls remain bound when Electron event subscription f
   assert.ok(main.includes('ipcMain.handle("capture:start"'));
   assert.ok(main.includes('ipcMain.handle("video:start"'));
 });
-\n\ntest("manual capture actions report IPC readiness, pending state, destination, and actionable errors", () => {
+
+
+test("manual capture actions report IPC readiness, pending state, destination, and actionable errors", () => {
   for (const snippet of [
     "function requireCaptureApi(method)",
     "function setCaptureDetail(message)",
