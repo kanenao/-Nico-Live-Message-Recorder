@@ -466,13 +466,17 @@ async function startVideoRecording(target = null) {
     }
     if (result.commentsConnected) {
       setConnection("connected");
+    } else if (result.commentPending && !timeshift) {
+      setConnection("connecting");
     } else if (!timeshift) {
       setConnection("error");
     }
 
     const video = result.video || {};
     byId("video-file").textContent = "保存先：" + (video.path || "");
-    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") + (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : ""));
+    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") +
+      (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : "") +
+      (result.commentPending ? " ／ コメント接続を継続中…" : ""));
     // A long archive-comment fetch may outlive the timeshift video itself.
     // Do not overwrite a completed video:state event when the IPC finally returns.
     if (!timeshift || videoCaptureState === "recording") {
@@ -490,6 +494,8 @@ async function startVideoRecording(target = null) {
       showToast("映像録画は開始しましたが、過去コメントを取得できませんでした: " + result.commentError, true);
     } else if (timeshift) {
       showToast("タイムシフトの映像・音声録画を開始しました。過去コメントは見つかりませんでした。", true);
+    } else if (result.commentPending) {
+      showToast("映像・音声録画を開始しました。コメント接続を継続しています。");
     } else if (result.commentError) {
       showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
     } else {
@@ -2178,9 +2184,19 @@ try {
   }
   if (channel === "preview:state") renderLivePreviewState(payload);
   if (channel === "capture:state" && payload) {
-    if (payload.videoError) setCaptureDetail("映像録画の開始に失敗しました：" + payload.videoError);
-    else if (payload.commentError) setCaptureDetail("映像録画は開始しましたが、コメント取得に失敗しました：" + payload.commentError);
-    else if (payload.recording && payload.commentsConnected) setCaptureDetail("映像録画とコメント取得の両方が開始しました。");
+    if (payload.liveId && payload.liveId !== currentLiveId) return;
+    if (payload.videoError) {
+      setCaptureDetail("映像録画の開始に失敗しました：" + payload.videoError);
+    } else if (payload.commentPending) {
+      setConnection("connecting");
+      setCaptureDetail("映像・音声録画中です。コメント接続を継続しています…");
+    } else if (payload.commentError) {
+      setConnection("error");
+      setCaptureDetail("映像録画は継続していますが、コメント取得に失敗しました：" + payload.commentError);
+    } else if (payload.recording && payload.commentsConnected) {
+      setConnection("connected");
+      setCaptureDetail("映像録画とコメント取得の両方が開始しました。");
+    }
   }
   if (channel === "compose:status" && payload) {
     const progress = payload.state === "converting" ? 0 :
