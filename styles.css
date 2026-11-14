@@ -787,3 +787,79 @@ button, .button {
 .broadcast-article-highlights ul{margin:0;padding-left:19px;color:#c2ccdb;font-size:11px;line-height:1.8}
 .broadcast-article-reaction{padding:11px 13px;border-radius:8px;background:rgba(146,120,255,.07);color:#d7ccff!important}
 @media(max-width:760px){.article-summary{grid-template-columns:1fr}.article-manual-actions{align-items:stretch}.article-manual-actions .button{width:100%}.article-library-toolbar{grid-template-columns:1fr}.article-library-toolbar .library-search-field{grid-column:auto}}
+
+
+/* beta92: broadcast article cards with video stills, inspired by Nico Live Journal */
+.broadcast-articles-list {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(285px,1fr));
+  align-items:start;
+  gap:16px;
+}
+.broadcast-article-card {
+  display:grid;
+  grid-template-rows:auto auto auto 1fr auto;
+  min-width:0;
+  overflow:hidden;
+  padding:0;
+  gap:0;
+}
+.broadcast-article-media {
+  position:relative;
+  width:100%;
+  aspect-ratio:16/9;
+  overflow:hidden;
+  background:#090b0e;
+  border-bottom:1px solid #303540;
+}
+.broadcast-article-thumbnail {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.broadcast-article-thumbnail[hidden],
+.broadcast-article-media-placeholder[hidden] {display:none}
+.broadcast-article-media-placeholder {
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:100%;
+  color:#8b949e;
+  background:linear-gradient(135deg,#202630,#11151b);
+  font-size:12px;
+  letter-spacing:.04em;
+}
+.broadcast-article-heading {padding:15px 16px 10px;min-width:0}
+.broadcast-article-heading h3 {
+  display:-webkit-box;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  line-height:1.5;
+}
+.broadcast-article-meta {overflow-wrap:anywhere}
+.broadcast-article-stats {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  padding:0 16px 13px;
+  gap:7px;
+}
+.broadcast-article-stat {min-width:0;padding:9px 10px}
+.broadcast-article-body {
+  min-width:0;
+  padding:0 16px 14px;
+}
+.broadcast-article-body>p:not(.broadcast-article-lead):not(.broadcast-article-note):not(.broadcast-article-sources):not(.broadcast-article-reaction) {
+  display:-webkit-box;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:4;
+}
+.broadcast-article-actions {
+  align-self:end;
+  flex-wrap:wrap;
+  padding:12px 16px 14px;
+}
+@media(max-width:760px) {
+  .broadcast-articles-list {grid-template-columns:1fr}
+}

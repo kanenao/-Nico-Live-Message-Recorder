@@ -1601,6 +1601,30 @@ function renderBroadcastArticles() {
   for (const article of items) {
     const card = document.createElement("article");
     card.className = "broadcast-article-card";
+    const media = document.createElement("div");
+    media.className = "broadcast-article-media";
+    const mediaPlaceholder = document.createElement("div");
+    mediaPlaceholder.className = "broadcast-article-media-placeholder";
+    mediaPlaceholder.textContent = article.liveStatus === "live" || article.isLive
+      ? "● LIVE 配信中"
+      : "放送映像プレビュー";
+    media.appendChild(mediaPlaceholder);
+    if (article.videoFile) {
+      const thumbnail = document.createElement("img");
+      thumbnail.className = "broadcast-article-thumbnail";
+      thumbnail.alt = (article.programTitle || article.title || "放送") + " の映像サムネイル";
+      thumbnail.loading = "lazy";
+      media.appendChild(thumbnail);
+      Promise.resolve().then(() => api.getLibraryThumbnail(article.videoFile)).then((imageUrl) => {
+        if (imageUrl) {
+          thumbnail.src = imageUrl;
+          thumbnail.hidden = false;
+          mediaPlaceholder.hidden = true;
+        } else {
+          thumbnail.remove();
+        }
+      }).catch(() => thumbnail.remove());
+    }
     const heading = document.createElement("div");
     heading.className = "broadcast-article-heading";
     const title = document.createElement("h3");
@@ -1776,7 +1800,7 @@ function renderBroadcastArticles() {
       updated.textContent = "最終更新：" + formatLibraryDate(article.generatedAt);
       body.appendChild(updated);
     }
-    card.append(heading, stats, body, actions);
+    card.append(media, heading, stats, body, actions);
     list.appendChild(card);
   }
 }

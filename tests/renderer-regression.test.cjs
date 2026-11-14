@@ -1036,3 +1036,15 @@ test("broadcast article page follows the Kick recorder editorial dashboard layou
     assert.ok(html.includes('id="' + id + '"'), "article workflow control missing: " + id);
   }
 });
+
+
+test("broadcast article cards render video thumbnails and newspaper-style grid", () => {
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+  assert.match(renderer, /broadcast-article-media/);
+  assert.match(renderer, /getLibraryThumbnail/);
+  assert.match(renderer, /broadcast-article-thumbnail/);
+  assert.match(renderer, /放送映像プレビュー/);
+  assert.match(css, /auto-fill/);
+  assert.match(css, /aspect-ratio:16\/9/);
+});
