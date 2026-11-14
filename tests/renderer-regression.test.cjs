@@ -1004,3 +1004,12 @@ test("combined capture confirms video before the comment connection retry loop f
   assert.match(renderer, /result\.commentPending && !timeshift/);
   assert.match(renderer, /コメント接続を継続しています/);
 });
+
+
+test("all Niconico authentication consumers use shared cookie-domain normalization", () => {
+  const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
+  assert.match(main, /async function getNicoAuthCookies\(\)/);
+  assert.match(main, /return normalizeNicoCookies\(cookies\)/);
+  assert.doesNotMatch(main, /cookies\.get\(\{ domain: "nicovideo\.jp" \}\)/);
+  assert.match(main, /getNicoUserSession\(cookies\)/);
+});

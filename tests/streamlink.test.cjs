@@ -202,3 +202,23 @@ test("Windows portable preparation pins the latest verified Streamlink 8.6.3-1 a
   assert.match(preparationScript, /patch-nicolive\.cjs/);
   assert.match(preparationScript, /nicolive\.py/);
 });
+
+
+test("Niconico cookie filtering accepts root and subdomain cookies without leaking unrelated domains", () => {
+  const { normalizeNicoCookies, getNicoUserSession } = require("../electron/nico-cookies.cjs");
+  const cookies = [
+    { name: "user_session", value: "session-root", domain: ".nicovideo.jp" },
+    { name: "other", value: "subdomain-value", domain: "live.nicovideo.jp" },
+    { name: "user_session", value: "wrong-domain", domain: ".example.com" },
+    { name: "empty", value: "", domain: ".nicovideo.jp" }
+  ];
+  const normalized = normalizeNicoCookies(cookies);
+  assert.equal(normalized.length, 2);
+  assert.equal(getNicoUserSession(normalized), "session-root");
+});
+
+test("Niconico cookie normalization safely handles empty and invalid cookie collections", () => {
+  const { normalizeNicoCookies, getNicoUserSession } = require("../electron/nico-cookies.cjs");
+  assert.deepEqual(normalizeNicoCookies(null), []);
+  assert.equal(getNicoUserSession([]), "");
+});

@@ -17,6 +17,7 @@ const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs");
 const { hasNonEmptyFile } = require("./recording-file.cjs");
 const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
+const { normalizeNicoCookies, getNicoUserSession } = require("./nico-cookies.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -1039,6 +1040,12 @@ ipcMain.handle("updates:install", async () => {
   return { installing: true };
 });
 
+async function getNicoAuthCookies() {
+  const authSession = session.fromPartition("persist:nico-auth");
+  const cookies = await authSession.cookies.get({});
+  return normalizeNicoCookies(cookies);
+}
+
 ipcMain.handle("auth:open-login", async () => {
   if (loginWindow && !loginWindow.isDestroyed()) {
     loginWindow.focus();
@@ -1066,9 +1073,8 @@ ipcMain.handle("auth:open-login", async () => {
 });
 
 ipcMain.handle("auth:status", async () => {
-  const authSession = session.fromPartition("persist:nico-auth");
-  const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
-  const loggedIn = cookies.some((cookie) => cookie.name === "user_session" && cookie.value);
+  const cookies = await getNicoAuthCookies();
+  const loggedIn = Boolean(getNicoUserSession(cookies));
   return { loggedIn };
 });
 
@@ -1190,8 +1196,7 @@ async function prepareCommentSession(liveId, displayName = "", broadcasterId = "
 
 async function connectPreparedCommentSession(liveId) {
   try {
-    const authSession = session.fromPartition("persist:nico-auth");
-    const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
+    const cookies = await getNicoAuthCookies();
     const cookieHeader = cookies.map((cookie) => cookie.name + "=" + cookie.value).join("; ");
 
     const library = await import("nicomget");
@@ -1380,9 +1385,8 @@ async function startLiveArticleAudioCapture(liveId) {
     send("articles:live-state", { state: "audio-error", liveId, message: "生放送音声の取得にはStreamlinkとFFmpegが必要です。" });
     return { enabled: false, reason: "Streamlink / FFmpeg未検出" };
   }
-  const authSession = session.fromPartition("persist:nico-auth");
-  const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
-  const token = cookies.find(cookie => cookie.name === "user_session")?.value || "";
+  const cookies = await getNicoAuthCookies();
+  const token = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), token);
   const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-audio-"));
   const segmentDirectory = path.join(captureDirectory, "segments");
@@ -1909,9 +1913,8 @@ function notifyMonitorRecordingResult(result) {
 }
 
 async function getNicoCookieHeader() {
-  const authSession = session.fromPartition("persist:nico-auth");
-  const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
-  if (!cookies.some((cookie) => cookie.name === "user_session" && cookie.value)) return "";
+  const cookies = await getNicoAuthCookies();
+  if (!getNicoUserSession(cookies)) return "";
 
   const byName = new Map();
   for (const cookie of cookies) {
@@ -2518,9 +2521,8 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   }
 
   const ffmpegPath = toolStatus.ffmpegPath;
-  const authSession = session.fromPartition("persist:nico-auth");
-  const cookies = await authSession.cookies.get({ domain: "nicovideo.jp" });
-  const userSession = cookies.find((cookie) => cookie.name === "user_session")?.value || "";
+  const cookies = await getNicoAuthCookies();
+  const userSession = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
   if (displayName) currentBroadcasterName = String(displayName).slice(0, 80);
   if (broadcasterId) currentBroadcasterId = String(broadcasterId);
