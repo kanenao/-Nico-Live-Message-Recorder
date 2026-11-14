@@ -402,7 +402,7 @@ test("timeshift without a comment endpoint replaces and closes the previous comm
 test("comment video output confirms when the selected extension changes the destination", () => {
   assert.match(main, /normalizeCompositionOutputPath\(selectedPath, format\)/);
   assert.match(main, /pathWasNormalized/);
-  assert.match(main, /fs\.existsSync\(finalPath\)/);
+  assert.match(main, /hasNonEmptyFile/);
   assert.match(main, /変更後の保存先/);
   assert.match(main, /confirmation\.response !== 1/);
 });

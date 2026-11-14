@@ -2551,7 +2551,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   const startupDeadline = Date.now() + 25000;
   let outputReady = false;
   while (Date.now() < startupDeadline) {
-    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) { outputReady = true; break; }
+    if (hasNonEmptyFile(outputPath)) { outputReady = true; break; }
     if (child.exitCode !== null || child.signalCode !== null) break;
     await new Promise(resolve => setTimeout(resolve, 500));
   }
