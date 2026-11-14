@@ -930,4 +930,6 @@ test("comment log finalization preserves a failed file and checks every write", 
   assert.match(main, /await finishCommentWriter\(writer\)/);
   assert.match(main, /未完成ファイルは元の場所に残しています/);
   assert.match(main, /await writeCommentLine\(commentWriter, JSON\.stringify\(record\)/);
+  assert.doesNotMatch(main, /commentWriter\.write\(/);
+  assert.match(main, /return writeCommentLine\(writer, JSON\.stringify\(marker\)\)/);
 });

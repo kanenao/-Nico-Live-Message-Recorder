@@ -886,9 +886,7 @@ function appendMarkerAndWait(type, fields = {}) {
   const writer = commentWriter;
   const timestamp = new Date().toISOString();
   const marker = { type, liveId: currentLiveId, timestamp, receivedAt: timestamp, ...fields };
-  return new Promise((resolve, reject) => {
-    writer.write(JSON.stringify(marker) + "\n", (error) => error ? reject(error) : resolve(marker));
-  });
+  return writeCommentLine(writer, JSON.stringify(marker)).then(() => marker);
 }
 
 async function closeCommentWriter() {
@@ -3287,9 +3285,7 @@ ipcMain.handle("comments:export-ass", async () => {
   if (openResult.canceled || !openResult.filePaths || !openResult.filePaths[0]) return { cancelled: true };
   const source = openResult.filePaths[0];
   if (commentWriter && source === commentFilePath) {
-    await new Promise((resolve, reject) => {
-      commentWriter.write("", (error) => error ? reject(error) : resolve());
-    });
+    await writeCommentLine(commentWriter, "");
   }
   const records = [];
   const lines = fs.readFileSync(source, "utf8").split(/\r?\n/).filter(Boolean);
