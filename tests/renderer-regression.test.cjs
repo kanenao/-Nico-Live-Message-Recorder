@@ -808,6 +808,17 @@ test("Streamlink waits for media bytes and preserves stderr when capture startup
   assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ chunk\.toString/);
   assert.match(main, /Streamlink詳細:/);
 });
+test("Streamlink finalization verifies the final media file before deleting the TS backup", () => {
+  const finalizeStart = main.indexOf("async function finalizeStreamlinkRecording");
+  const finalizeEnd = main.indexOf('ipcMain.handle("video:tools-status"', finalizeStart);
+  const finalize = main.slice(finalizeStart, finalizeEnd);
+  assert.match(finalize, /if \(!hasNonEmptyFile\(mp4Path\)\)/);
+  assert.match(finalize, /let hasFinalOutput = hasNonEmptyFile\(finalPath\)/);
+  assert.match(finalize, /if \(!hasFinalOutput && finalPath !== rawPath && hasNonEmptyFile\(rawPath\)\)/);
+  assert.ok(finalize.indexOf("let hasFinalOutput = hasNonEmptyFile(finalPath)") < finalize.indexOf("await fs.promises.unlink(rawPath)"));
+  assert.match(finalize, /incomplete: !streamlinkStopRequested/);
+});
+
 test("duplicate library IDs are removed and package version is displayed in the UI", () => {
   assert.equal((html.match(/id="library-list"/g) || []).length, 1);
   assert.ok(html.includes(packageConfig.version));

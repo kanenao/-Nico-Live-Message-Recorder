@@ -2307,26 +2307,14 @@ async function finalizeStreamlinkRecording(exit) {
     const mp4Path = rawPath.replace(/\.ts$/i, ".mp4");
     try {
       await remuxTransportStreamToMp4(rawPath, mp4Path, ffmpegPath);
-      await fs.promises.unlink(rawPath).catch(() => {});
+      if (!hasNonEmptyFile(mp4Path)) {
+        throw new Error("変換後のMP4ファイルを確認できません。");
+      }
       finalPath = mp4Path;
       streamlinkFinalOutputPath = mp4Path;
       converted = true;
     } catch (_) {
       send("app:error", "MP4変換に失敗したため、元のTSファイルを保存しました。FFmpegの設定を確認してください。");
-    }
-  }
-
-  if (currentLiveId && commentWriter) {
-    try {
-      await appendMarkerAndWait("videoStop", {
-        timestamp: stoppedAt,
-        receivedAt: stoppedAt,
-        videoStoppedAt: stoppedAt,
-        videoFile: finalPath || rawPath,
-        sourceVideoFile: rawPath
-      });
-    } catch (error) {
-      send("app:error", "コメントログの終了マーカー保存に失敗しました: " + error.message);
     }
   }
 
@@ -2350,7 +2338,38 @@ async function finalizeStreamlinkRecording(exit) {
     }
   }
 
-  if (hasOutput && commentWriter && commentFilePath && streamlinkLiveId) {
+  let hasFinalOutput = hasNonEmptyFile(finalPath);
+  if (!hasFinalOutput && finalPath !== rawPath && hasNonEmptyFile(rawPath)) {
+    finalPath = rawPath;
+    streamlinkFinalOutputPath = rawPath;
+    converted = false;
+    hasFinalOutput = true;
+    send("app:error", "変換後ファイルを確認できなかったため、元のTS録画を保存しました。");
+  }
+  if (hasFinalOutput && converted && finalPath !== rawPath) {
+    await fs.promises.unlink(rawPath).catch(() => {});
+  }
+  if (!hasFinalOutput) {
+    finalPath = null;
+    converted = false;
+    send("app:error", "録画ファイルの最終確認に失敗しました。保存先とディスクの空き容量を確認してください。");
+  }
+
+  if (currentLiveId && commentWriter) {
+    try {
+      await appendMarkerAndWait("videoStop", {
+        timestamp: stoppedAt,
+        receivedAt: stoppedAt,
+        videoStoppedAt: stoppedAt,
+        videoFile: finalPath,
+        sourceVideoFile: rawPath
+      });
+    } catch (error) {
+      send("app:error", "コメントログの終了マーカー保存に失敗しました: " + error.message);
+    }
+  }
+
+  if (hasFinalOutput && commentWriter && commentFilePath && streamlinkLiveId) {
     try {
       await createAndSaveBroadcastArticle(commentFilePath, {
         liveId: streamlinkLiveId,
@@ -2380,11 +2399,12 @@ async function finalizeStreamlinkRecording(exit) {
     await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
   }
 
-  const resultPath = hasOutput ? finalPath : null;
+  const resultPath = hasFinalOutput ? finalPath : null;
   const result = {
     path: resultPath,
-    rawPath: hasOutput ? rawPath : null,
+    rawPath: hasNonEmptyFile(rawPath) ? rawPath : null,
     converted,
+    incomplete: !streamlinkStopRequested && (exit.code !== 0 || Boolean(exit.signal)),
     exitCode: exit.code,
     signal: exit.signal || null
   };
@@ -2392,7 +2412,7 @@ async function finalizeStreamlinkRecording(exit) {
 
   if (!streamlinkStopRequested && exit.code !== 0) {
     send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。配信の公開状態・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\n詳細: " + finalStderr.trim().slice(-1800) : ""));
-  } else if (!hasOutput) {
+  } else if (!hasFinalOutput) {
     send("app:error", "録画データが作成されませんでした。放送ID・視聴権限・Streamlinkの対応状況を確認してください。" + (finalStderr.trim() ? "\nStreamlink詳細: " + finalStderr.trim().slice(-1800) : ""));
   }
   return result;
