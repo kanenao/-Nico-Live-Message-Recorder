@@ -65,6 +65,28 @@ jobs:
             git commit -m "docs: sync README version and release history [skip ci]"
             git push
           }
+      - name: Mirror beta README and changelog to repository home page
+        if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
+        shell: pwsh
+        run: |
+          git fetch origin main
+          $mainDir = Join-Path $env:RUNNER_TEMP "main-docs"
+          if (Test-Path $mainDir) { Remove-Item $mainDir -Recurse -Force }
+          git worktree add --detach $mainDir origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Could not prepare main branch worktree." }
+          Copy-Item README.md (Join-Path $mainDir "README.md") -Force
+          Copy-Item CHANGELOG.md (Join-Path $mainDir "CHANGELOG.md") -Force
+          git -C $mainDir config user.name "github-actions[bot]"
+          git -C $mainDir config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C $mainDir add README.md CHANGELOG.md
+          git -C $mainDir diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git -C $mainDir commit -m "docs: mirror latest beta README and changelog [skip ci]"
+            if ($LASTEXITCODE -ne 0) { throw "Could not commit mirrored beta documentation." }
+            git -C $mainDir push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw "Could not push mirrored documentation to main." }
+          }
+          git worktree remove --force $mainDir
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Run application tests
