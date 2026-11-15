@@ -41,7 +41,7 @@ function extractProfileImageUrl(html) {
     const match = source.match(pattern);
     if (match) {
       const url = normalizeIconUrl(match[1]);
-      if (url) return url;
+      if (url && new URL(url).pathname.includes("usericon/")) return url;
     }
   }
   return "";
