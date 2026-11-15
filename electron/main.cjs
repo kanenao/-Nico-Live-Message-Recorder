@@ -373,8 +373,9 @@ function retryUpdateDownloadNow() {
     .then(() => ({ supported: true, retryStarted: true }))
     .catch(error => {
       failedUpdateDownload = true;
-      sendUpdateState("error", { ...explainUpdateError(error), version: availableUpdateInfo && availableUpdateInfo.version || "" });
-      throw error;
+      const diagnostic = explainUpdateError(error);
+      sendUpdateState("error", { ...diagnostic, version: availableUpdateInfo && availableUpdateInfo.version || "" });
+      throw new Error(diagnostic.message);
     })
     .finally(() => { retryUpdatePromise = null; });
   return retryUpdatePromise;
@@ -403,10 +404,9 @@ function checkForUpdatesNow() {
       version: result && result.updateInfo ? result.updateInfo.version : null
     }))
     .catch((error) => {
-      sendUpdateState("error", {
-        message: error && error.message ? error.message : String(error)
-      });
-      throw error;
+      const diagnostic = explainUpdateError(error);
+      sendUpdateState("error", diagnostic);
+      throw new Error(diagnostic.message);
     })
     .finally(() => {
       updateCheckPromise = null;
