@@ -1072,3 +1072,30 @@ test("early Streamlink startup failures retain stderr after the recording finali
   assert.match(main, /const detail = startupStderr\.trim\(\)\.slice\(-1800\)/);
   assert.match(main, /Streamlinkのニコ生プラグインを確認しています/);
 });
+
+test("all static byId references correspond to elements in the current app HTML", () => {
+  const referenced = [...renderer.matchAll(/byId\("([^"]+)"\)/g)].map((item) => item[1]);
+  const missing = [...new Set(referenced)].filter((id) => !html.includes('id="' + id + '"'));
+  assert.deepEqual(missing, [], "Missing HTML IDs: " + missing.join(", "));
+});
+
+test("recording metadata rendering tolerates missing optional UI fields", () => {
+  const vm = require("node:vm");
+  const start = renderer.indexOf("function renderSessionProgramInfo()");
+  const end = renderer.indexOf("function updateMetadata(", start);
+  assert.ok(start >= 0 && end > start);
+  const elements = new Map([["session-current-title", { textContent: "", dataset: {} }],
+    ["session-current-status", { textContent: "", dataset: {} }]]);
+  const scope = {
+    currentProgramMetadata: { title: "番組テスト", broadcasterName: "放送者", viewerCount: 4 },
+    currentCaptureTarget: { liveId: "lv123456789" }, currentLiveId: "lv123456789",
+    videoCaptureState: "recording", connected: false,
+    byId: (id) => elements.get(id) || null, formatBroadcastStart: String
+  };
+  const render = vm.runInNewContext(renderer.slice(start, end) + "\nrenderSessionProgramInfo", scope);
+  assert.doesNotThrow(() => render());
+  assert.equal(elements.get("session-current-title").textContent, "番組テスト");
+  assert.equal(elements.get("session-current-status").dataset.state, "recording");
+  elements.clear();
+  assert.doesNotThrow(() => render());
+});
