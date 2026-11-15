@@ -12,6 +12,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
+const { selectArticleCoverImage } = require("./article-cover.cjs");
 const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
@@ -565,6 +566,9 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   try { previousArticle = JSON.parse(fs.readFileSync(articlePath, "utf8")); } catch (_) {}
   if (context.videoFile) article.videoFile = context.videoFile;
   else if (previousArticle && previousArticle.videoFile) article.videoFile = previousArticle.videoFile;
+  // Save one bounded JPEG still so live articles can show their broadcast image even without recording a video.
+  const coverImage = selectArticleCoverImage(options.images, previousArticle && previousArticle.coverImage);
+  if (coverImage) article.coverImage = coverImage;
   fs.writeFileSync(articlePath, JSON.stringify(article, null, 2), "utf8");
   send("articles:generated", { article });
   return article;
