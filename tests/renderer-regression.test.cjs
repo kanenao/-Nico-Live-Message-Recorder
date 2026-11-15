@@ -1099,3 +1099,27 @@ test("recording metadata rendering tolerates missing optional UI fields", () => 
   elements.clear();
   assert.doesNotThrow(() => render());
 });
+
+test("Kick-like journal uses date headers and full-width broadcast hero instead of tiny article tiles", () => {
+  assert.match(renderer, /const dayGroups = new Map\(\)/);
+  assert.match(renderer, /broadcast-article-day-heading/);
+  assert.match(renderer, /broadcast-article-masthead/);
+  assert.match(renderer, /broadcast-article-hero/);
+  assert.match(renderer, /broadcast-article-comment-signal/);
+  assert.match(renderer, /card\.append\(masthead, hero, stats\)/);
+  assert.match(css, /\.kick-article-layout \.broadcast-articles-list \{ display:flex; flex-direction:column/);
+  assert.match(css, /\.broadcast-article-hero \{ display:grid; grid-template-columns/);
+  assert.match(css, /@media\(max-width:850px\)/);
+});
+
+test("new journal layout preserves AI errors, Whisper transcript, and existing article controls", () => {
+  const articleRender = renderer.slice(renderer.indexOf("function renderBroadcastArticles()"), renderer.indexOf("let broadcastArticles ="));
+  for (const fragment of ["broadcast-article-audio", "broadcast-article-transcript",
+    "broadcast-article-ai-warning", "article.aiFallbackReason", "broadcast-article-body",
+    "api.deleteBroadcastArticle(article.articlePath)", "api.exportBroadcastArticleHtml(article)",
+    "api.getLibraryThumbnail(article.videoFile)", "article.coverImage"]) {
+    assert.ok(articleRender.includes(fragment), "Missing journal feature: " + fragment);
+  }
+  assert.match(main, /article\.coverImage = selectArticleCoverImage\(extracted\.frames\)/);
+  assert.match(main, /selectArticleCoverImage\(options\.images, previousArticle && previousArticle\.coverImage\)/);
+});
