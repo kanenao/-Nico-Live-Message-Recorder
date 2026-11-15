@@ -20,7 +20,7 @@ const { hasNonEmptyFile } = require("./recording-file.cjs");
 const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
 const { normalizeNicoCookies, getNicoUserSession } = require("./nico-cookies.cjs");
 const { normalizeUserSessionInput } = require("./nico-session.cjs");
-const { extractNicoUserId, fetchNicoProfileIcon } = require("./nico-profile.cjs");
+const { extractNicoUserId, fetchNicoProfileIcon, normalizeProfileUserId, nicoUserPageUrl } = require("./nico-profile.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -3257,15 +3257,80 @@ function resolveLibraryItemPath(value) {
   return realTarget;
 }
 
+// IDが確定できた配信者だけユーザーページと結び付ける（同名の別人は結び付けない）。
 const broadcasterProfileIconCache = new Map();
-async function listCaptureLibraryWithProfiles() {
- const library=listCaptureLibrary(); const ids=new Map();
- for(const item of library.items){const id=extractNicoUserId(path.basename(path.dirname(item.path)));if(id){item.broadcasterUserId=id;if(!ids.has(id))ids.set(id,null);}}
- await Promise.all([...ids.keys()].map(async id=>{if(!broadcasterProfileIconCache.has(id))broadcasterProfileIconCache.set(id,fetchNicoProfileIcon(id).catch(()=> ""));ids.set(id,await broadcasterProfileIconCache.get(id));}));
- for(const item of library.items)if(item.broadcasterUserId)item.profileIconUrl=ids.get(item.broadcasterUserId)||"";
- return library;
+function getCachedNicoProfileIcon(userId) {
+  const previous = broadcasterProfileIconCache.get(userId);
+  if (previous && previous.expiresAt > Date.now()) return previous.promise;
+  const promise = fetchNicoProfileIcon(userId).catch(() => "");
+  broadcasterProfileIconCache.set(userId, { promise, expiresAt: Date.now() + 2 * 60 * 1000 });
+  void promise.then((url) => {
+    broadcasterProfileIconCache.set(userId, {
+      promise: Promise.resolve(url),
+      expiresAt: Date.now() + (url ? 6 * 60 * 60 * 1000 : 10 * 60 * 1000)
+    });
+  });
+  return promise;
 }
+
+async function listCaptureLibraryWithProfiles() {
+  const library = listCaptureLibrary();
+  const byName = new Map();
+  function addKnownName(name, id) {
+    const normalizedId = normalizeProfileUserId(id);
+    if (!name || !normalizedId) return;
+    const label = sanitizeFolderSegment(name);
+    if (!byName.has(label)) byName.set(label, normalizedId);
+    else if (byName.get(label) !== normalizedId) byName.set(label, ""); // 同名アカウントは紐付けない
+  }
+  for (const target of getMonitorSettings().targets) addKnownName(target.name, target.userId);
+  for (const article of listBroadcastArticles().items) {
+    addKnownName(article.broadcasterName, article.broadcasterId);
+  }
+  const stored = readAppSettings().libraryProfileIds;
+  const manualIds = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  const knownIds = new Set();
+  for (const item of library.items) {
+    const id = extractNicoUserId(item.broadcaster) ||
+      normalizeProfileUserId(Object.hasOwn(manualIds, item.broadcaster) ? manualIds[item.broadcaster] : "") ||
+      byName.get(item.broadcaster) || "";
+    if (!id) continue;
+    item.broadcasterUserId = id;
+    item.profileUrl = nicoUserPageUrl(id);
+    knownIds.add(id);
+  }
+  const icons = new Map();
+  // たくさんの過去録画を読み込んでも外部への同時アクセスを抑制する。
+  await mapWithConcurrency([...knownIds], 4, async (id) => {
+    icons.set(id, await getCachedNicoProfileIcon(id));
+  });
+  for (const item of library.items) {
+    if (item.broadcasterUserId) item.profileIconUrl = icons.get(item.broadcasterUserId) || "";
+  }
+  return library;
+}
+
 ipcMain.handle("library:list", () => listCaptureLibraryWithProfiles());
+ipcMain.handle("library:open-user-profile", async (_event, userId) => {
+  const profileUrl = nicoUserPageUrl(userId);
+  if (!profileUrl) throw new Error("正しいニコニコユーザーIDを指定してください。");
+  await shell.openExternal(profileUrl);
+  return { opened: true };
+});
+ipcMain.handle("library:set-profile-user-id", (_event, broadcaster, userId) => {
+  const name = String(broadcaster || "").trim();
+  const id = normalizeProfileUserId(userId);
+  if (!id) throw new Error("ユーザーID（5桁以上の数字）またはユーザーページURLを指定してください。");
+  if (!name || !listCaptureLibrary().items.some(item => item.broadcaster === name)) {
+    throw new Error("録画ライブラリに存在する配信者を指定してください。");
+  }
+  const settings = readAppSettings();
+  const existing = settings.libraryProfileIds && typeof settings.libraryProfileIds === "object" &&
+    !Array.isArray(settings.libraryProfileIds) ? settings.libraryProfileIds : {};
+  const next = { ...existing, [name]: id };
+  writeAppSettings({ libraryProfileIds: next });
+  return { userId: id, profileUrl: nicoUserPageUrl(id) };
+});
 ipcMain.handle("library:thumbnail", (_event, value) => {
   try {
     const target = resolveLibraryItemPath(value);
