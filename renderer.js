@@ -1730,6 +1730,20 @@ function renderBroadcastArticles() {
     for (const article of dayItems) {
     const card = document.createElement("article");
     card.className = "broadcast-article-card";
+    const masthead = document.createElement("div");
+    masthead.className = "broadcast-article-masthead";
+    const byline = document.createElement("span");
+    byline.textContent = "配信者：" + (article.broadcasterName || "未取得") + " · " + formatLibraryDate(article.startedAt || article.generatedAt);
+    masthead.appendChild(byline);
+    const stateBadge = document.createElement("span");
+    const articleIsLive = article.liveStatus === "live" || article.isLive === true;
+    stateBadge.className = "broadcast-article-status-badge" + (articleIsLive ? " is-live" : "");
+    stateBadge.textContent = articleIsLive ? "● 配信中" : "配信終了";
+    masthead.appendChild(stateBadge);
+    const hero = document.createElement("div");
+    hero.className = "broadcast-article-hero";
+    const heroCopy = document.createElement("div");
+    heroCopy.className = "broadcast-article-hero-copy";
     const media = document.createElement("div");
     media.className = "broadcast-article-media";
     const mediaPlaceholder = document.createElement("div");
@@ -1772,11 +1786,7 @@ function renderBroadcastArticles() {
     title.textContent = article.programTitle || article.title || article.liveId || "放送記事";
     const meta = document.createElement("p");
     meta.className = "broadcast-article-meta";
-    meta.textContent = [
-      article.broadcasterName || "配信者名未取得",
-      formatLibraryDate(article.startedAt || article.generatedAt),
-      article.liveId || ""
-    ].filter(Boolean).join(" · ");
+    meta.textContent = ["ニコニコ生放送", article.liveId || ""].filter(Boolean).join(" · ");
     if (article.liveStatus === "live" || article.isLive) {
       const liveBadge = document.createElement("span");
       liveBadge.className = "broadcast-article-live-badge";
@@ -1799,6 +1809,20 @@ function renderBroadcastArticles() {
     if (article.audioAnalysis || article.audioTranscriptSegmentCount) addTag("音声文字起こし済み", "audio");
     if (article.liveStatus === "live" || article.isLive) addTag("ライブ更新中", "live");
     if (tags.childElementCount) heading.appendChild(tags);
+    heroCopy.appendChild(heading);
+    if (article.title && article.programTitle && article.title !== article.programTitle) {
+      const editorialTitle = document.createElement("p");
+      editorialTitle.className = "broadcast-article-editorial-title";
+      editorialTitle.textContent = "記事見出し：" + article.title;
+      heroCopy.appendChild(editorialTitle);
+    }
+    const commentSignal = document.createElement("div");
+    commentSignal.className = "broadcast-article-comment-signal";
+    commentSignal.textContent = Number(article.commentCount || 0) > 0
+      ? "コメント " + Number(article.commentCount).toLocaleString("ja-JP") + "件を取得・記事に反映しています。"
+      : (articleIsLive ? "コメントの受信を待っています。" : "取得できたコメントはありません。");
+    heroCopy.appendChild(commentSignal);
+    hero.append(media, heroCopy);
 
     const stats = document.createElement("div");
     stats.className = "broadcast-article-stats";
@@ -1941,7 +1965,45 @@ function renderBroadcastArticles() {
       updated.textContent = "最終更新：" + formatLibraryDate(article.generatedAt);
       body.appendChild(updated);
     }
-    card.append(media, heading, stats, body, actions);
+    card.append(masthead, hero, stats);
+    if (article.audioTranscript || article.audioAnalysis) {
+      const audio = document.createElement("section");
+      audio.className = "broadcast-article-audio";
+      const audioTitle = document.createElement("strong");
+      audioTitle.textContent = "音声から確認した内容";
+      const audioStatus = document.createElement("p");
+      audioStatus.textContent = article.audioAnalysis || "Whisper.cppで音声を文字起こししました。";
+      audio.append(audioTitle, audioStatus);
+      if (article.audioTranscript) {
+        const details = document.createElement("details");
+        details.className = "broadcast-article-transcript";
+        const summary = document.createElement("summary");
+        summary.textContent = "音声文字起こしを表示（" + Number(article.audioTranscriptSegmentCount || 0).toLocaleString("ja-JP") + "区間）";
+        const transcript = document.createElement("p");
+        transcript.textContent = String(article.audioTranscript).slice(0, 30000);
+        details.append(summary, transcript);
+        audio.appendChild(details);
+      }
+      card.appendChild(audio);
+    }
+    card.appendChild(body);
+    if (article.aiFallbackReason) {
+      const error = document.createElement("p");
+      error.className = "broadcast-article-ai-warning";
+      error.textContent = "AI更新エラー：" + article.aiFallbackReason;
+      card.appendChild(error);
+    }
+    const footer = document.createElement("div");
+    footer.className = "broadcast-article-footer";
+    const summary = document.createElement("p");
+    summary.textContent = [
+      article.durationMinutes != null ? "配信時間 " + article.durationMinutes + "分" : "",
+      "コメント " + Number(article.commentCount || 0).toLocaleString("ja-JP") + "件",
+      article.visitorCount != null ? "来場者 " + Number(article.visitorCount).toLocaleString("ja-JP") + "人" : "来場者未取得",
+      article.aiProvider ? "AI分析済み" : "AI未分析"
+    ].filter(Boolean).join(" · ");
+    footer.appendChild(summary);
+    card.append(footer, actions);
     list.appendChild(card);
     }
   }
