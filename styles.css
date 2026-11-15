@@ -866,3 +866,15 @@ button, .button {
 @media(max-width:760px) {
   .broadcast-articles-list {grid-template-columns:1fr}
 }
+
+
+/* ニコニコの配信者ページへ移動するプロフィールアイコン・名前 */
+.library-broadcaster-thumb.library-profile-link { appearance:none; border:0; padding:0; cursor:pointer; }
+.library-profile-link:hover, .library-profile-name-link:hover { filter:brightness(1.15); }
+.library-profile-link:focus-visible, .library-profile-name-link:focus-visible, .library-profile-map-button:focus-visible { outline:2px solid #70e5ad; outline-offset:3px; }
+.library-profile-name-link { appearance:none; border:0; padding:0; background:transparent; color:#edf3ff; font:700 13px inherit; font-family:inherit; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.library-profile-map-button { appearance:none; align-self:flex-start; border:0; background:transparent; padding:0; color:#87d4fc; font:inherit; font-size:10px; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+.library-profile-id-form { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.library-profile-id-form[hidden] { display:none; }
+.library-profile-id-form input { min-width:150px; flex:1 1 170px; padding:7px 9px; font-size:11px; }
+.library-profile-id-form .button { padding:7px 9px; }
