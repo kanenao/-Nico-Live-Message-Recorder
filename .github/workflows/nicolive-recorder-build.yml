@@ -106,3 +106,23 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+      - name: Publish alpha prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+-alpha\.\d+$') { throw 'Invalid alpha version' }
+          $tag = "v$version"
+          if (-not (Test-Path 'dist/alpha.yml')) { throw 'Missing alpha.yml update metadata' }
+          $installer = @(Get-ChildItem dist -File -Filter '*Setup*.exe')
+          $portable = @(Get-ChildItem dist -File -Filter '*-win.zip')
+          if ($installer.Count -ne 1 -or $portable.Count -ne 1) { throw 'Missing Windows installer or portable ZIP' }
+          $assets = @(Get-ChildItem dist -File | Where-Object {
+            $_.Extension -in '.exe','.zip','.blockmap' -or $_.Name -eq 'alpha.yml'
+          } | ForEach-Object { $_.FullName })
+          gh release view $tag --json url --jq .url
+          if ($LASTEXITCODE -eq 0) { Write-Host 'Alpha release already exists; skipping duplicate publication'; exit 0 }
+          gh release create $tag @assets --title "Nico Live Message Recorder $tag" --notes '開発用α版。実放送での録画成功は未検証です。詳細はCHANGELOG.mdを参照してください。' --prerelease --latest=false --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Failed to publish $tag" }

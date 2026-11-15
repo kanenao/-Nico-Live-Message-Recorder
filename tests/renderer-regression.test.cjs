@@ -835,7 +835,7 @@ test("article summaries are attached to capture library videos and article delet
 test("Streamlink waits for media bytes and preserves stderr when capture startup fails", () => {
   assert.match(main, /const startupDeadline = startupStartedAt \+ 60000/);
   assert.match(main, /hasNonEmptyFile\(outputPath\)/);
-  assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ chunk\.toString/);
+  assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ line\)\.slice\(-12000\)/);
   assert.match(main, /Streamlink詳細:/);
   assert.match(main, /Streamlink終了コード: /);
   assert.match(main, /Streamlink終了シグナル: /);
