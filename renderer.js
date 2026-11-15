@@ -2272,6 +2272,9 @@ function renderUpdateState(payload) {
   const progress = byId("update-progress");
   const installButton = byId("install-update-button");
   const checkButton = byId("check-update-button");
+  const retryButton = byId("retry-update-download-button");
+  const manualButton = byId("update-releases-button");
+  const settingsRetryButton = byId("settings-retry-update-download-button");
   const settingsStatus = byId("settings-update-status");
   const settingsProgress = byId("settings-update-progress");
   const settingsInstallButton = byId("settings-install-update-button");
@@ -2282,6 +2285,9 @@ function renderUpdateState(payload) {
   panel.hidden = false;
   progress.hidden = true;
   installButton.hidden = true;
+  retryButton.hidden = true;
+  manualButton.hidden = true;
+  settingsRetryButton.hidden = true;
   checkButton.disabled = false;
 
   const version = payload.version ? "v" + payload.version : "";
@@ -2292,6 +2298,10 @@ function renderUpdateState(payload) {
       break;
     case "available":
       status.textContent = version + " が見つかりました。バックグラウンドでダウンロードしています…";
+      checkButton.disabled = true;
+      break;
+    case "retrying":
+      status.textContent = payload.message || "インストーラー全体を再ダウンロードしています…";
       checkButton.disabled = true;
       break;
     case "progress": {
@@ -2316,7 +2326,10 @@ function renderUpdateState(payload) {
       status.textContent = payload.message || "自動アップデートはWindowsのインストーラー版で利用できます。";
       break;
     case "error":
-      status.textContent = "更新を確認できませんでした: " + (payload.message || "通信エラー");
+      status.textContent = "自動更新エラー：" + (payload.message || "通信エラー");
+      retryButton.hidden = payload.category === "integrity";
+      settingsRetryButton.hidden = payload.category === "integrity";
+      manualButton.hidden = false;
       break;
     default:
       status.textContent = "更新状態を確認できません。";
@@ -2327,10 +2340,13 @@ function renderUpdateState(payload) {
   settingsProgress.value = progress.value;
   settingsInstallButton.hidden = installButton.hidden;
   settingsInstallButton.disabled = installButton.disabled;
+  settingsRetryButton.hidden = retryButton.hidden;
+  settingsRetryButton.disabled = retryButton.disabled;
   settingsCheckButton.disabled = checkButton.disabled;
 
   const badgeLabels = {
     checking: "確認中",
+    retrying: "再試行中",
     available: "更新あり",
     progress: "ダウンロード中",
     downloaded: "更新準備完了",
@@ -2365,6 +2381,22 @@ async function checkAppUpdates() {
       message: error && error.message ? error.message : "通信エラー"
     });
     showToast(error.message || "アップデートを確認できませんでした。", true);
+  }
+}
+
+async function retryAppUpdateDownload() {
+  const button = byId("retry-update-download-button");
+  const settingsButton = byId("settings-retry-update-download-button");
+  button.disabled = true;
+  settingsButton.disabled = true;
+  renderUpdateState({ state: "retrying", message: "ダウンロードを再試行しています…" });
+  try {
+    await api.retryUpdateDownload();
+  } catch (error) {
+    renderUpdateState({ state: "error", message: error && error.message || "ダウンロードを再試行できませんでした。" });
+  } finally {
+    button.disabled = false;
+    settingsButton.disabled = false;
   }
 }
 
@@ -2539,6 +2571,9 @@ byId("record-mode").addEventListener("change", () => {
 });
 stopRecordButton.addEventListener("click", stopVideoRecording);
 byId("check-update-button").addEventListener("click", checkAppUpdates);
+byId("retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
+byId("settings-retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
+byId("update-releases-button").addEventListener("click", () => api.openGitHubReleases());
 byId("install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
 byId("open-github-releases-button").addEventListener("click", async () => {

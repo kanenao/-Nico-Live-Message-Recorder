@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   getChangelog: () => ipcRenderer.invoke("app:changelog"),
   openGitHubReleases: () => ipcRenderer.invoke("app:open-releases"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  retryUpdateDownload: () => ipcRenderer.invoke("updates:retry-download"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   getMonitorState: () => ipcRenderer.invoke("monitor:get-state"),
   getOllamaStatus: () => ipcRenderer.invoke("ollama:get-status"),

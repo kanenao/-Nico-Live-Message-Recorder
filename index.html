@@ -227,6 +227,8 @@
             </div>
             <div class="update-actions">
               <progress class="update-progress" id="update-progress" max="100" value="0" hidden></progress>
+              <button class="button button-outline button-small" id="retry-update-download-button" type="button" hidden>再ダウンロード</button>
+              <button class="button button-quiet button-small" id="update-releases-button" type="button" hidden>手動ダウンロード</button>
               <button class="button button-primary button-small" id="install-update-button" type="button" hidden>再起動して更新</button>
             </div>
           </div>
@@ -643,6 +645,7 @@
           <progress class="app-update-progress" id="settings-update-progress" max="100" value="0" hidden></progress>
           <div class="app-update-actions">
             <button class="button button-outline button-small" id="settings-check-update-button" type="button">今すぐ更新を確認</button>
+            <button class="button button-secondary button-small" id="settings-retry-update-download-button" type="button" hidden>ダウンロードを再試行</button>
             <button class="button button-primary button-small" id="settings-install-update-button" type="button" hidden>再起動して更新</button>
             <button class="button button-quiet button-small" id="open-github-releases-button" type="button">GitHub Releasesでダウンロード</button>
           </div>
