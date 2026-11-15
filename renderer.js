@@ -268,16 +268,22 @@ function renderSessionProgramInfo() {
       ? "録画停止中"
       : (connected ? "コメント取得中" : (currentCaptureTarget ? "録画準備中" : "待機中"));
 
-  byId("session-current-title").textContent = title || (liveId
-    ? "番組情報を取得しています…"
-    : "放送IDを入力すると番組情報が表示されます");
-  byId("session-current-broadcaster").textContent = "配信者：" + (broadcaster || "未取得");
-  byId("session-current-live-id").textContent = "放送ID：" + (liveId || "未入力");
-  byId("session-current-started-at").textContent = "開始：" + (startedAt ? formatBroadcastStart(startedAt) : "未取得");
-  byId("session-current-viewers").textContent = "来場者：" +
-    (viewerCount == null || !Number.isFinite(Number(viewerCount)) ? "未取得" : Number(viewerCount).toLocaleString("ja-JP"));
-  byId("session-current-status").textContent = captureState;
-  byId("session-current-status").dataset.state = videoCaptureState;
+  // Program metadata is optional; a missing summary node must not block capture.
+  const labels = {
+    "session-current-title": title || (liveId ? "番組情報を取得しています…" : "放送IDを入力すると番組情報が表示されます"),
+    "session-current-broadcaster": "配信者：" + (broadcaster || "未取得"),
+    "session-current-live-id": "放送ID：" + (liveId || "未入力"),
+    "session-current-started-at": "開始：" + (startedAt ? formatBroadcastStart(startedAt) : "未取得"),
+    "session-current-viewers": "来場者：" +
+      (viewerCount == null || !Number.isFinite(Number(viewerCount)) ? "未取得" : Number(viewerCount).toLocaleString("ja-JP")),
+    "session-current-status": captureState
+  };
+  for (const [id, value] of Object.entries(labels)) {
+    const element = byId(id);
+    if (element) element.textContent = value;
+  }
+  const statusLabel = byId("session-current-status");
+  if (statusLabel) statusLabel.dataset.state = videoCaptureState;
 }
 
 function updateMetadata(metadata) {

@@ -337,6 +337,19 @@
               <p class="hint">Streamlinkで配信データを直接取得します。映像と配信に含まれる音声をTS形式で保存し、録画停止後にFFmpegでMP4へ無劣化変換します。画面キャプチャは使用しません。</p>
             </div>
           </div>
+          <div class="session-current-program" aria-label="接続中の番組情報" aria-live="polite">
+            <div class="session-current-program-heading">
+              <span>現在の番組情報</span>
+              <span id="session-current-status" data-state="idle">待機中</span>
+            </div>
+            <strong id="session-current-title">放送IDを入力すると番組情報が表示されます</strong>
+            <div class="session-current-program-meta">
+              <span id="session-current-broadcaster">配信者：未取得</span>
+              <span id="session-current-live-id">放送ID：未入力</span>
+              <span id="session-current-started-at">開始：未取得</span>
+              <span id="session-current-viewers">来場者：未取得</span>
+            </div>
+          </div>
         </section>
 
         <section class="capture-status-panel" aria-live="polite">
