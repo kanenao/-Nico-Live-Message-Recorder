@@ -287,7 +287,8 @@ function configureAutoUpdater() {
   autoUpdater.channel = "alpha";
   autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = false;
+  // Apply a downloaded update on normal exit after the graceful shutdown hook.
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = console;
 
   autoUpdater.on("checking-for-update", () => {
@@ -302,6 +303,10 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on("update-not-available", (info) => {
+    if (downloadedUpdateInfo) {
+      sendUpdateState("downloaded", { version: downloadedUpdateInfo.version || "" });
+      return;
+    }
     sendUpdateState("not-available", {
       version: info && info.version ? info.version : app.getVersion()
     });
@@ -340,6 +345,11 @@ function checkForUpdatesNow() {
     };
     sendUpdateState("unsupported", { message: result.reason });
     return Promise.resolve(result);
+  }
+  if (downloadedUpdateInfo) {
+    // Preserve the ready-to-install status instead of repeating a stale check.
+    sendUpdateState("downloaded", { version: downloadedUpdateInfo.version || "" });
+    return Promise.resolve({ supported: true, downloaded: true, version: downloadedUpdateInfo.version || null });
   }
   if (updateCheckPromise) return updateCheckPromise;
 
@@ -1039,6 +1049,8 @@ ipcMain.handle("updates:install", async () => {
   // Preserve active recordings and close comment logs before handing control to NSIS.
   await shutdownGracefully();
   shutdownComplete = true;
+  // Prevent the close-to-tray handler from intercepting the updater shutdown.
+  isQuitting = true;
   autoUpdater.quitAndInstall(false, true);
   return { installing: true };
 });
