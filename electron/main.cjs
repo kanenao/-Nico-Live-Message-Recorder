@@ -33,6 +33,7 @@ const {
 } = require("./composition-export.cjs");
 const { fetchTimeshiftProgramPage, fetchTimeshiftArchive } = require("./timeshift-comments.cjs");
 const { autoUpdater } = require("electron-updater");
+const { explainUpdateError } = require("./update-diagnostics.cjs");
 const { normalizeNicoUserId, normalizeMonitorDate, fetchUserBroadcastStatus, fetchFollowingOnAirPrograms, fetchNicoUserName, mapWithConcurrency } = require("./monitor.cjs");
 const {
   compareReleaseVersions,
@@ -119,6 +120,10 @@ let shutdownPromise = null;
 let shutdownComplete = false;
 let updateCheckPromise = null;
 let downloadedUpdateInfo = null;
+let availableUpdateInfo = null;
+let failedUpdateDownload = false;
+let retryUpdatePromise = null;
+let automaticUpdateRetryUsed = false;
 let monitorTimer = null;
 let monitorRunning = false;
 let monitorChecking = false;
@@ -288,6 +293,9 @@ function configureAutoUpdater() {
   autoUpdater.channel = "alpha";
   autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = true;
+  // GitHub/CDN range requests and differential blockmaps can fail even when full EXEs are downloadable.
+  // Use the verified full NSIS installer on the alpha channel until differential downloads are proven reliable.
+  autoUpdater.disableDifferentialDownload = true;
   // Apply a downloaded update on normal exit after the graceful shutdown hook.
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = console;
@@ -297,6 +305,9 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on("update-available", (info) => {
+    availableUpdateInfo = info || null;
+    failedUpdateDownload = false;
+    automaticUpdateRetryUsed = false;
     sendUpdateState("available", {
       version: info && info.version ? info.version : "",
       releaseDate: info && info.releaseDate ? info.releaseDate : null
@@ -314,6 +325,7 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on("download-progress", (progress) => {
+    failedUpdateDownload = false;
     sendUpdateState("progress", {
       percent: Number(progress && progress.percent) || 0,
       bytesPerSecond: Number(progress && progress.bytesPerSecond) || 0,
@@ -323,6 +335,7 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on("update-downloaded", (info) => {
+    failedUpdateDownload = false;
     downloadedUpdateInfo = info || {};
     sendUpdateState("downloaded", {
       version: info && info.version ? info.version : ""
@@ -330,12 +343,41 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on("error", (error) => {
-    sendUpdateState("error", {
-      message: error && error.message ? error.message : String(error)
-    });
+    const diagnostic = explainUpdateError(error);
+    failedUpdateDownload = Boolean(availableUpdateInfo && !downloadedUpdateInfo);
+    console.warn("Nico app auto-update failure:", diagnostic.code || diagnostic.category, diagnostic.message);
+    if (failedUpdateDownload && diagnostic.retryable && !automaticUpdateRetryUsed) {
+      automaticUpdateRetryUsed = true;
+      sendUpdateState("retrying", { version: availableUpdateInfo.version || "", message: "通信が中断されました。フルダウンロードを一度再試行します。" });
+      const retryTimer = setTimeout(() => retryUpdateDownloadNow().catch(() => {}), 7000);
+      if (typeof retryTimer.unref === "function") retryTimer.unref();
+    } else {
+      sendUpdateState("error", { ...diagnostic, version: availableUpdateInfo && availableUpdateInfo.version || "" });
+    }
   });
 
   return true;
+}
+
+function retryUpdateDownloadNow() {
+  if (!isAutoUpdateSupported()) return checkForUpdatesNow();
+  if (downloadedUpdateInfo) {
+    sendUpdateState("downloaded", { version: downloadedUpdateInfo.version || "" });
+    return Promise.resolve({ supported: true, downloaded: true });
+  }
+  if (retryUpdatePromise) return retryUpdatePromise;
+  if (!failedUpdateDownload || !availableUpdateInfo) return checkForUpdatesNow();
+  failedUpdateDownload = false;
+  sendUpdateState("retrying", { version: availableUpdateInfo.version || "", message: "インストーラー全体を再ダウンロードしています…" });
+  retryUpdatePromise = autoUpdater.downloadUpdate()
+    .then(() => ({ supported: true, retryStarted: true }))
+    .catch(error => {
+      failedUpdateDownload = true;
+      sendUpdateState("error", { ...explainUpdateError(error), version: availableUpdateInfo && availableUpdateInfo.version || "" });
+      throw error;
+    })
+    .finally(() => { retryUpdatePromise = null; });
+  return retryUpdatePromise;
 }
 
 function checkForUpdatesNow() {
@@ -1043,6 +1085,7 @@ ipcMain.handle("app:changelog", async () => {
 });
 
 ipcMain.handle("updates:check", () => checkForUpdatesNow());
+ipcMain.handle("updates:retry-download", () => retryUpdateDownloadNow());
 
 ipcMain.handle("updates:install", async () => {
   if (!isAutoUpdateSupported()) {
