@@ -107,3 +107,14 @@ test("alpha manifest validator accepts URL-encoded installer names", () => {
   assert.match(validator, /encodeURIComponent\(installer\)/);
   assert.match(validator, /manifest\.includes\(name\)/);
 });
+
+test("published alpha filenames contain no spaces and match generated update manifest targets", () => {
+  assert.equal(packageJson.build.win.artifactName, "Nico.Live.Message.Recorder-${version}-win.${ext}");
+  assert.equal(packageJson.build.nsis.artifactName, "Nico.Live.Message.Recorder.Setup.${version}.${ext}");
+  for (const template of [packageJson.build.win.artifactName, packageJson.build.nsis.artifactName]) {
+    assert.ok(!/\s/.test(template), "GitHub CLI renames release assets containing spaces");
+  }
+  const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /Verify alpha update manifest and installer checksum/);
+});
