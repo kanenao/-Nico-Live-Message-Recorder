@@ -1427,7 +1427,7 @@ function renderCaptureLibrary() {
   const filter = byId("library-filter").value;
   const items = captureLibraryItems.filter((item) => {
     if (filter !== "all" && item.type !== filter) return false;
-    const searchable = [item.fileName, item.broadcaster, item.liveId, item.extension].join(" ").toLowerCase();
+    const searchable = [item.fileName, item.broadcaster, item.broadcasterUserId, item.liveId, item.extension].join(" ").toLowerCase();
     return !query || searchable.includes(query);
   });
   if (!items.length) {
@@ -1452,9 +1452,21 @@ function renderCaptureLibrary() {
     card.className = "library-broadcaster-card";
     const heading = document.createElement("div");
     heading.className = "library-broadcaster-heading";
-    const thumb = document.createElement("div");
+    const profileUserId = broadcasterItems.find(item => item.broadcasterUserId)?.broadcasterUserId || "";
+    const openProfile = async () => {
+      try { await api.openNicoUserProfile(profileUserId); }
+      catch (error) { showToast(error.message || "ユーザーページを開けませんでした。", true); }
+    };
+    const thumb = document.createElement(profileUserId ? "button" : "div");
     thumb.className = "library-broadcaster-thumb";
     thumb.textContent = "N";
+    if (profileUserId) {
+      thumb.type = "button";
+      thumb.classList.add("library-profile-link");
+      thumb.title = broadcaster + " のニコニコユーザーページを開く";
+      thumb.setAttribute("aria-label", thumb.title);
+      thumb.addEventListener("click", () => void openProfile());
+    }
     const profileIconUrl = broadcasterItems.find(item => item.profileIconUrl)?.profileIconUrl || "";
     if (profileIconUrl) {
       const image = document.createElement("img");
@@ -1466,14 +1478,65 @@ function renderCaptureLibrary() {
     }
     const identity = document.createElement("div");
     identity.className = "library-broadcaster-identity";
-    const name = document.createElement("strong");
+    const name = document.createElement(profileUserId ? "button" : "strong");
     name.textContent = broadcaster;
+    if (profileUserId) {
+      name.type = "button";
+      name.className = "library-profile-name-link";
+      name.title = "ニコニコのユーザーページを開く";
+      name.addEventListener("click", () => void openProfile());
+    }
     const videoCount = broadcasterItems.filter(item => item.type === "video").length;
     const commentCount = broadcasterItems.filter(item => item.type === "comment").length;
     const meta = document.createElement("span");
     meta.textContent = "動画 " + videoCount + " 件 · コメント " + commentCount + " 件 · " +
       formatLibraryDate(broadcasterItems[0]?.modifiedAt);
     identity.append(name, meta);
+    if (!profileUserId) {
+      // 古い録画フォルダーにIDがない場合でも、本人のIDを一度登録すれば以降は自動表示。
+      const setId = document.createElement("button");
+      setId.type = "button";
+      setId.className = "library-profile-map-button";
+      setId.textContent = "ユーザーIDを設定";
+      const form = document.createElement("form");
+      form.className = "library-profile-id-form";
+      form.hidden = true;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.placeholder = "ニコニコのユーザーIDまたはURL";
+      input.setAttribute("aria-label", broadcaster + " のユーザーID");
+      input.required = true;
+      const save = document.createElement("button");
+      save.type = "submit";
+      save.className = "button button-primary button-small";
+      save.textContent = "保存";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "button button-quiet button-small";
+      cancel.textContent = "取消";
+      cancel.addEventListener("click", () => { form.hidden = true; setId.hidden = false; });
+      setId.addEventListener("click", () => {
+        form.hidden = false;
+        setId.hidden = true;
+        input.focus();
+      });
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        save.disabled = true;
+        try {
+          await api.setLibraryProfileUserId(broadcaster, input.value.trim());
+          showToast(broadcaster + " のユーザーIDを保存しました。");
+          await loadCaptureLibrary();
+        } catch (error) {
+          showToast(error.message || "ユーザーIDを保存できませんでした。", true);
+        } finally {
+          save.disabled = false;
+        }
+      });
+      form.append(input, save, cancel);
+      identity.append(setId, form);
+    }
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "button button-secondary button-small library-broadcaster-toggle";
