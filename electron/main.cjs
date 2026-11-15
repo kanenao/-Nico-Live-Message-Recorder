@@ -668,6 +668,8 @@ async function generateStandaloneBroadcastArticle(input = {}) {
     if (videoPath) {
       article.videoFile = path.resolve(videoPath);
       article.videoFrameCount = extracted ? extracted.frames.length : 0;
+      // Preserve one representative video frame for the journal even when the video is moved later.
+      if (extracted && extracted.frames.length) article.coverImage = selectArticleCoverImage(extracted.frames);
       article.videoAnalysis = article.aiProvider ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
       if (audioTranscriptionError) article.audioTranscriptionError = audioTranscriptionError;
       if (!audioTranscript && !audioTranscriptionError) article.audioTranscriptionStatus = "未設定（Whisper実行ファイルと日本語モデルを選択すると音声も分析できます）";
