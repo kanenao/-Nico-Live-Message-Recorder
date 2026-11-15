@@ -100,3 +100,10 @@ test("Windows alpha release CI verifies update metadata and NSIS SHA-512 before 
   assert.match(validator, /alpha\.yml/);
   assert.match(validator, /blockmap/);
 });
+
+test("alpha manifest validator accepts URL-encoded installer names", () => {
+  const validator = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-update-manifest.cjs"), "utf8");
+  assert.match(validator, /encodeURI\(installer\)/);
+  assert.match(validator, /encodeURIComponent\(installer\)/);
+  assert.match(validator, /manifest\.includes\(name\)/);
+});

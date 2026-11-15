@@ -16,7 +16,11 @@ async function validateUpdateManifest(root = path.resolve(__dirname, "..")) {
   const installerNames = fs.readdirSync(dist).filter(name => name.toLowerCase().endsWith(".exe") && name.includes(version) && /setup/i.test(name));
   if (installerNames.length !== 1) throw new Error("Expected exactly one versioned NSIS installer.");
   const installer = installerNames[0];
-  if (!manifest.includes(installer)) throw new Error("alpha.yml does not reference the Windows installer.");
+  // electron-builder URL-encodes spaces in alpha.yml but keeps literal spaces on disk.
+  const candidates = [installer, encodeURI(installer), encodeURIComponent(installer)];
+  if (!candidates.some(name => manifest.includes(name))) {
+    throw new Error("alpha.yml does not reference the Windows installer (including URL-encoded names).");
+  }
   if (!fs.existsSync(path.join(dist, installer + ".blockmap"))) throw new Error("NSIS blockmap is missing.");
   const readable = fs.createReadStream(path.join(dist, installer));
   const digest = createHash("sha512");
