@@ -2151,7 +2151,7 @@ function renderUpdateState(payload) {
       break;
     }
     case "downloaded":
-      status.textContent = version + " のダウンロードが完了しました。再起動して更新できます。";
+      status.textContent = version + " のダウンロードが完了しました。アプリ終了時に自動適用します。今すぐ更新する場合は「再起動して更新」を押してください。";
       progress.hidden = false;
       progress.value = 100;
       installButton.hidden = false;

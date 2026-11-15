@@ -62,3 +62,12 @@ test("unsupported update mode is visible to the user", () => {
   const mainProcess = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
   assert.match(mainProcess, /sendUpdateState\("unsupported"/);
 });
+
+test("alpha update download is preserved and installs on safe app exit", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+  assert.match(main, /autoUpdater\.autoInstallOnAppQuit = true/);
+  assert.match(main, /if \(downloadedUpdateInfo\) \{[\s\S]*?downloaded: true/);
+  const handler = main.slice(main.indexOf('ipcMain.handle("updates:install"'), main.indexOf("async function getNicoAuthCookies()"));
+  assert.match(handler, /await shutdownGracefully\(\);[\s\S]*?isQuitting = true;\s*autoUpdater\.quitAndInstall\(false, true\)/);
+  assert.match(main, /closeToTray && !isQuitting/);
+});
