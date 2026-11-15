@@ -71,3 +71,32 @@ test("alpha update download is preserved and installs on safe app exit", () => {
   assert.match(handler, /await shutdownGracefully\(\);[\s\S]*?isQuitting = true;\s*autoUpdater\.quitAndInstall\(false, true\)/);
   assert.match(main, /closeToTray && !isQuitting/);
 });
+
+test("alpha full-download fallback is wired through main, preload and renderer", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "electron", "preload.cjs"), "utf8");
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  assert.match(main, /autoUpdater\.disableDifferentialDownload = true/);
+  assert.match(main, /automaticUpdateRetryUsed = true/);
+  assert.match(main, /ipcMain\.handle\("updates:retry-download", \(\) => retryUpdateDownloadNow\(\)\)/);
+  assert.match(preload, /retryUpdateDownload: \(\) => ipcRenderer\.invoke\("updates:retry-download"\)/);
+  assert.match(renderer, /async function retryAppUpdateDownload\(\)/);
+  assert.match(renderer, /case "retrying":/);
+  assert.match(renderer, /api\.retryUpdateDownload\(\)/);
+  for (const id of ["retry-update-download-button","settings-retry-update-download-button","update-releases-button"]) {
+    assert.ok(html.includes('id="' + id + '"'), "Missing user recovery button: " + id);
+  }
+});
+
+test("Windows alpha release CI verifies update metadata and NSIS SHA-512 before publishing", () => {
+  const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
+  const validator = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-update-manifest.cjs"), "utf8");
+  const step = workflow.indexOf("- name: Verify alpha update manifest and installer checksum");
+  assert.ok(step >= 0);
+  assert.ok(step > workflow.indexOf("- name: Build installer and portable ZIP"));
+  assert.ok(step < workflow.indexOf("- name: Upload Windows build"));
+  assert.match(validator, /createHash\("sha512"\)/);
+  assert.match(validator, /alpha\.yml/);
+  assert.match(validator, /blockmap/);
+});

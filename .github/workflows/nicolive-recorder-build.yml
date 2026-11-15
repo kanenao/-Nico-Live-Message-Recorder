@@ -93,6 +93,8 @@ jobs:
         run: npm test
       - name: Build installer and portable ZIP
         run: npm run dist:win
+      - name: Verify alpha update manifest and installer checksum
+        run: node scripts/verify-update-manifest.cjs
       - name: Read app version
         id: app-version
         shell: pwsh
