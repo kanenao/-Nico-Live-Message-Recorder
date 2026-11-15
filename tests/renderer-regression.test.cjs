@@ -1064,3 +1064,11 @@ test("manual Niconico user_session controls use a dedicated secure cookie IPC", 
   assert.match(main, /authSession\.cookies\.remove\("https:\/\/nicovideo\.jp\//);
   assert.doesNotMatch(main, /writeAppSettings\(\{[^}]*user_session/i);
 });
+
+
+test("early Streamlink startup failures retain stderr after the recording finalizer runs", () => {
+  assert.match(main, /let startupStderr = "";/);
+  assert.match(main, /startupStderr = \(startupStderr \+ line\)\.slice\(-12000\)/);
+  assert.match(main, /const detail = startupStderr\.trim\(\)\.slice\(-1800\)/);
+  assert.match(main, /Streamlinkのニコ生プラグインを確認しています/);
+});

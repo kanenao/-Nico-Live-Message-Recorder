@@ -19,7 +19,7 @@ function verifyStreamlinkPlugin(executablePath, liveId, configPath, options = {}
       else resolve({ checked: true, url });
     };
     try {
-      child = spawnProcess(executablePath, ["--config", configPath, "--can-handle-url", url], {
+      child = spawnProcess(executablePath, ["--config", configPath, "--can-handle-url-no-redirect", url], {
         windowsHide: true,
         stdio: ["ignore", "ignore", "pipe"],
         env: options.env || process.env
@@ -35,7 +35,7 @@ function verifyStreamlinkPlugin(executablePath, liveId, configPath, options = {}
     }
     timer = setTimeout(() => {
       try { child.kill(); } catch (_) {}
-      finish(new Error("Streamlinkのニコ生プラグイン確認が12秒以内に完了しませんでした。実行ファイル・セキュリティソフト・インストール状態を確認してください。"));
+      finish(new Error("Streamlinkのニコ生プラグイン確認が" + Math.ceil(timeoutMs / 1000) + "秒以内に完了しませんでした。実行ファイル・セキュリティソフト・インストール状態を確認してください。"));
     }, timeoutMs);
     child.once("error", error => finish(new Error("Streamlinkの起動確認に失敗しました: " + (error.message || String(error)))));
     child.once("close", (code, signal) => {

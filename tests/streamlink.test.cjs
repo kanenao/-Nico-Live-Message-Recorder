@@ -38,9 +38,10 @@ test("Streamlink preflight confirms the nicolive plugin before starting a record
   assert.equal(captured.executable, "streamlink.exe");
   assert.deepEqual(captured.args, [
     "--config", "runtime/config",
-    "--can-handle-url", "https://live.nicovideo.jp/watch/lv123456789"
+    "--can-handle-url-no-redirect", "https://live.nicovideo.jp/watch/lv123456789"
   ]);
   assert.equal(captured.options.env.CUSTOM_STREAMLINK_RUNTIME, "isolated");
+  assert.equal(captured.args.includes("--can-handle-url"), false, "preflight must not follow a login redirect");
 });
 
 test("Streamlink preflight returns actionable plugin diagnostics", async () => {

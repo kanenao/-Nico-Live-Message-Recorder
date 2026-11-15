@@ -2570,6 +2570,12 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     timeshift
   });
 
+  send("video:state", {
+    starting: true,
+    liveId,
+    path: outputPath,
+    message: "Streamlinkのニコ生プラグインを確認しています（映像データはまだ未受信です）…"
+  });
   try {
     await verifyStreamlinkPlugin(streamlinkPath, liveId, runtime.configPath, { env: runtime.env });
   } catch (error) {
@@ -2599,7 +2605,13 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   streamlinkFfmpegPath = ffmpegPath || "";
   streamlinkStopRequested = false;
   streamlinkStderr = "";
-  if (child.stderr) child.stderr.on("data", chunk => { streamlinkStderr = (streamlinkStderr + chunk.toString("utf8")).slice(-12000); });
+  // Keep a per-startup stderr snapshot: finalization resets the global log on an early exit.
+  let startupStderr = "";
+  if (child.stderr) child.stderr.on("data", chunk => {
+    const line = chunk.toString("utf8");
+    startupStderr = (startupStderr + line).slice(-12000);
+    streamlinkStderr = (streamlinkStderr + line).slice(-12000);
+  });
 
   streamlinkFinalizePromise = new Promise((resolve) => {
     child.once("close", (code, signal) => resolve({ code, signal }));
@@ -2646,7 +2658,7 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   if (!outputReady) {
-    const detail = streamlinkStderr.trim().slice(-1800);
+    const detail = startupStderr.trim().slice(-1800);
     const exitDetail = child.exitCode !== null
       ? "Streamlink終了コード: " + child.exitCode
       : child.signalCode !== null
