@@ -21,6 +21,7 @@ const { hasNonEmptyFile } = require("./recording-file.cjs");
 const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
 const { normalizeNicoCookies, getNicoUserSession } = require("./nico-cookies.cjs");
 const { normalizeUserSessionInput } = require("./nico-session.cjs");
+const { verifyNicoSession } = require("./nico-auth-check.cjs");
 const { extractNicoUserId, fetchNicoProfileIcon, normalizeProfileUserId, nicoUserPageUrl } = require("./nico-profile.cjs");
 const { readBroadcasterFromCommentLog, verifiedProgramBroadcaster } = require("./library-profile-resolution.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
@@ -1114,13 +1115,54 @@ async function getNicoAuthCookies() {
   return normalizeNicoCookies(cookies);
 }
 
+const AUTH_RECHECK_INTERVAL_MS = 3 * 60 * 1000;
+let authStatusCache = null;
+let authStatusCacheToken = "";
+let authStatusCacheAt = 0;
+let authStatusPending = null;
+let authStatusPendingToken = "";
+
+async function checkNicoAuthStatus(options = {}) {
+  const token = getNicoUserSession(await getNicoAuthCookies());
+  if (!options.force && authStatusCache && authStatusCacheToken === token &&
+      Date.now() - authStatusCacheAt < AUTH_RECHECK_INTERVAL_MS) return authStatusCache;
+  if (authStatusPending && authStatusPendingToken === token) return authStatusPending;
+  authStatusPendingToken = token;
+  const promise = verifyNicoSession(token).then((status) => {
+    // Results from a replaced session must not overwrite a newer login.
+    if (authStatusPendingToken === token) {
+      const previousState = authStatusCache && authStatusCache.state;
+      authStatusCache = status;
+      authStatusCacheToken = token;
+      authStatusCacheAt = Date.now();
+      // Always render the checked state; the UI decides whether to show a toast.
+      send("auth:status", status);
+      if (previousState === "valid" && status.state === "expired") {
+        send("auth:expired", { message: "ニコニコの認証が期限切れまたは無効になりました。user_sessionを更新してください。" });
+      }
+    }
+    return status;
+  }).finally(() => {
+    if (authStatusPending === promise) authStatusPending = null;
+  });
+  authStatusPending = promise;
+  return promise;
+}
+
+function invalidateAuthStatusCache() {
+  authStatusCache = null;
+  authStatusCacheToken = "";
+  authStatusCacheAt = 0;
+  authStatusPendingToken = "";
+}
+
 ipcMain.handle("auth:set-user-session", async (_event, input) => {
   const value = normalizeUserSessionInput(input);
   const authSession = session.fromPartition("persist:nico-auth");
   if (!value) {
     await authSession.cookies.remove("https://nicovideo.jp/", "user_session");
-    send("auth:status", { checked: true });
-    return { loggedIn: false, cleared: true };
+    invalidateAuthStatusCache();
+    return { ...(await checkNicoAuthStatus({ force: true })), cleared: true };
   }
 
   // Store the token in Chromium's persistent cookie store, not settings.json or renderer storage.
@@ -1139,8 +1181,8 @@ ipcMain.handle("auth:set-user-session", async (_event, input) => {
   if (savedValue !== value) {
     throw new Error("user_sessionをCookieへ保存できませんでした。値を確認して再試行してください。");
   }
-  send("auth:status", { checked: true });
-  return { loggedIn: true, saved: true };
+  invalidateAuthStatusCache();
+  return { ...(await checkNicoAuthStatus({ force: true })), saved: true };
 });
 
 ipcMain.handle("auth:open-login", async () => {
@@ -1163,17 +1205,14 @@ ipcMain.handle("auth:open-login", async () => {
   });
   loginWindow.on("closed", () => {
     loginWindow = null;
-    send("auth:status", { checked: true });
+    invalidateAuthStatusCache();
+    void checkNicoAuthStatus({ force: true });
   });
   await loginWindow.loadURL("https://account.nicovideo.jp/login");
   return { opened: true };
 });
 
-ipcMain.handle("auth:status", async () => {
-  const cookies = await getNicoAuthCookies();
-  const loggedIn = Boolean(getNicoUserSession(cookies));
-  return { loggedIn };
-});
+ipcMain.handle("auth:status", () => checkNicoAuthStatus({ force: true }));
 
 ipcMain.handle("live:open-watch", async (_event, value) => {
   const liveId = safeLiveId(value);
@@ -3642,6 +3681,10 @@ app.whenReady().then(async () => {
   applyAutoLaunchSetting(getMonitorSettings().runAtStartup);
   await createSystemTray();
   makeWindow();
+  // Verify against Niconico at startup and periodically, including when the UI is hidden.
+  setTimeout(() => { void checkNicoAuthStatus({ force: true }); }, 2000);
+  const authCheckTimer = setInterval(() => { void checkNicoAuthStatus({ force: true }); }, AUTH_RECHECK_INTERVAL_MS);
+  if (typeof authCheckTimer.unref === "function") authCheckTimer.unref();
   if (process.platform === "win32") {
     const runAutomaticStreamlinkUpdate = () => {
       if (getMonitorSettings().autoUpdateStreamlink === false) {
