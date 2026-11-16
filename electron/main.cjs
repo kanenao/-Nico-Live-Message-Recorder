@@ -93,6 +93,7 @@ let liveArticleAudioSegmentDirectory = "";
 let liveArticleVideoFrameDirectory = "";
 let liveArticleVideoProcessedFiles = new Set();
 let liveArticleVideoSource = "none";
+let liveArticleCaptureStartedAt = 0;
 let liveArticleAudioSegmentTimer = null;
 let liveArticleAudioProcessing = false;
 let liveArticleAudioProcessedFiles = new Set();
@@ -1483,28 +1484,76 @@ function closeHiddenLiveArticleCapture() {
   return { closed: true };
 }
 
+async function collectLiveArticleStreamFrames(includeLatest = false) {
+  const directory = liveArticleVideoFrameDirectory;
+  if (!directory || !fs.existsSync(directory)) return 0;
+  const names = (await fs.promises.readdir(directory))
+    .filter(name => /^frame-\d{6}\.jpg$/i.test(name)).sort();
+  // FFmpeg writes the most recent JPEG without atomic rename. Skip until the
+  // next one appears, unless the capture process has finished.
+  const ready = includeLatest ? names : names.slice(0, -1);
+  let added = 0;
+  for (const name of ready) {
+    if (liveArticleVideoProcessedFiles.has(name)) continue;
+    const filePath = path.join(directory, name);
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size < 1000 || stat.size > 400000) continue;
+      const data = (await fs.promises.readFile(filePath)).toString("base64");
+      const checked = selectArticleCoverImage([{ image: data }]);
+      if (!checked) continue;
+      const sequence = Number((name.match(/(\d{6})/) || [])[1]) || 1;
+      const baseTime = liveArticleCaptureStartedAt || Date.now();
+      liveArticleFrames = selectLiveArticleFrameHistory([...liveArticleFrames, {
+        image: data,
+        capturedAt: new Date(baseTime + (sequence - 1) * LIVE_ARTICLE_FRAME_INTERVAL_MS).toISOString()
+      }], LIVE_ARTICLE_MAX_FRAMES);
+      added += 1;
+    } catch (_) {
+      // Skip a partially written frame and retry when the next one arrives.
+      continue;
+    }
+    liveArticleVideoProcessedFiles.add(name);
+    await fs.promises.rm(filePath, { force: true }).catch(() => {});
+  }
+  if (added) send("articles:live-state", {
+    state: "capturing", liveId: currentLiveId,
+    frameCount: liveArticleFrames.length, videoSource: "streamlink",
+    audioCapturing: Boolean(liveArticleAudioSegmentDirectory)
+  });
+  return added;
+}
+
 async function captureLiveArticleFrame() {
-  if (!liveArticleSessionActive || liveArticleCaptureInProgress || !liveArticleCaptureWindow ||
-      liveArticleCaptureWindow.isDestroyed() || liveArticleCaptureWindowLiveId !== currentLiveId) return null;
+  if (!liveArticleSessionActive || liveArticleCaptureInProgress) return null;
   liveArticleCaptureInProgress = true;
   try {
+    if (liveArticleVideoFrameDirectory) {
+      await collectLiveArticleStreamFrames();
+      return { frameCount: liveArticleFrames.length, videoSource: "streamlink" };
+    }
+    if (!liveArticleCaptureWindow || liveArticleCaptureWindow.isDestroyed() ||
+        liveArticleCaptureWindowLiveId !== currentLiveId) return null;
+    // Fallback only: a hidden watch-page screenshot is not guaranteed to
+    // contain the player, so prefer actual Streamlink video when available.
     const image = await liveArticleCaptureWindow.webContents.capturePage();
     if (!image || image.isEmpty()) return null;
     const resized = image.resize({ width: 640 });
     const encoded = resized.toJPEG(62).toString("base64");
     if (!encoded) return null;
-    liveArticleFrames.push({ image: encoded, capturedAt: new Date().toISOString() });
-    if (liveArticleFrames.length > LIVE_ARTICLE_MAX_FRAMES) liveArticleFrames.shift();
-    send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length, audioCapturing: Boolean(liveArticleAudioProcess) });
-    return { frameCount: liveArticleFrames.length };
+    liveArticleFrames = selectLiveArticleFrameHistory([...liveArticleFrames,
+      { image: encoded, capturedAt: new Date().toISOString() }], LIVE_ARTICLE_MAX_FRAMES);
+    send("articles:live-state", {
+      state: "capturing", liveId: currentLiveId,
+      frameCount: liveArticleFrames.length, videoSource: "watch-page",
+      audioCapturing: Boolean(liveArticleAudioSegmentDirectory)
+    });
+    return { frameCount: liveArticleFrames.length, videoSource: "watch-page" };
   } catch (error) {
     send("articles:live-state", { state: "capture-error", liveId: currentLiveId, message: error.message || String(error) });
     return null;
-  } finally {
-    liveArticleCaptureInProgress = false;
-  }
+  } finally { liveArticleCaptureInProgress = false; }
 }
-
 
 function formatLiveAudioOffset(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -1565,37 +1614,38 @@ async function startLiveArticleAudioCapture(liveId) {
   const settings = readAppSettings();
   const whisperCliPath = String(settings.articleWhisperCliPath || "");
   const modelPath = String(settings.articleWhisperModelPath || "");
-  if (!whisperCliPath || !modelPath || !fs.existsSync(whisperCliPath) || !fs.existsSync(modelPath)) {
-    send("articles:live-state", { state: "audio-disabled", liveId, message: "Whisper.cppの実行ファイルと日本語モデルを設定すると、生放送の音声も記事に反映できます。" });
-    return { enabled: false, reason: "Whisper.cpp未設定" };
+  const audioEnabled = Boolean(whisperCliPath && modelPath && fs.existsSync(whisperCliPath) && fs.existsSync(modelPath));
+  if (!audioEnabled) {
+    send("articles:live-state", { state: "audio-disabled", liveId,
+      message: "音声文字起こしにはWhisper.cppと日本語モデルが必要です。映像・コメントの分析は継続します。" });
   }
-  const tools = getVideoToolStatus();
-  if (!tools.streamlinkPath || !tools.ffmpegPath) {
-    send("articles:live-state", { state: "audio-error", liveId, message: "生放送音声の取得にはStreamlinkとFFmpegが必要です。" });
+  const videoTools = getVideoToolStatus();
+  if (!videoTools.streamlinkPath || !videoTools.ffmpegPath) {
+    send("articles:live-state", { state: "video-error", liveId,
+      message: "放送映像の直接取得にはStreamlinkとFFmpegが必要です。視聴ページの画像へ切り替えます。" });
     return { enabled: false, reason: "Streamlink / FFmpeg未検出" };
   }
   const cookies = await getNicoAuthCookies();
   const token = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), token);
-  const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-audio-"));
+  const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-media-"));
+  const frameDirectory = path.join(captureDirectory, "frames");
   const segmentDirectory = path.join(captureDirectory, "segments");
-  fs.mkdirSync(segmentDirectory, { recursive: true });
+  fs.mkdirSync(frameDirectory, { recursive: true });
+  if (audioEnabled) fs.mkdirSync(segmentDirectory, { recursive: true });
   const streamArgs = buildStreamlinkArgs({
     configPath: runtime.configPath, liveId, quality: "best",
-    stdout: true, ffmpegPath: tools.ffmpegPath
+    stdout: true, ffmpegPath: videoTools.ffmpegPath
   });
-  const ffmpegArgs = [
-    "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-vn",
-    "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
-    "-f", "segment", "-segment_time", String(LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS),
-    "-reset_timestamps", "1", "-segment_format", "wav",
-    path.join(segmentDirectory, "audio-%05d.wav")
-  ];
+  const ffmpegArgs = buildLiveArticleFfmpegArgs(
+    frameDirectory, segmentDirectory, audioEnabled,
+    LIVE_ARTICLE_FRAME_INTERVAL_MS / 1000, LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS
+  );
   let streamChild, ffmpegChild;
   try {
-    ffmpegChild = spawn(tools.ffmpegPath, ffmpegArgs, { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    ffmpegChild = spawn(videoTools.ffmpegPath, ffmpegArgs, { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
     await new Promise((resolve, reject) => { ffmpegChild.once("spawn", resolve); ffmpegChild.once("error", reject); });
-    streamChild = spawn(tools.streamlinkPath, streamArgs, {
+    streamChild = spawn(videoTools.streamlinkPath, streamArgs, {
       windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: runtime.env
     });
     await new Promise((resolve, reject) => { streamChild.once("spawn", resolve); streamChild.once("error", reject); });
@@ -1603,34 +1653,47 @@ async function startLiveArticleAudioCapture(liveId) {
     streamChild.stdout.pipe(ffmpegChild.stdin);
     ffmpegChild.stderr.on("data", chunk => {
       const message = chunk.toString("utf8").trim();
-      if (message) send("articles:live-state", { state: "audio-warning", liveId, message: message.slice(-500) });
+      if (message) send("articles:live-state", { state: "video-warning", liveId, message: message.slice(-500) });
     });
     streamChild.stderr.on("data", chunk => {
       const message = chunk.toString("utf8");
-      if (/error|failed|unable/i.test(message)) send("articles:live-state", { state: "audio-warning", liveId, message: message.trim().slice(-500) });
+      if (/error|failed|unable/i.test(message)) {
+        send("articles:live-state", { state: "video-warning", liveId, message: message.trim().slice(-500) });
+      }
     });
   } catch (error) {
     for (const child of [streamChild, ffmpegChild]) if (child) { try { child.kill(); } catch (_) {} }
     await fs.promises.rm(runtime.runtimeDirectory, { recursive: true, force: true }).catch(() => {});
     await fs.promises.rm(captureDirectory, { recursive: true, force: true }).catch(() => {});
-    send("articles:live-state", { state: "audio-error", liveId, message: "リアルタイム音声取得を開始できませんでした: " + (error.message || String(error)) });
+    send("articles:live-state", { state: "video-error", liveId,
+      message: "放送映像・音声の直接取得を開始できませんでした: " + (error.message || String(error)) });
     return { enabled: false, reason: error.message || String(error) };
   }
   liveArticleAudioProcess = streamChild;
   liveArticleAudioFfmpegProcess = ffmpegChild;
   liveArticleAudioRuntimeDirectory = runtime.runtimeDirectory;
   liveArticleAudioPath = captureDirectory;
-  liveArticleAudioSegmentDirectory = segmentDirectory;
+  liveArticleAudioSegmentDirectory = audioEnabled ? segmentDirectory : "";
+  liveArticleVideoFrameDirectory = frameDirectory;
+  liveArticleVideoSource = "streamlink";
+  liveArticleCaptureStartedAt = Date.now();
+  liveArticleVideoProcessedFiles = new Set();
   liveArticleAudioProcessedFiles = new Set();
   liveArticleAudioTranscriptSegments = [];
   liveArticleAudioTranscript = null;
   liveArticleAudioLastArticleUpdateAt = 0;
   liveArticleAudioClosePromise = new Promise(resolve => streamChild.once("close", (code, signal) => resolve({ code, signal })));
   liveArticleAudioFfmpegClosePromise = new Promise(resolve => ffmpegChild.once("close", (code, signal) => resolve({ code, signal })));
-  liveArticleAudioSegmentTimer = setInterval(() => void processLiveArticleAudioSegments(liveId, false), LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS);
+  liveArticleAudioSegmentTimer = setInterval(() => {
+    void processLiveArticleAudioSegments(liveId, false);
+    void collectLiveArticleStreamFrames().catch(() => {});
+  }, LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS);
   if (typeof liveArticleAudioSegmentTimer.unref === "function") liveArticleAudioSegmentTimer.unref();
-  send("articles:live-state", { state: "audio-capturing", liveId, segmentSeconds: LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS });
-  return { enabled: true, segmentSeconds: LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS };
+  send("articles:live-state", {
+    state: "video-capturing", liveId, videoSource: "streamlink",
+    audioCapturing: audioEnabled, frameIntervalSeconds: LIVE_ARTICLE_FRAME_INTERVAL_MS / 1000
+  });
+  return { enabled: true, audioEnabled, videoSource: "streamlink" };
 }
 async function stopLiveArticleAudioCapture(liveId) {
   const streamChild = liveArticleAudioProcess;
@@ -1645,8 +1708,13 @@ async function stopLiveArticleAudioCapture(liveId) {
     if (ffmpegChild && ffmpegChild.stdin && !ffmpegChild.stdin.destroyed) { try { ffmpegChild.stdin.end(); } catch (_) {} }
     if (liveArticleAudioFfmpegClosePromise) await Promise.race([liveArticleAudioFfmpegClosePromise, new Promise(resolve => setTimeout(resolve, 20000))]);
     while (liveArticleAudioProcessing) await new Promise(resolve => setTimeout(resolve, 100));
-    await processLiveArticleAudioSegments(liveId, true);
-    if (!liveArticleAudioTranscript || !liveArticleAudioTranscript.text) throw new Error("音声を文字起こしできませんでした。");
+    await collectLiveArticleStreamFrames(true);
+    if (liveArticleAudioSegmentDirectory) {
+      await processLiveArticleAudioSegments(liveId, true);
+      if (!liveArticleAudioTranscript || !liveArticleAudioTranscript.text) {
+        send("articles:live-state", { state: "audio-warning", liveId, message: "音声を文字起こしできませんでした。映像とコメントを利用します。" });
+      }
+    }
     send("articles:live-state", { state: "audio-complete", liveId, segmentCount: liveArticleAudioTranscript.segmentCount, characterCount: liveArticleAudioTranscript.text.length });
     return liveArticleAudioTranscript;
   } catch (error) {
@@ -1659,6 +1727,10 @@ async function stopLiveArticleAudioCapture(liveId) {
     liveArticleAudioFfmpegClosePromise = null;
     liveArticleAudioPath = "";
     liveArticleAudioSegmentDirectory = "";
+    liveArticleVideoFrameDirectory = "";
+    liveArticleVideoSource = "none";
+    liveArticleCaptureStartedAt = 0;
+    liveArticleVideoProcessedFiles = new Set();
     liveArticleAudioProcessing = false;
     liveArticleAudioProcessedFiles = new Set();
     const runtimeDirectory = liveArticleAudioRuntimeDirectory;
@@ -1683,9 +1755,14 @@ async function startLiveArticleSession(input = {}) {
   liveArticleSessionActive = true;
   try {
     await prepareCommentSession(liveId, displayName, "", programInfo);
-    await openHiddenLiveArticleCapture(liveId);
     await connectPreparedCommentSession(liveId);
-    await startLiveArticleAudioCapture(liveId);
+    const media = await startLiveArticleAudioCapture(liveId);
+    if (!media.enabled) {
+      // The HTML player is only a fallback. The preferred path samples actual
+      // video and audio directly from one Streamlink -> FFmpeg pipeline.
+      await openHiddenLiveArticleCapture(liveId);
+      liveArticleVideoSource = "watch-page";
+    }
     await new Promise(resolve => setTimeout(resolve, 8000));
     if (articleUpdateTimer) clearInterval(articleUpdateTimer);
     articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, LIVE_ARTICLE_REFRESH_INTERVAL_MS);
@@ -1695,7 +1772,7 @@ async function startLiveArticleSession(input = {}) {
     if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
     await captureLiveArticleFrame();
     articleRefreshPending = false;
-    send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length });
+    send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length, videoSource: liveArticleVideoSource });
     // Do not wait for the five-minute interval: create the first article as soon as
     // the live preview and comment connection are ready.
     void refreshLiveBroadcastArticle();
