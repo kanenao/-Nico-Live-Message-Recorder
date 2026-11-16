@@ -808,7 +808,7 @@ function updateCurrentBroadcaster(metadata, liveId) {
   if (!metadata || (liveId && currentLiveId !== liveId)) return;
   const name = String(metadata.broadcasterName || metadata.providerName ||
     (metadata.provider && metadata.provider.name) || "").trim();
-  const id = String(metadata.broadcasterId || metadata.providerId ||
+  const id = String(metadata.broadcasterUserId || metadata.broadcasterId || metadata.providerId ||
     (metadata.provider && metadata.provider.id) || "").trim();
   if (name) {
     currentBroadcasterName = name.slice(0, 80);
