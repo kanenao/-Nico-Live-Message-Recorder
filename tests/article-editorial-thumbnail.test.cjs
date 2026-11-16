@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { findArticleVideoCandidate } = require("../electron/article-thumbnail.cjs");
 const { renderArticleHtml } = require("../electron/article-export.cjs");
-const { generateArticleWithOllama } = require("../electron/ollama.cjs");
+const { generateArticleWithOllama, compactTranscript, selectRepresentativeFrames } = require("../electron/ollama.cjs");
 
 const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
 const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
@@ -92,4 +92,18 @@ test("Ollama accepts evidence-labelled sections without legacy paragraphs", asyn
     assert.equal(result.sections[0].source, "comments");
     assert.equal(result.sections[1].source, "mixed");
   } finally { global.fetch = originalFetch; }
+});
+
+test("long recordings retain the beginning, middle and end for the local model", () => {
+  const words = "前半".repeat(5000) + "中盤".repeat(5000) + "終盤".repeat(5000);
+  const trimmed = compactTranscript(words, 6000);
+  assert.ok(trimmed.length < 6200);
+  assert.ok(trimmed.includes("前半"));
+  assert.ok(trimmed.includes("中盤"));
+  assert.ok(trimmed.includes("終盤"));
+  const frames = Array.from({ length: 16 }, (_, i) => ({ capturedAt: "frame-" + i }));
+  const sampled = selectRepresentativeFrames(frames, 8);
+  assert.equal(sampled.length, 8);
+  assert.equal(sampled[0].capturedAt, "frame-0");
+  assert.equal(sampled[7].capturedAt, "frame-15");
 });
