@@ -64,6 +64,8 @@ let liveArticleCaptureWindow = null;
 let liveArticleCaptureWindowLiveId = "";
 let livePreviewId = "";
 let provider = null;
+let commentSessionEpoch = 0;
+let captureStopPromise = null;
 let timeshiftCommentFetchActive = false;
 let currentLiveId = "";
 let commentWriter = null;
@@ -1313,6 +1315,7 @@ ipcMain.handle("preview:open", (_event, value) => openLivePreview(value));
 ipcMain.handle("preview:close", () => closeLivePreview());
 
 async function prepareCommentSession(liveId, displayName = "", broadcasterId = "", programInfo = {}) {
+  commentSessionEpoch += 1;
   if (provider) {
     try { provider.disconnect(); } catch (_) {}
     provider = null;
@@ -1331,6 +1334,8 @@ async function prepareCommentSession(liveId, displayName = "", broadcasterId = "
 }
 
 async function connectPreparedCommentSession(liveId) {
+  const epoch = commentSessionEpoch;
+  let activeProvider = null;
   try {
     const cookies = await getNicoAuthCookies();
     const cookieHeader = cookies.map((cookie) => cookie.name + "=" + cookie.value).join("; ");
@@ -1338,8 +1343,11 @@ async function connectPreparedCommentSession(liveId) {
     const library = await import("nicomget");
     const NiconicoProvider = library.NiconicoProvider;
     if (!NiconicoProvider) throw new Error("コメント取得ライブラリを読み込めませんでした。");
+    if (epoch !== commentSessionEpoch || currentLiveId !== liveId) {
+      throw new Error("コメント接続は停止されました。");
+    }
 
-    provider = new NiconicoProvider({
+    activeProvider = new NiconicoProvider({
       liveId,
       cookies: cookieHeader || undefined,
       maxRetries: 10,
@@ -1347,26 +1355,36 @@ async function connectPreparedCommentSession(liveId) {
       fetchBacklog: true,
       backlogEvents: ["chat", "gift", "emotion", "notification", "operatorComment"]
     });
+    provider = activeProvider;
 
-    provider.on("comment", (data) => appendEvent("comment", data));
-    provider.on("gift", (data) => appendEvent("gift", data));
-    provider.on("emotion", (data) => appendEvent("emotion", data));
-    provider.on("notification", (data) => appendEvent("notification", data));
-    provider.on("operatorComment", (data) => appendEvent("operatorComment", data));
-    provider.on("metadata", (metadata) => {
+    activeProvider.on("comment", (data) => appendEvent("comment", data));
+    activeProvider.on("gift", (data) => appendEvent("gift", data));
+    activeProvider.on("emotion", (data) => appendEvent("emotion", data));
+    activeProvider.on("notification", (data) => appendEvent("notification", data));
+    activeProvider.on("operatorComment", (data) => appendEvent("operatorComment", data));
+    activeProvider.on("metadata", (metadata) => {
       updateCurrentBroadcaster(metadata, liveId);
       send("live:metadata", metadata);
     });
-    provider.on("stateChange", (state) => send("live:state", { state }));
-    provider.on("error", (error) => {
+    activeProvider.on("stateChange", (state) => {
+      if (epoch === commentSessionEpoch) send("live:state", { state });
+    });
+    activeProvider.on("error", (error) => {
       send("app:error", error && error.message ? error.message : String(error));
     });
 
-    const metadata = await provider.connect();
+    const metadata = await activeProvider.connect();
+    if (epoch !== commentSessionEpoch || currentLiveId !== liveId) {
+      throw new Error("コメント接続は停止されました。");
+    }
     updateCurrentBroadcaster(metadata, liveId);
     send("live:state", { state: "connected" });
     return { liveId, metadata, commentFile: commentFilePath };
   } catch (error) {
+    if (epoch !== commentSessionEpoch) {
+      if (activeProvider) { try { activeProvider.disconnect(); } catch (_) {} }
+      throw new Error("コメント接続は停止されました。");
+    }
     if (provider) {
       try { provider.disconnect(); } catch (_) {}
       provider = null;
@@ -1689,6 +1707,7 @@ ipcMain.handle("articles:live-start", (_event, input) => startLiveArticleSession
 ipcMain.handle("articles:live-stop", () => stopLiveArticleSession());
 
 ipcMain.handle("live:connect", async (_event, value, options = {}) => {
+  if (captureStopPromise) throw new Error("録画とコメントの停止完了後に再接続してください。");
   if (timeshiftCommentFetchActive) {
     throw new Error("過去配信のコメント取得中です。完了後にコメント接続を開始してください。");
   }
@@ -1699,10 +1718,12 @@ ipcMain.handle("live:connect", async (_event, value, options = {}) => {
   return connectPreparedCommentSession(liveId);
 });
 ipcMain.handle("live:disconnect", async () => {
+  if (captureStopPromise) throw new Error("録画とコメントを停止処理中です。");
   if (liveArticleSessionActive) return stopLiveArticleSession();
   if (timeshiftCommentFetchActive) {
     throw new Error("過去配信のコメント取得中は切断できません。");
   }
+  commentSessionEpoch += 1;
   if (provider) {
     try { provider.disconnect(); } catch (_) {}
     provider = null;
@@ -2932,6 +2953,7 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
 });
 
 ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => {
+  if (captureStopPromise) throw new Error("録画とコメントの停止完了後に再開してください。");
   if (timeshiftCommentFetchActive) {
     throw new Error("過去配信のコメント取得中です。完了後に録画を開始してください。");
   }
@@ -2961,10 +2983,12 @@ ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => 
   let commentResult = null;
   let commentError = "";
   let commentSettled = false;
+  const commentEpochAtStart = commentSessionEpoch;
   const commentTask = (reuseComments
     ? Promise.resolve({ liveId, commentFile: commentFilePath, reused: true })
     : connectPreparedCommentSession(liveId)
   ).then((value) => {
+    if (commentSessionEpoch !== commentEpochAtStart) return null;
     commentResult = value;
     commentSettled = true;
     send("capture:state", {
@@ -2976,6 +3000,7 @@ ipcMain.handle("capture:start", async (_event, value, quality, options = {}) => 
     });
     return value;
   }).catch((error) => {
+    if (commentSessionEpoch !== commentEpochAtStart) return null;
     commentError = String(error && error.message || error);
     commentSettled = true;
     send("capture:state", {
@@ -3056,6 +3081,53 @@ async function stopStreamlinkRecording() {
 }
 
 ipcMain.handle("video:stop", () => stopStreamlinkRecording());
+
+// Complete the media file and its videoStop marker before closing the comment
+// writer. Repeated clicks share the same stop operation and cannot race a new
+// capture. A delayed nicomget connection is invalidated immediately.
+async function stopCaptureSession() {
+  if (captureStopPromise) return captureStopPromise;
+  if (timeshiftCommentFetchActive) {
+    throw new Error("タイムシフトのコメント取得中です。映像停止は専用の録画停止操作から行ってください。");
+  }
+  commentSessionEpoch += 1;
+  captureStopPromise = (async () => {
+    let video = { path: null };
+    let videoError = null;
+    let commentError = null;
+    try {
+      video = await stopStreamlinkRecording();
+    } catch (error) {
+      videoError = error;
+    }
+    if (provider) {
+      const oldProvider = provider;
+      provider = null;
+      try { await oldProvider.disconnect(); } catch (error) { commentError = error; }
+    }
+    try {
+      await closeCommentWriter();
+    } catch (error) {
+      commentError = commentError || error;
+    }
+    const commentFile = commentFilePath;
+    currentLiveId = "";
+    send("live:state", { state: commentError ? "error" : "disconnected" });
+    if (videoError || commentError) {
+      throw new Error([
+        videoError ? "映像録画の停止・保存に失敗しました: " + (videoError.message || videoError) : "",
+        commentError ? "コメントログの保存に失敗しました: " + (commentError.message || commentError) : ""
+      ].filter(Boolean).join(" ／ "));
+    }
+    return { video, comment: { disconnected: true, commentFile } };
+  })();
+  try {
+    return await captureStopPromise;
+  } finally {
+    captureStopPromise = null;
+  }
+}
+ipcMain.handle("capture:stop", () => stopCaptureSession());
 
 function transcodeCompositionToMp4(inputPath, outputPath, quality, durationMs) {
   const ffmpegPath = getVideoToolStatus().ffmpegPath;
