@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   setLibraryProfileUserId: (broadcaster, userId) => ipcRenderer.invoke("library:set-profile-user-id", broadcaster, userId),
   getLibraryThumbnail: (filePath) => ipcRenderer.invoke("library:thumbnail", filePath),
   getBroadcastArticles: () => ipcRenderer.invoke("articles:list"),
+  getArticleThumbnail: (articlePath) => ipcRenderer.invoke("articles:thumbnail", articlePath),
   exportBroadcastArticleHtml: (article) => ipcRenderer.invoke("articles:export-html", article),
   deleteBroadcastArticle: (articlePath) => ipcRenderer.invoke("articles:delete", articlePath),
   generateBroadcastArticle: (filePath) => ipcRenderer.invoke("articles:generate-from-comment", filePath),
