@@ -15,6 +15,7 @@ const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
+const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
 const articleExport = require("./article-export.cjs");
 const { selectLiveArticlePreviews } = require("./live-article-preview.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
@@ -120,6 +121,10 @@ let streamlinkFinalOutputPath = "";
 let streamlinkFfmpegPath = "";
 let streamlinkStderr = "";
 let streamlinkStopRequested = false;
+let streamlinkRecordingTimeHint = "";
+let streamlinkRecordingFallbackAt = "";
+let commentSessionFallbackAt = "";
+let recordingNamingSession = null;
 let composeWriter = null;
 let composeFilePath = "";
 let composeFinalFilePath = "";
@@ -476,6 +481,25 @@ function broadcasterFolderName(name, userId) {
   return (label + id).slice(0, 76);
 }
 
+// Final filenames are chosen at session end so provider metadata discovered
+// *after* Streamlink starts can still supply the actual broadcaster name.
+// The same stem is shared even if timeshift comments close before the video.
+function namingDirectories(name, broadcasterId) {
+  const folder = broadcasterFolderName(name, broadcasterId);
+  return ["videos", "comments", "articles"].map(category =>
+    path.join(dataRoot(), category, folder));
+}
+
+function resolvedRecordingStem(liveId, name, broadcasterId, startedAt, fallbackAt) {
+  if (recordingNamingSession && recordingNamingSession.liveId === liveId) {
+    return recordingNamingSession.stem;
+  }
+  const preferred = recordingFileStem(name, startedAt, fallbackAt);
+  const stem = chooseUniqueRecordingStem(preferred, namingDirectories(name, broadcasterId), fs.existsSync);
+  recordingNamingSession = { liveId, stem };
+  return stem;
+}
+
 function getCommentFormat() {
   const settings = readAppSettings();
   const value = settings.monitor && settings.monitor.commentFormat;
@@ -520,15 +544,46 @@ async function moveCommentLogToBroadcasterFolder(sourcePath) {
   if (!sourcePath || !fs.existsSync(sourcePath)) return sourcePath;
   const folder = broadcasterFolderName(currentBroadcasterName, currentBroadcasterId);
   const destinationDirectory = path.join(dataRoot(), "comments", folder);
-  if (path.resolve(path.dirname(sourcePath)) === path.resolve(destinationDirectory)) return sourcePath;
   fs.mkdirSync(destinationDirectory, { recursive: true });
-  let destinationPath = path.join(destinationDirectory, path.basename(sourcePath));
+  const stem = resolvedRecordingStem(currentLiveId, currentBroadcasterName,
+    currentBroadcasterId, currentProgramInfo.startedAt, commentSessionFallbackAt);
+  const destinationPath = path.join(destinationDirectory, stem + ".jsonl");
+  if (path.resolve(destinationPath) === path.resolve(sourcePath)) return sourcePath;
   if (fs.existsSync(destinationPath)) {
-    destinationPath = path.join(destinationDirectory,
-      path.basename(sourcePath, ".jsonl") + "_" + stamp() + ".jsonl");
+    throw new Error("別のコメントログと保存名が重複しています。元ファイルを保持しました。");
   }
   await fs.promises.rename(sourcePath, destinationPath);
   return destinationPath;
+}
+
+// Live articles may have been saved before the comment file obtained its final
+// name. Move these JSONs instead of leaving duplicate entries in the library.
+function relocateArticleForRenamedComment(oldPath, newPath) {
+  if (!oldPath || !newPath || path.resolve(oldPath) === path.resolve(newPath)) return;
+  const root = path.join(dataRoot(), "articles");
+  const newStem = path.basename(newPath, ".jsonl");
+  const oldStem = path.basename(oldPath, ".jsonl");
+  let folders = [];
+  try { folders = fs.readdirSync(root, { withFileTypes: true }).filter(item => item.isDirectory()); }
+  catch (_) { return; }
+  for (const folder of folders) {
+    const candidate = path.join(root, folder.name, oldStem + ".json");
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const article = JSON.parse(fs.readFileSync(candidate, "utf8"));
+      if (!article.commentFile || path.resolve(article.commentFile) !== path.resolve(oldPath)) continue;
+      const directory = path.join(root, broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
+      fs.mkdirSync(directory, { recursive: true });
+      const target = path.join(directory, newStem + ".json");
+      if (target !== candidate && fs.existsSync(target)) continue;
+      article.commentFile = newPath;
+      article.articlePath = target;
+      fs.writeFileSync(target, JSON.stringify(article, null, 2), "utf8");
+      if (target !== candidate) fs.unlinkSync(candidate);
+    } catch (error) {
+      send("app:error", "既存のAI記事のファイル名を更新できませんでした: " + error.message);
+    }
+  }
 }
 
 async function enhanceBroadcastArticleWithOllama(article, records, articleContext, options = {}) {
@@ -976,6 +1031,7 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
   const directory = path.join(dataRoot(), "comments",
     broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
+  commentSessionFallbackAt = new Date().toISOString();
   commentFilePath = path.join(directory, liveId + "_" + stamp() + ".jsonl");
   commentWriterError = null;
   commentWriter = fs.createWriteStream(commentFilePath, { flags: "wx" });
@@ -1181,15 +1237,16 @@ async function closeCommentWriter(options = {}) {
     send("app:error", "コメントログを正常に確定できませんでした。未完成ファイルは元の場所に残しています: " + writeFailure.message);
     return;
   }
+  while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
   try {
     commentFilePath = await moveCommentLogToBroadcasterFolder(oldPath);
+    relocateArticleForRenamedComment(oldPath, commentFilePath);
     send("comments:file", { path: commentFilePath });
     await exportCommentSidecars(commentFilePath);
   } catch (error) {
-    commentFilePath = oldPath;
+    if (!commentFilePath || !fs.existsSync(commentFilePath)) commentFilePath = oldPath;
     send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
   }
-  while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
   if (options.skipArticle === true) return;
   try {
     const savedArticle = await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
@@ -1522,6 +1579,7 @@ async function prepareCommentSession(liveId, displayName = "", broadcasterId = "
     provider = null;
   }
   await closeCommentWriter();
+  recordingNamingSession = null;
   currentLiveId = liveId;
   currentProgramInfo = {
     programTitle: String(programInfo.programTitle || programInfo.title || "").slice(0, 300),
@@ -2803,21 +2861,26 @@ async function finalizeStreamlinkRecording(exit) {
 
   if (hasOutput && finalPath && streamlinkLiveId) {
     try {
+      const name = streamlinkBroadcasterName ||
+        (currentLiveId === streamlinkLiveId ? currentBroadcasterName : "");
+      const broadcasterId = streamlinkBroadcasterId ||
+        (currentLiveId === streamlinkLiveId ? currentBroadcasterId : "");
       const finalDirectory = path.join(dataRoot(), "videos",
-        broadcasterFolderName(streamlinkBroadcasterName || currentBroadcasterName, streamlinkBroadcasterId || currentBroadcasterId));
+        broadcasterFolderName(name, broadcasterId));
       fs.mkdirSync(finalDirectory, { recursive: true });
-      if (path.resolve(path.dirname(finalPath)) !== path.resolve(finalDirectory)) {
-        let organizedPath = path.join(finalDirectory, path.basename(finalPath));
-        if (fs.existsSync(organizedPath)) {
-          organizedPath = path.join(finalDirectory,
-            path.basename(finalPath, path.extname(finalPath)) + "_" + stamp() + path.extname(finalPath));
-        }
+      const startedAt = (currentLiveId === streamlinkLiveId && currentProgramInfo.startedAt) ||
+        streamlinkRecordingTimeHint;
+      const stem = resolvedRecordingStem(streamlinkLiveId, name, broadcasterId,
+        startedAt, streamlinkRecordingFallbackAt);
+      const organizedPath = path.join(finalDirectory, stem + path.extname(finalPath));
+      if (path.resolve(finalPath) !== path.resolve(organizedPath)) {
+        if (fs.existsSync(organizedPath)) throw new Error("同名の録画動画がすでに存在します。");
         await fs.promises.rename(finalPath, organizedPath);
         finalPath = organizedPath;
-        streamlinkFinalOutputPath = organizedPath;
       }
+      streamlinkFinalOutputPath = finalPath;
     } catch (error) {
-      send("app:error", "配信者フォルダーへの整理に失敗しました。元の保存先に残しています: " + error.message);
+      send("app:error", "録画動画の配信者名・放送日時への変更に失敗しました。元の保存先に残しています: " + error.message);
     }
   }
 
@@ -2831,6 +2894,19 @@ async function finalizeStreamlinkRecording(exit) {
   }
   if (hasFinalOutput && converted && finalPath !== rawPath) {
     await fs.promises.unlink(rawPath).catch(() => {});
+  }
+  if (hasFinalOutput && streamlinkLiveId) {
+    try {
+      rememberRecordedVideo(finalPath, {
+        liveId: streamlinkLiveId,
+        broadcasterName: streamlinkBroadcasterName || currentBroadcasterName,
+        broadcasterId: streamlinkBroadcasterId || currentBroadcasterId,
+        startedAt: (currentLiveId === streamlinkLiveId && currentProgramInfo.startedAt) ||
+          streamlinkRecordingTimeHint || streamlinkRecordingFallbackAt
+      });
+    } catch (error) {
+      send("app:error", "録画の番組ID情報を記録できませんでした: " + error.message);
+    }
   }
   if (!hasFinalOutput) {
     finalPath = null;
@@ -2877,6 +2953,8 @@ async function finalizeStreamlinkRecording(exit) {
   streamlinkBroadcasterName = "";
   streamlinkBroadcasterId = "";
   streamlinkFfmpegPath = "";
+  streamlinkRecordingTimeHint = "";
+  streamlinkRecordingFallbackAt = "";
   const finalStderr = streamlinkStderr; streamlinkStderr = "";
   if (runtimeDirectory) {
     await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
@@ -2999,9 +3077,18 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   const cookies = await getNicoAuthCookies();
   const userSession = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
-  if (displayName) currentBroadcasterName = String(displayName).slice(0, 80);
-  if (broadcasterId) currentBroadcasterId = String(broadcasterId);
-  const directory = path.join(dataRoot(), "videos", broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
+  const linkedToComments = Boolean(commentWriter && currentLiveId === liveId);
+  if (!linkedToComments) recordingNamingSession = null;
+  streamlinkRecordingFallbackAt = new Date().toISOString();
+  streamlinkRecordingTimeHint = String(options.timeshiftOriginAt ||
+    (currentLiveId === liveId && currentProgramInfo.startedAt) || "");
+  const videoBroadcasterName = String(displayName || (linkedToComments ? currentBroadcasterName : "")).slice(0, 80);
+  const videoBroadcasterId = String(broadcasterId || (linkedToComments ? currentBroadcasterId : ""));
+  if (linkedToComments) {
+    if (videoBroadcasterName) currentBroadcasterName = videoBroadcasterName;
+    if (videoBroadcasterId) currentBroadcasterId = videoBroadcasterId;
+  }
+  const directory = path.join(dataRoot(), "videos", broadcasterFolderName(videoBroadcasterName, videoBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
   const outputPath = path.join(directory, liveId + "_" + stamp() + ".ts");
   const args = buildStreamlinkArgs({
@@ -3043,8 +3130,8 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   streamlinkOutputPath = outputPath;
   streamlinkFinalOutputPath = ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath;
   streamlinkLiveId = liveId;
-  streamlinkBroadcasterName = currentBroadcasterName;
-  streamlinkBroadcasterId = currentBroadcasterId;
+  streamlinkBroadcasterName = videoBroadcasterName;
+  streamlinkBroadcasterId = videoBroadcasterId;
   streamlinkFfmpegPath = ffmpegPath || "";
   streamlinkStopRequested = false;
   streamlinkStderr = "";
@@ -3179,7 +3266,8 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
       await prepareCommentSession(
         liveId,
         page && page.broadcasterName || "",
-        page && page.broadcasterId || ""
+        page && page.broadcasterId || "",
+        { startedAt: page && page.beginAt || "" }
       );
       const video = await startVideoInternal(
         liveId,
@@ -3204,7 +3292,8 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
     let commentCount = 0;
     let commentsTruncated = false;
     let finalCommentFile = "";
-    await prepareCommentSession(liveId, page.broadcasterName, page.broadcasterId);
+    await prepareCommentSession(liveId, page.broadcasterName, page.broadcasterId,
+      { startedAt: page.beginAt || "" });
     video = await startVideoInternal(
       liveId,
       quality,
@@ -3649,6 +3738,62 @@ ipcMain.handle("data:open-folder", async () => {
   return { error: result || "" };
 });
 
+// The filename no longer contains the lv ID. Retain the video-to-broadcast
+// mapping in an internal index so profile lookup, articles and library actions
+// can still work for recordings made without a comment session.
+function recordingIndexPath() {
+  return path.join(dataRoot(), "recording-index.json");
+}
+
+function loadRecordingIndex() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(recordingIndexPath(), "utf8"));
+    return saved && typeof saved === "object" && !Array.isArray(saved) && saved.files &&
+      typeof saved.files === "object" && !Array.isArray(saved.files) ? saved.files : {};
+  } catch (_) { return {}; }
+}
+
+function recordingRelativeKey(filePath) {
+  const relative = path.relative(dataRoot(), path.resolve(filePath)).replace(/\\/g, "/");
+  return relative.startsWith("videos/") && !relative.includes("../") ? relative : "";
+}
+
+function rememberRecordedVideo(filePath, information) {
+  const key = recordingRelativeKey(filePath);
+  if (!key || !/^lv\d{5,}$/i.test(String(information.liveId || ""))) return;
+  const entries = loadRecordingIndex();
+  entries[key] = {
+    liveId: String(information.liveId).toLowerCase(),
+    broadcasterId: String(information.broadcasterId || "").slice(0, 40),
+    broadcasterName: String(information.broadcasterName || "").slice(0, 80),
+    startedAt: String(information.startedAt || "").slice(0, 40)
+  };
+  // Keep the index bounded and prune any recordings removed from disk.
+  const keys = Object.keys(entries);
+  if (keys.length > 3000) {
+    for (const existing of keys) {
+      if (!fs.existsSync(path.join(dataRoot(), existing))) delete entries[existing];
+    }
+  }
+  const temporary = recordingIndexPath() + "." + process.pid + ".tmp";
+  fs.writeFileSync(temporary, JSON.stringify({ version: 1, files: entries }, null, 2), "utf8");
+  fs.renameSync(temporary, recordingIndexPath());
+}
+
+function commentLogLiveId(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const buffer = Buffer.alloc(8192);
+    const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    const first = buffer.subarray(0, bytes).toString("utf8").split(/\r?\n/, 1)[0];
+    const marker = JSON.parse(first);
+    return /^lv\d{5,}$/i.test(String(marker.liveId || ""))
+      ? String(marker.liveId).toLowerCase() : "";
+  } catch (_) { return ""; }
+  finally { if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {} }
+}
+
 const LIBRARY_VIDEO_EXTENSIONS = new Set([".mp4", ".ts", ".mkv", ".webm", ".mov"]);
 const LIBRARY_COMMENT_EXTENSIONS = new Set([".jsonl", ".csv", ".ass"]);
 
@@ -3693,6 +3838,26 @@ function listCaptureLibrary() {
         }
       }
     }
+  }
+  const savedIndex = loadRecordingIndex();
+  const matchedLogs = new Map();
+  for (const item of items) {
+    if (item.type !== "comment" || item.extension !== "JSONL") continue;
+    item.liveId = item.liveId || commentLogLiveId(item.path);
+    if (item.liveId) {
+      const key = item.broadcaster.toLowerCase() + "/" +
+        path.basename(item.path, path.extname(item.path)).toLowerCase();
+      matchedLogs.set(key, item.liveId);
+    }
+  }
+  for (const item of items) {
+    if (item.liveId) continue;
+    const key = item.broadcaster.toLowerCase() + "/" +
+      path.basename(item.path, path.extname(item.path)).toLowerCase();
+    const indexed = item.type === "video"
+      ? savedIndex[recordingRelativeKey(item.path)] : null;
+    item.liveId = indexed && /^lv\d{5,}$/i.test(String(indexed.liveId || ""))
+      ? indexed.liveId : (matchedLogs.get(key) || "");
   }
   const savedArticles = listBroadcastArticles().items;
   for (const item of items) {
@@ -4076,6 +4241,18 @@ ipcMain.handle("library:delete-video", async (_event, value) => {
   if (confirmation.response !== 0) return { cancelled: true };
 
   await fs.promises.unlink(target);
+  try {
+    const key = recordingRelativeKey(target);
+    const entries = loadRecordingIndex();
+    if (key && Object.hasOwn(entries, key)) {
+      delete entries[key];
+      const temp = recordingIndexPath() + "." + process.pid + ".tmp";
+      fs.writeFileSync(temp, JSON.stringify({ version: 1, files: entries }, null, 2), "utf8");
+      fs.renameSync(temp, recordingIndexPath());
+    }
+  } catch (error) {
+    send("app:error", "削除した動画の番組情報を整理できませんでした: " + error.message);
+  }
   return { deleted: true, fileName: path.basename(target) };
 });
 
