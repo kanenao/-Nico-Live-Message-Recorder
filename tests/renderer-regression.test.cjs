@@ -85,7 +85,7 @@ test("automatic monitor recording is queued instead of interrupting an active re
   assert.ok(renderer.includes("finally {"));
   assert.ok(renderer.includes("recordStartInProgress = false;"));
   assert.ok(renderer.includes("processMonitorAutoQueue();"));
-  assert.ok(renderer.includes('recordButton.disabled = videoCaptureState === "recording"'));
+  assert.ok(renderer.includes('recordButton.disabled = captureStopInProgress || videoCaptureState === "recording"'));
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
 
