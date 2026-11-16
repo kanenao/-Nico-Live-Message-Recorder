@@ -15,6 +15,7 @@ const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
+const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
 const articleExport = require("./article-export.cjs");
 const { selectLiveArticlePreviews } = require("./live-article-preview.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
@@ -120,6 +121,10 @@ let streamlinkFinalOutputPath = "";
 let streamlinkFfmpegPath = "";
 let streamlinkStderr = "";
 let streamlinkStopRequested = false;
+let streamlinkRecordingTimeHint = "";
+let streamlinkRecordingFallbackAt = "";
+let commentSessionFallbackAt = "";
+let recordingNamingSession = null;
 let composeWriter = null;
 let composeFilePath = "";
 let composeFinalFilePath = "";
@@ -476,6 +481,25 @@ function broadcasterFolderName(name, userId) {
   return (label + id).slice(0, 76);
 }
 
+// Final filenames are chosen at session end so provider metadata discovered
+// *after* Streamlink starts can still supply the actual broadcaster name.
+// The same stem is shared even if timeshift comments close before the video.
+function namingDirectories(name, broadcasterId) {
+  const folder = broadcasterFolderName(name, broadcasterId);
+  return ["videos", "comments", "articles"].map(category =>
+    path.join(dataRoot(), category, folder));
+}
+
+function resolvedRecordingStem(liveId, name, broadcasterId, startedAt, fallbackAt) {
+  if (recordingNamingSession && recordingNamingSession.liveId === liveId) {
+    return recordingNamingSession.stem;
+  }
+  const preferred = recordingFileStem(name, startedAt, fallbackAt);
+  const stem = chooseUniqueRecordingStem(preferred, namingDirectories(name, broadcasterId), fs.existsSync);
+  recordingNamingSession = { liveId, stem };
+  return stem;
+}
+
 function getCommentFormat() {
   const settings = readAppSettings();
   const value = settings.monitor && settings.monitor.commentFormat;
@@ -520,15 +544,46 @@ async function moveCommentLogToBroadcasterFolder(sourcePath) {
   if (!sourcePath || !fs.existsSync(sourcePath)) return sourcePath;
   const folder = broadcasterFolderName(currentBroadcasterName, currentBroadcasterId);
   const destinationDirectory = path.join(dataRoot(), "comments", folder);
-  if (path.resolve(path.dirname(sourcePath)) === path.resolve(destinationDirectory)) return sourcePath;
   fs.mkdirSync(destinationDirectory, { recursive: true });
-  let destinationPath = path.join(destinationDirectory, path.basename(sourcePath));
+  const stem = resolvedRecordingStem(currentLiveId, currentBroadcasterName,
+    currentBroadcasterId, currentProgramInfo.startedAt, commentSessionFallbackAt);
+  const destinationPath = path.join(destinationDirectory, stem + ".jsonl");
+  if (path.resolve(destinationPath) === path.resolve(sourcePath)) return sourcePath;
   if (fs.existsSync(destinationPath)) {
-    destinationPath = path.join(destinationDirectory,
-      path.basename(sourcePath, ".jsonl") + "_" + stamp() + ".jsonl");
+    throw new Error("別のコメントログと保存名が重複しています。元ファイルを保持しました。");
   }
   await fs.promises.rename(sourcePath, destinationPath);
   return destinationPath;
+}
+
+// Live articles may have been saved before the comment file obtained its final
+// name. Move these JSONs instead of leaving duplicate entries in the library.
+function relocateArticleForRenamedComment(oldPath, newPath) {
+  if (!oldPath || !newPath || path.resolve(oldPath) === path.resolve(newPath)) return;
+  const root = path.join(dataRoot(), "articles");
+  const newStem = path.basename(newPath, ".jsonl");
+  const oldStem = path.basename(oldPath, ".jsonl");
+  let folders = [];
+  try { folders = fs.readdirSync(root, { withFileTypes: true }).filter(item => item.isDirectory()); }
+  catch (_) { return; }
+  for (const folder of folders) {
+    const candidate = path.join(root, folder.name, oldStem + ".json");
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const article = JSON.parse(fs.readFileSync(candidate, "utf8"));
+      if (!article.commentFile || path.resolve(article.commentFile) !== path.resolve(oldPath)) continue;
+      const directory = path.join(root, broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
+      fs.mkdirSync(directory, { recursive: true });
+      const target = path.join(directory, newStem + ".json");
+      if (target !== candidate && fs.existsSync(target)) continue;
+      article.commentFile = newPath;
+      article.articlePath = target;
+      fs.writeFileSync(target, JSON.stringify(article, null, 2), "utf8");
+      if (target !== candidate) fs.unlinkSync(candidate);
+    } catch (error) {
+      send("app:error", "既存のAI記事のファイル名を更新できませんでした: " + error.message);
+    }
+  }
 }
 
 async function enhanceBroadcastArticleWithOllama(article, records, articleContext, options = {}) {
@@ -976,6 +1031,7 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
   const directory = path.join(dataRoot(), "comments",
     broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
+  commentSessionFallbackAt = new Date().toISOString();
   commentFilePath = path.join(directory, liveId + "_" + stamp() + ".jsonl");
   commentWriterError = null;
   commentWriter = fs.createWriteStream(commentFilePath, { flags: "wx" });
@@ -1181,15 +1237,16 @@ async function closeCommentWriter(options = {}) {
     send("app:error", "コメントログを正常に確定できませんでした。未完成ファイルは元の場所に残しています: " + writeFailure.message);
     return;
   }
+  while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
   try {
     commentFilePath = await moveCommentLogToBroadcasterFolder(oldPath);
+    relocateArticleForRenamedComment(oldPath, commentFilePath);
     send("comments:file", { path: commentFilePath });
     await exportCommentSidecars(commentFilePath);
   } catch (error) {
-    commentFilePath = oldPath;
+    if (!commentFilePath || !fs.existsSync(commentFilePath)) commentFilePath = oldPath;
     send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
   }
-  while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
   if (options.skipArticle === true) return;
   try {
     const savedArticle = await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
