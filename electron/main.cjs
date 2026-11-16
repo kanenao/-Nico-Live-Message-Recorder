@@ -22,6 +22,7 @@ const { verifyStreamlinkPlugin } = require("./streamlink-probe.cjs");
 const { normalizeNicoCookies, getNicoUserSession } = require("./nico-cookies.cjs");
 const { normalizeUserSessionInput } = require("./nico-session.cjs");
 const { extractNicoUserId, fetchNicoProfileIcon, normalizeProfileUserId, nicoUserPageUrl } = require("./nico-profile.cjs");
+const { readBroadcasterFromCommentLog, verifiedProgramBroadcaster } = require("./library-profile-resolution.cjs");
 const { downloadOllamaInstaller, pullOllamaModel } = require("./ollama-setup.cjs");
 const {
   normalizeCompositionFormat,
@@ -3322,6 +3323,50 @@ function getCachedNicoProfileIcon(userId) {
   return promise;
 }
 
+const libraryProgramProfileCache = new Map();
+async function getLibraryProgramProfile(liveId, broadcaster) {
+  if (!/^lv\d{5,}$/i.test(String(liveId || ""))) return "";
+  const key = String(liveId).toLowerCase();
+  const cached = libraryProgramProfileCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise.then(page => verifiedProgramBroadcaster(page, broadcaster));
+  const promise = (async () => {
+    try {
+      const cookieHeader = await getNicoCookieHeader().catch(() => "");
+      return await fetchTimeshiftProgramPage(key, cookieHeader, { timeoutMs: 6500 });
+    } catch (_) {
+      // Private, deleted or unavailable broadcasts cannot be resolved reliably.
+      return null;
+    }
+  })();
+  libraryProgramProfileCache.set(key, { promise, expiresAt: Date.now() + 10 * 60 * 1000 });
+  void promise.then(page => libraryProgramProfileCache.set(key, {
+    promise: Promise.resolve(page),
+    expiresAt: Date.now() + (page ? 6 * 60 * 60 * 1000 : 10 * 60 * 1000)
+  }));
+  return promise.then(page => verifiedProgramBroadcaster(page, broadcaster));
+}
+
+async function discoverLibraryBroadcasterProfile(groupName, groupItems) {
+  // First use the original program metadata saved in comment logs.
+  const logs = groupItems.filter(item => item.type === "comment" && item.extension === "JSONL" && item.liveId).slice(0, 8);
+  const loggedIds = new Set();
+  for (const item of logs) {
+    const id = await readBroadcasterFromCommentLog(item.path, item.liveId, groupName);
+    if (id) loggedIds.add(id);
+    if (loggedIds.size > 1) return ""; // conflicting identities: do not guess
+  }
+  if (loggedIds.size === 1) return [...loggedIds][0];
+  // Legacy videos have no metadata log sometimes. Look up only their own broadcast IDs.
+  const liveIds = [...new Set(groupItems.map(item => item.liveId).filter(Boolean))].slice(0, 3);
+  const ids = new Set();
+  for (const liveId of liveIds) {
+    const id = await getLibraryProgramProfile(liveId, groupName);
+    if (id) ids.add(id);
+    if (ids.size > 1) return "";
+  }
+  return ids.size === 1 ? [...ids][0] : "";
+}
+
 async function listCaptureLibraryWithProfiles() {
   const library = listCaptureLibrary();
   const byName = new Map();
@@ -3339,15 +3384,31 @@ async function listCaptureLibraryWithProfiles() {
   const stored = readAppSettings().libraryProfileIds;
   const manualIds = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
   const knownIds = new Set();
+  const unresolvedGroups = new Map();
   for (const item of library.items) {
     const id = extractNicoUserId(item.broadcaster) ||
       normalizeProfileUserId(Object.hasOwn(manualIds, item.broadcaster) ? manualIds[item.broadcaster] : "") ||
       byName.get(item.broadcaster) || "";
-    if (!id) continue;
-    item.broadcasterUserId = id;
-    item.profileUrl = nicoUserPageUrl(id);
-    knownIds.add(id);
+    if (id) {
+      item.broadcasterUserId = id;
+      item.profileUrl = nicoUserPageUrl(id);
+      knownIds.add(id);
+    } else {
+      if (!unresolvedGroups.has(item.broadcaster)) unresolvedGroups.set(item.broadcaster, []);
+      unresolvedGroups.get(item.broadcaster).push(item);
+    }
   }
+  // Existing recordings are resolved automatically without requiring the manual ID form.
+  // Limit network and disk work; unresolved groups keep their neutral icon.
+  await mapWithConcurrency([...unresolvedGroups], 3, async ([name, groupItems]) => {
+    const id = await discoverLibraryBroadcasterProfile(name, groupItems);
+    if (!id) return;
+    for (const item of groupItems) {
+      item.broadcasterUserId = id;
+      item.profileUrl = nicoUserPageUrl(id);
+    }
+    knownIds.add(id);
+  });
   const icons = new Map();
   // たくさんの過去録画を読み込んでも外部への同時アクセスを抑制する。
   await mapWithConcurrency([...knownIds], 4, async (id) => {
