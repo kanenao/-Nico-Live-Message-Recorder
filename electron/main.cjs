@@ -16,6 +16,7 @@ const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const articleExport = require("./article-export.cjs");
+const { selectLiveArticlePreviews } = require("./live-article-preview.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
 const { writeCommentLine, finishCommentWriter } = require("./comment-writer.cjs");
@@ -691,7 +692,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   const context = {
     broadcasterName: String(input.broadcasterName || "").trim().slice(0, 80),
     broadcasterId: String(input.broadcasterId || "").trim().slice(0, 40),
-    liveId: String(input.liveId || "").trim().slice(0, 32),
+    liveId: String(input.liveId || "").trim() ? safeLiveId(input.liveId) : "",
     programTitle: String(input.programTitle || videoTitle).trim().slice(0, 300),
     description: String(input.description || "").trim().slice(0, 3000),
     generatedAt: new Date().toISOString()
@@ -3986,6 +3987,8 @@ ipcMain.handle("articles:delete", async (_event, value) => {
   return { deleted: true, fileName: path.basename(target) };
 });
 ipcMain.handle("articles:list", () => listBroadcastArticles());
+ipcMain.handle("articles:live-previews", (_event, liveIds) =>
+  selectLiveArticlePreviews(listBroadcastArticles().items, liveIds));
 ipcMain.handle("articles:reanalyze", (_event, articlePath) =>
   queueRecordedArticleAnalysis(articlePath, { force: true }));
 ipcMain.handle("articles:export-html", async (_event, article) => {

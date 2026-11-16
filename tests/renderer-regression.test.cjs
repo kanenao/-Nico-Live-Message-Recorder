@@ -328,7 +328,7 @@ test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time",
   assert.match(main, /startedAt,\s*endedAt,/);
   assert.match(main, /watchPageUrl:/);
   assert.match(main, /normalizeMonitorDate\(live\.beginTime/);
-  assert.match(html, /LIVE一覧から録画も直接開始できます/);
+  assert.match(html, /LIVE一覧から録画開始・記事閲覧・記事作成ができます/);
 });
 
 
@@ -341,7 +341,7 @@ test("LIVE dashboard cards can start synchronized recording for their selected b
   assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
   assert.match(renderer, /live-broadcast-record-button/);
   assert.match(css, /\.live-broadcast-actions/);
-  assert.match(html, /LIVE一覧から録画も直接開始できます/);
+  assert.match(html, /LIVE一覧から録画開始・記事閲覧・記事作成ができます/);
   assert.match(renderer, /renderLiveBroadcasts\(\);\s*if \(monitorAutoQueue\.length > 0/);
 });
 
