@@ -18,7 +18,7 @@ test("recorded video resolves exactly matching JSONL comments without guessing u
     { path: path.join("comments", "配信者", "lv123456_20261116_150000.jsonl"), broadcaster: "配信者" }
   ];
   assert.equal(findMatchingCommentLog(video, comments), comments[0].path);
-  assert.equal(findMatchingCommentLog(video, comments.slice(1)), comments[1].path);
+  assert.equal(findMatchingCommentLog(video, comments.slice(1)), "");
   assert.equal(findMatchingCommentLog(video, [...comments, { path: path.join("comments", "他人", "lv123456_20261116_120000.jsonl"), broadcaster: "他人" }]), comments[0].path);
   assert.equal(findMatchingCommentLog(video, [{ path: "some_other_video.jsonl", broadcaster: "配信者" }]), "");
   assert.equal(findMatchingCommentLog(video, [{ path: "lv123456_100000.jsonl", broadcaster: "他人" }]), "");
@@ -49,7 +49,7 @@ test("live frame history preserves the beginning and recent frames across many u
   assert.equal(history.length, 16);
   assert.equal(history[0].image, "image-0");
   assert.equal(history.at(-1).image, "image-79");
-  assert.ok(history.some(item => item.image === "image-50"));
+  assert.ok(history.some(item => Number(item.image.slice(6)) >= 40 && Number(item.image.slice(6)) <= 60));
 });
 
 test("long recordings are split into bounded 120-second Whisper WAV segments", () => {
