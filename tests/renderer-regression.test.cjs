@@ -79,7 +79,7 @@ test("saved monitor user IDs are validated with a numeric pattern", () => {
 
 test("automatic monitor recording is queued instead of interrupting an active recording", () => {
   assert.match(renderer, /const monitorAutoQueue = \[\]/);
-  assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
+  assert.match(renderer, /if \(captureStopInProgress \|\| recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
   assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
   assert.ok(renderer.includes("finally {"));
