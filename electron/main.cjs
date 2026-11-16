@@ -716,7 +716,8 @@ async function generateStandaloneBroadcastArticle(input = {}) {
           article.commentFile = matched;
           // Regenerate the metadata/comment summary before running multimodal AI.
           const recovered = generateBroadcastArticle(records, context);
-          if (recovered.status === "generated") Object.assign(article, recovered);
+          if (recovered.status !== "generated") return recovered;
+          Object.assign(article, recovered);
           article.commentFile = matched;
         }
       }
@@ -829,6 +830,10 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
     liveId: saved.liveId, startedAt: saved.startedAt, endedAt: saved.endedAt,
     liveStatus: "ended", visitorCount: saved.visitorCount
   };
+  const contentPolicy = generateBroadcastArticle(records, context);
+  if (contentPolicy.optOutTerm) {
+    throw new Error("この記事は配信者の指定によりAI記事化できません：" + contentPolicy.optOutTerm);
+  }
   let extracted = null, audioTranscript = null, audioError = "";
   try {
     notify("video", { commentCount: records.filter(row => row.type === "comment").length });
