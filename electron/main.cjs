@@ -2861,8 +2861,10 @@ async function finalizeStreamlinkRecording(exit) {
 
   if (hasOutput && finalPath && streamlinkLiveId) {
     try {
-      const name = streamlinkBroadcasterName || currentBroadcasterName;
-      const broadcasterId = streamlinkBroadcasterId || currentBroadcasterId;
+      const name = streamlinkBroadcasterName ||
+        (currentLiveId === streamlinkLiveId ? currentBroadcasterName : "");
+      const broadcasterId = streamlinkBroadcasterId ||
+        (currentLiveId === streamlinkLiveId ? currentBroadcasterId : "");
       const finalDirectory = path.join(dataRoot(), "videos",
         broadcasterFolderName(name, broadcasterId));
       fs.mkdirSync(finalDirectory, { recursive: true });
@@ -3075,13 +3077,18 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   const cookies = await getNicoAuthCookies();
   const userSession = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
-  if (!commentWriter || currentLiveId !== liveId) recordingNamingSession = null;
+  const linkedToComments = Boolean(commentWriter && currentLiveId === liveId);
+  if (!linkedToComments) recordingNamingSession = null;
   streamlinkRecordingFallbackAt = new Date().toISOString();
   streamlinkRecordingTimeHint = String(options.timeshiftOriginAt ||
     (currentLiveId === liveId && currentProgramInfo.startedAt) || "");
-  if (displayName) currentBroadcasterName = String(displayName).slice(0, 80);
-  if (broadcasterId) currentBroadcasterId = String(broadcasterId);
-  const directory = path.join(dataRoot(), "videos", broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
+  const videoBroadcasterName = String(displayName || (linkedToComments ? currentBroadcasterName : "")).slice(0, 80);
+  const videoBroadcasterId = String(broadcasterId || (linkedToComments ? currentBroadcasterId : ""));
+  if (linkedToComments) {
+    if (videoBroadcasterName) currentBroadcasterName = videoBroadcasterName;
+    if (videoBroadcasterId) currentBroadcasterId = videoBroadcasterId;
+  }
+  const directory = path.join(dataRoot(), "videos", broadcasterFolderName(videoBroadcasterName, videoBroadcasterId));
   fs.mkdirSync(directory, { recursive: true });
   const outputPath = path.join(directory, liveId + "_" + stamp() + ".ts");
   const args = buildStreamlinkArgs({
@@ -3123,8 +3130,8 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   streamlinkOutputPath = outputPath;
   streamlinkFinalOutputPath = ffmpegPath ? outputPath.replace(/\.ts$/i, ".mp4") : outputPath;
   streamlinkLiveId = liveId;
-  streamlinkBroadcasterName = currentBroadcasterName;
-  streamlinkBroadcasterId = currentBroadcasterId;
+  streamlinkBroadcasterName = videoBroadcasterName;
+  streamlinkBroadcasterId = videoBroadcasterId;
   streamlinkFfmpegPath = ffmpegPath || "";
   streamlinkStopRequested = false;
   streamlinkStderr = "";
