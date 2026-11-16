@@ -729,7 +729,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /articleRefreshPending = true/);
   assert.match(main, /state: "error", liveId/);
   assert.match(renderer, /channel === "articles:live-state"/);
-  assert.match(renderer, /15秒ごとに取得します/);
+  assert.match(renderer, /配信ストリーム直接取得/);
   assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
   assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
   assert.match(renderer, /api\.startLiveArticleSession\(/);
@@ -799,7 +799,7 @@ test("live broadcast article session integrates Whisper.cpp audio capture and fi
   assert.match(main, /stopLiveArticleAudioCapture\(currentLiveId\)/);
   assert.match(main, /audioTranscript: liveArticleAudioTranscript/);
   assert.match(main, /audio-transcribing/);
-  assert.match(main, /audioCapturing: Boolean\(liveArticleAudioProcess\)/);
+  assert.match(main, /audioCapturing: Boolean\(liveArticleAudioSegmentDirectory\)/);
   assert.match(renderer, /audio-capturing/);
   assert.match(renderer, /Whisper\.cpp/);
   assert.match(html, /音声解析用データは一時保存し、終了後に削除/);
