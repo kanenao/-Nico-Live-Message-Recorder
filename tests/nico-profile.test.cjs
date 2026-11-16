@@ -83,3 +83,16 @@ test("recording library offers clickable profiles and manual ID mapping for lega
   assert.match(renderer, /api\.setLibraryProfileUserId\(broadcaster, input\.value\.trim\(\)\)/);
   assert.match(css, /\.library-profile-id-form\[hidden\] \{ display:none; \}/);
 });
+
+test("broadcast user IDs are automatically persisted and recovered for old library recordings", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(main, /metadata\.broadcasterUserId \|\| metadata\.broadcasterId/);
+  assert.match(main, /identityChanged \|\| Object\.keys\(nextInfo\)/);
+  assert.match(main, /discoverLibraryBroadcasterProfile/);
+  assert.match(main, /readBroadcasterFromCommentLog/);
+  assert.match(main, /getLibraryProgramProfile/);
+  assert.match(main, /fetchTimeshiftProgramPage\(key, cookieHeader, \{ timeoutMs: 6500 \}\)/);
+  assert.match(main, /getCachedNicoProfileIcon\(id\)/);
+  assert.match(renderer, /ユーザーIDを手動設定/);
+});

@@ -1493,11 +1493,12 @@ function renderCaptureLibrary() {
       formatLibraryDate(broadcasterItems[0]?.modifiedAt);
     identity.append(name, meta);
     if (!profileUserId) {
-      // 古い録画フォルダーにIDがない場合でも、本人のIDを一度登録すれば以降は自動表示。
+      // 自動照合できない古い録画にのみ、安全な手動入力を残す。
       const setId = document.createElement("button");
       setId.type = "button";
       setId.className = "library-profile-map-button";
-      setId.textContent = "ユーザーIDを設定";
+      setId.textContent = "ユーザーIDを手動設定";
+      setId.title = "コメントログや放送情報から自動取得できなかった場合のみ設定してください。";
       const form = document.createElement("form");
       form.className = "library-profile-id-form";
       form.hidden = true;

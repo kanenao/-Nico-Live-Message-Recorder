@@ -42,3 +42,8 @@ test("public program data may be used only for an exact broadcaster name match",
   assert.equal(verifiedProgramBroadcaster({broadcasterName:"別人",broadcasterId:"23456789"}, "あーちゃん"), "");
   assert.equal(verifiedProgramBroadcaster({broadcasterName:"あーちゃん",broadcasterId:"ch1234"}, "あーちゃん"), "");
 });
+
+test("channel programs never bind their channel ID to a Nico user profile", () => {
+  assert.equal(verifiedProgramBroadcaster({broadcasterName:"配信者",broadcasterId:"12345678",broadcasterType:"channel"},"配信者"),"");
+  assert.equal(verifiedProgramBroadcaster({broadcasterName:"配信者",broadcasterId:"12345678",broadcasterType:"user"},"配信者"),"12345678");
+});
