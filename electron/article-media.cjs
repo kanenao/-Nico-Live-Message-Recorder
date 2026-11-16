@@ -11,10 +11,14 @@ function findMatchingCommentLog(videoPath, items = []) {
     broadcaster: typeof item === "string" ? "" : String(item && item.broadcaster || "")
   })).filter(item => typeof item.path === "string" && path.extname(item.path).toLowerCase() === ".jsonl");
   const folder = path.basename(path.dirname(videoPath)).toLowerCase();
-  const exact = eligible.filter(item => recordingStem(item.path) === base)
-    .filter(item => !item.broadcaster || item.broadcaster.toLowerCase() === folder);
+  const exact = eligible.filter(item => recordingStem(item.path) === base);
+  // Selected videos may live outside the app's broadcaster folder. A unique
+  // exact recording stamp is safe regardless of where the user stored it.
   if (exact.length === 1) return exact[0].path;
-  if (exact.length > 1) return "";
+  if (exact.length > 1) {
+    const ownFolder = exact.filter(item => !item.broadcaster || item.broadcaster.toLowerCase() === folder);
+    return ownFolder.length === 1 ? ownFolder[0].path : "";
+  }
   // A timestamped recording is a specific session. Never silently attach a
   // different recording of the same lv ID just because it is the only log.
   if (/^lv\d{5,}_\d{8}_\d{6}/.test(base)) return "";
