@@ -15,6 +15,9 @@ function findMatchingCommentLog(videoPath, items = []) {
     .filter(item => !item.broadcaster || item.broadcaster.toLowerCase() === folder);
   if (exact.length === 1) return exact[0].path;
   if (exact.length > 1) return "";
+  // A timestamped recording is a specific session. Never silently attach a
+  // different recording of the same lv ID just because it is the only log.
+  if (/^lv\d{5,}_\d{8}_\d{6}/.test(base)) return "";
   // Archives with a renamed video may still have one unambiguous comment log.
   const match = base.match(/^(lv\d{5,})(?:_|$)/);
   if (!match) return "";
@@ -24,15 +27,27 @@ function findMatchingCommentLog(videoPath, items = []) {
 }
 
 function selectLiveArticleFrameHistory(frames, limit = 16) {
-  const items = Array.isArray(frames) ? frames : [];
-  if (items.length <= limit) return items.slice();
-  const keepFirst = Math.min(2, Math.floor(limit / 4));
-  const keepLast = Math.min(5, Math.floor(limit / 3));
-  const middleSlots = limit - keepFirst - keepLast;
-  const middle = items.slice(keepFirst, -keepLast);
-  const spaced = Array.from({ length: middleSlots }, (_, index) =>
-    middle[Math.min(middle.length - 1, Math.floor(index * middle.length / middleSlots))]);
-  return [...items.slice(0, keepFirst), ...spaced, ...items.slice(-keepLast)];
+  const history = (Array.isArray(frames) ? frames : []).slice();
+  if (history.length <= limit) return history;
+  const first = Math.min(2, Math.floor(limit / 4));
+  const last = Math.min(5, Math.floor(limit / 3));
+  // Remove the least informative interval. Preserving the oldest frames and
+  // a recent tail avoids turning long live broadcasts into only last minutes.
+  const timeAt = index => {
+    const date = Date.parse(history[index] && history[index].capturedAt || "");
+    return Number.isFinite(date) ? date : index * 15000;
+  };
+  while (history.length > limit) {
+    let drop = first;
+    let bestGap = Infinity;
+    for (let index = first; index < history.length - last; index++) {
+      const gap = Math.max(timeAt(index) - timeAt(index - 1),
+        timeAt(index + 1) - timeAt(index));
+      if (gap < bestGap) { bestGap = gap; drop = index; }
+    }
+    history.splice(drop, 1);
+  }
+  return history;
 }
 
 function buildLiveArticleFfmpegArgs(frameDirectory, audioDirectory, audioEnabled, frameSeconds = 15, segmentSeconds = 25) {
