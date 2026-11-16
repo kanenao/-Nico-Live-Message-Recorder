@@ -2581,7 +2581,11 @@ try {
     "error"
   );
   if (channel === "auth:status") renderAuthStatus(payload);
-  if (channel === "auth:expired") showToast("ニコニコのセッションが期限切れです。設定から再ログインしてください。", true);
+  if (channel === "auth:expired") {
+    const warning = byId("auth-session-warning");
+    if (warning) { warning.hidden = false; warning.textContent = payload.message || "ニコニコのセッションが無効です。再ログインしてください。"; }
+    showToast("ニコニコのセッションが期限切れです。設定から再ログインしてください。", true);
+  }
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
   });
 } catch (error) {
