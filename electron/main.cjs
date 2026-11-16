@@ -1843,6 +1843,29 @@ async function startLiveArticleAudioCapture(liveId) {
   liveArticleAudioLastArticleUpdateAt = 0;
   liveArticleAudioClosePromise = new Promise(resolve => streamChild.once("close", (code, signal) => resolve({ code, signal })));
   liveArticleAudioFfmpegClosePromise = new Promise(resolve => ffmpegChild.once("close", (code, signal) => resolve({ code, signal })));
+  // Stream decoding can fail after both processes have successfully spawned.
+  // When it fails unexpectedly, switch to the hidden watch-page fallback.
+  ffmpegChild.once("close", code => {
+    if (!liveArticleSessionActive || currentLiveId !== liveId || !liveArticleAudioSegmentTimer) return;
+    void (async () => {
+      await collectLiveArticleStreamFrames(true).catch(() => {});
+      liveArticleVideoFrameDirectory = "";
+      liveArticleVideoSource = "watch-page";
+      if (streamChild && !streamChild.killed) {
+        try { streamChild.kill(); } catch (_) {}
+      }
+      try {
+        await openHiddenLiveArticleCapture(liveId);
+        send("articles:live-state", {
+          state: "video-warning", liveId,
+          message: "配信ストリームの映像抽出が途中で終了したため、視聴ページの画像取得に切り替えました（FFmpeg終了コード：" + code + "）。"
+        });
+      } catch (error) {
+        send("articles:live-state", { state: "video-error", liveId,
+          message: "配信映像の代替取得にも失敗しました：" + (error.message || String(error)) });
+      }
+    })();
+  });
   liveArticleAudioSegmentTimer = setInterval(() => {
     void processLiveArticleAudioSegments(liveId, false);
     void collectLiveArticleStreamFrames().catch(() => {});
@@ -1874,7 +1897,13 @@ async function stopLiveArticleAudioCapture(liveId) {
         send("articles:live-state", { state: "audio-warning", liveId, message: "音声を文字起こしできませんでした。映像とコメントを利用します。" });
       }
     }
-    send("articles:live-state", { state: "audio-complete", liveId, segmentCount: liveArticleAudioTranscript.segmentCount, characterCount: liveArticleAudioTranscript.text.length });
+    if (liveArticleAudioTranscript && liveArticleAudioTranscript.text) {
+      send("articles:live-state", { state: "audio-complete", liveId,
+        segmentCount: liveArticleAudioTranscript.segmentCount,
+        characterCount: liveArticleAudioTranscript.text.length });
+    } else {
+      send("articles:live-state", { state: "video-complete", liveId, frameCount: liveArticleFrames.length });
+    }
     return liveArticleAudioTranscript;
   } catch (error) {
     send("articles:live-state", { state: "audio-error", liveId, message: error.message || String(error) });
