@@ -66,6 +66,10 @@ let monitorSettings = {
   targets: []
 };
 const monitorStatuses = new Map();
+const liveArticlePreviews = new Map();
+let liveArticlePreviewSignature = "";
+let liveArticlePreviewFetchedAt = 0;
+let liveArticlePreviewRequestId = 0;
 const monitorHandledDetections = new Set();
 let monitorIsRunning = false;
 const monitorAutoQueue = [];
@@ -849,6 +853,55 @@ function getLiveBroadcastItems() {
     .sort((a, b) => parseBroadcastTimestamp(b.startedAt) - parseBroadcastTimestamp(a.startedAt));
 }
 
+// Load only articles for LIVE IDs. The reply has no embedded JPEGs, transcripts,
+// or full article bodies, so a monitor heartbeat stays lightweight.
+async function refreshLiveArticlePreviews(force = false) {
+  if (!api || typeof api.getLiveArticlePreviews !== "function") return;
+  const ids = [...new Set(getLiveBroadcastItems()
+    .map(item => String(item.liveId || "").trim().toLowerCase())
+    .filter(id => /^lv\d{5,}$/.test(id)))].slice(0, 100);
+  const signature = ids.slice().sort().join(",");
+  if (!ids.length) {
+    liveArticlePreviewRequestId += 1;
+    liveArticlePreviewSignature = "";
+    liveArticlePreviewFetchedAt = 0;
+    if (liveArticlePreviews.size) {
+      liveArticlePreviews.clear();
+      renderLiveBroadcasts();
+    }
+    return;
+  }
+  if (!force && signature === liveArticlePreviewSignature &&
+      Date.now() - liveArticlePreviewFetchedAt < 45 * 1000) return;
+  liveArticlePreviewSignature = signature;
+  liveArticlePreviewFetchedAt = Date.now();
+  const requestId = ++liveArticlePreviewRequestId;
+  try {
+    const result = await api.getLiveArticlePreviews(ids);
+    if (requestId !== liveArticlePreviewRequestId) return;
+    liveArticlePreviews.clear();
+    for (const preview of Array.isArray(result && result.items) ? result.items : []) {
+      if (preview && ids.includes(preview.liveId)) liveArticlePreviews.set(preview.liveId, preview);
+    }
+    renderLiveBroadcasts();
+  } catch (error) {
+    if (requestId !== liveArticlePreviewRequestId) return;
+    liveArticlePreviewFetchedAt = 0;
+    console.warn("LIVE AI article previews unavailable:", error);
+  }
+}
+
+function openLiveArticleFromDashboard(status, hasArticle) {
+  if (!hasArticle) {
+    byId("manual-article-live-id").value = status.liveId || "";
+    byId("manual-article-broadcaster").value = status.name || "";
+    byId("manual-article-title").value = status.title || "";
+    byId("manual-article-description").value = status.description || "";
+  }
+  byId("articles-search").value = hasArticle ? status.liveId : "";
+  setActivePage("articles");
+}
+
 function renderDashboardStats() {
   const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
   const liveCount = getLiveBroadcastItems().length;
@@ -958,7 +1011,55 @@ function renderLiveBroadcasts() {
     actions.append(record, watch);
     footer.append(source, actions);
 
-    card.append(top, broadcaster, title, meta, footer);
+    const articlePreview = document.createElement("section");
+    articlePreview.className = "live-broadcast-ai-article";
+    const articleHeader = document.createElement("div");
+    articleHeader.className = "live-broadcast-article-header";
+    const articleLabel = document.createElement("strong");
+    articleLabel.textContent = "AI放送記事";
+    const preview = liveArticlePreviews.get(String(status.liveId || "").toLowerCase());
+    const articleType = document.createElement("span");
+    articleType.textContent = preview
+      ? (preview.aiProvider ? "Ollama記事" : "記事保存済み・AI未生成")
+      : (status.isRecording ? "記事を作成中" : "記事未作成");
+    articleHeader.append(articleLabel, articleType);
+    articlePreview.appendChild(articleHeader);
+
+    const articleTitle = document.createElement("strong");
+    articleTitle.className = "live-broadcast-article-title";
+    articleTitle.textContent = preview
+      ? (preview.title || "放送記事")
+      : (status.isRecording
+        ? "コメントの受信・記事生成を準備しています…"
+        : "この放送のAI記事はまだありません");
+    articlePreview.appendChild(articleTitle);
+    const articleSummary = document.createElement("p");
+    articleSummary.className = "live-broadcast-article-summary";
+    articleSummary.textContent = preview
+      ? (preview.summary || "記事本文は記事一覧から確認できます。")
+      : (status.isRecording
+        ? "記事が保存されると、見出し・要約が自動的に表示されます。"
+        : "記事生成画面から生放送の映像・音声・コメントを分析できます。");
+    articlePreview.appendChild(articleSummary);
+    const articleFooter = document.createElement("div");
+    articleFooter.className = "live-broadcast-article-footer";
+    const articleMeta = document.createElement("span");
+    articleMeta.className = "live-broadcast-article-meta";
+    articleMeta.textContent = preview
+      ? "コメント " + (Number(preview.commentCount) || 0).toLocaleString("ja-JP") + "件" +
+        (preview.videoFrameCount ? " · 映像 " + preview.videoFrameCount + "枚" : "") +
+        (preview.hasAudio ? " · 音声解析あり" : "") +
+        (preview.generatedAt ? " · 更新 " + new Date(preview.generatedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "")
+      : "配信ID：" + (status.liveId || "未取得");
+    const articleButton = document.createElement("button");
+    articleButton.type = "button";
+    articleButton.className = "button button-outline button-small live-broadcast-article-button";
+    articleButton.textContent = preview ? "記事を読む" : "記事を作成";
+    articleButton.addEventListener("click", () => openLiveArticleFromDashboard(status, Boolean(preview)));
+    articleFooter.append(articleMeta, articleButton);
+    articlePreview.appendChild(articleFooter);
+
+    card.append(top, broadcaster, title, meta, articlePreview, footer);
     list.appendChild(card);
   }
   renderDashboardStats();
@@ -1082,6 +1183,7 @@ function applyMonitorState(result) {
   if (Array.isArray(result.pendingDetections)) {
     result.pendingDetections.forEach(handleMonitorLiveDetected);
   }
+  void refreshLiveArticlePreviews();
 }
 
 function addMonitorActivity(message, kind = "") {
@@ -1456,6 +1558,7 @@ function setActivePage(page) {
 
   if (activePage === "library") loadCaptureLibrary();
   if (activePage === "articles") loadBroadcastArticles();
+  if (activePage === "dashboard") void refreshLiveArticlePreviews();
 }
 
 function formatLibraryBytes(value) {
@@ -2121,7 +2224,7 @@ function renderBroadcastArticles() {
     deleteArticle.addEventListener("click", async () => {
       deleteArticle.disabled = true;
       try { const result = await api.deleteBroadcastArticle(article.articlePath); if (result && result.cancelled) return;
-        showToast("放送記事を削除しました。録画動画とコメントログは残っています。"); await loadBroadcastArticles(); await loadCaptureLibrary();
+        showToast("放送記事を削除しました。録画動画とコメントログは残っています。"); await loadBroadcastArticles(); await loadCaptureLibrary(); void refreshLiveArticlePreviews(true);
       } catch (error) { showToast(error.message || "放送記事を削除できませんでした。", true); }
       finally { deleteArticle.disabled = false; }
     });
@@ -2671,6 +2774,7 @@ try {
   if (channel === "monitor:target-status") {
     monitorStatuses.set(payload.userId, payload);
     renderMonitorTargets();
+    void refreshLiveArticlePreviews();
   }
   if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
   if (channel === "articles:live-state" && payload) {
@@ -2731,6 +2835,7 @@ try {
     }
   }
   if (channel === "articles:generated") {
+    void refreshLiveArticlePreviews(true);
     if (!byId("articles-panel").hidden) loadBroadcastArticles();
     const article = payload && payload.article;
     addMonitorActivity("放送記事を生成しました：" + (article && (article.programTitle || article.liveId) || ""));
