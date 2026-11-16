@@ -756,6 +756,131 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   return article;
 }
 
+// One analysis job at a time: Whisper and vision Ollama are CPU/GPU-heavy.
+// A recording stop must remain responsive; finished recordings can be retried
+// through the explicit article reanalysis button after an app restart.
+const recordedArticleAnalysisInFlight = new Map();
+let recordedArticleAnalysisQueue = Promise.resolve();
+function queueRecordedArticleAnalysis(articlePath, options = {}) {
+  const key = path.resolve(String(articlePath || ""));
+  if (recordedArticleAnalysisInFlight.has(key)) return recordedArticleAnalysisInFlight.get(key);
+  const job = recordedArticleAnalysisQueue.catch(() => {}).then(() => analyzeSavedRecordedArticle(key, options));
+  recordedArticleAnalysisQueue = job.catch(() => {});
+  recordedArticleAnalysisInFlight.set(key, job);
+  void job.finally(() => recordedArticleAnalysisInFlight.delete(key)).catch(() => {});
+  return job;
+}
+async function analyzeSavedRecordedArticle(articlePath, options = {}) {
+  const file = resolveBroadcastArticlePath(articlePath);
+  const saved = JSON.parse(await fs.promises.readFile(file, "utf8"));
+  if (!saved || saved.status !== "generated") throw new Error("再解析できる放送記事が見つかりません。");
+  const library = listCaptureLibrary();
+  const videos = library.items.filter(item => item.type === "video");
+  const videoPath = findArticleVideoCandidate(saved, videos, value => fs.existsSync(value));
+  if (!videoPath) throw new Error("この記事と一致する録画映像が見つかりません。動画を録画ライブラリに保存してから再解析してください。");
+  const notify = (state, info = {}) => send("articles:analysis-state", {
+    state, articlePath: file, liveId: saved.liveId || "", ...info
+  });
+  notify("starting", { videoFile: videoPath });
+  let records = [];
+  let commentFile = "";
+  try {
+    commentFile = saved.commentFile ? resolveLibraryItemPath(saved.commentFile) : "";
+  } catch (_) {}
+  if (!commentFile) {
+    const candidate = findMatchingCommentLog(videoPath, library.items.filter(item => item.type === "comment"));
+    if (candidate) {
+      try { commentFile = resolveLibraryItemPath(candidate); } catch (_) {}
+    }
+  }
+  if (commentFile) {
+    records = parseCommentLog(await fs.promises.readFile(commentFile, "utf8"));
+    if (records.length > 1000000) throw new Error("コメントログが大きすぎます。");
+  }
+  const context = {
+    broadcasterName: saved.broadcasterName, broadcasterId: saved.broadcasterId,
+    programTitle: saved.programTitle, description: saved.description,
+    liveId: saved.liveId, startedAt: saved.startedAt, endedAt: saved.endedAt,
+    liveStatus: "ended", visitorCount: saved.visitorCount
+  };
+  let extracted = null, audioTranscript = null, audioError = "";
+  try {
+    notify("video", { commentCount: records.filter(row => row.type === "comment").length });
+    extracted = await extractArticleVideoFrames(videoPath);
+    const settings = readAppSettings();
+    if (settings.articleWhisperCliPath && settings.articleWhisperModelPath &&
+        fs.existsSync(settings.articleWhisperCliPath) && fs.existsSync(settings.articleWhisperModelPath)) {
+      notify("audio", { frameCount: extracted.frames.length });
+      try {
+        audioTranscript = await transcribeVideoAudio({
+          videoPath,
+          ffmpegPath: getVideoToolStatus().ffmpegPath,
+          whisperCliPath: settings.articleWhisperCliPath,
+          modelPath: settings.articleWhisperModelPath,
+          onProgress: progress => notify("audio-progress", progress)
+        });
+      } catch (error) {
+        audioError = error.message || String(error);
+      }
+    } else {
+      audioError = "Whisper.cppが未設定のため音声の解析を省略しました。";
+    }
+    notify("ai", {
+      frameCount: extracted.frames.length,
+      commentCount: records.filter(row => row.type === "comment").length,
+      audioSegmentCount: audioTranscript ? audioTranscript.segmentCount : 0
+    });
+    await enhanceBroadcastArticleWithOllama(saved, records, context, {
+      force: options.force === true,
+      images: extracted.frames,
+      audioTranscript: audioTranscript ? audioTranscript.text : ""
+    });
+    saved.videoFile = videoPath;
+    saved.videoFrameCount = extracted.frames.length;
+    saved.coverImage = selectArticleCoverImage(extracted.frames, saved.coverImage);
+    saved.videoAnalysis = saved.videoAiAnalyzed
+      ? "録画映像全体から取得した代表フレームをAI分析済み"
+      : "録画映像の代表フレームを抽出（画像対応モデル未導入・未分析）";
+    if (commentFile) saved.commentFile = commentFile;
+    if (audioTranscript) {
+      saved.audioTranscript = audioTranscript.text;
+      saved.audioTranscriptSegmentCount = audioTranscript.segmentCount;
+      saved.audioAnalysis = "録画全体の音声をWhisper.cppで分割文字起こし済み";
+      saved.audioTranscriptionStatus = "完了";
+      if (audioTranscript.partialErrors && audioTranscript.partialErrors.length) {
+        saved.audioTranscriptionError = audioTranscript.partialErrors.join(" / ").slice(0, 1200);
+      } else delete saved.audioTranscriptionError;
+    } else {
+      saved.audioTranscriptionStatus = audioError || "音声解析未実行";
+      if (audioError) saved.audioTranscriptionError = audioError;
+    }
+    saved.mediaAnalysis = {
+      video: extracted.frames.length ? (saved.videoAiAnalyzed ? "analyzed" : "sampled") : "missing",
+      audio: audioTranscript ? "transcribed" : "unavailable",
+      comments: records.some(row => row.type === "comment") ? "analyzed" : "unavailable"
+    };
+    if (records.length) {
+      const commentArticle = generateBroadcastArticle(records, context);
+      if (commentArticle.status === "generated") {
+        saved.commentCount = commentArticle.commentCount;
+        saved.uniqueCommenters = commentArticle.uniqueCommenters;
+        if (commentArticle.topics && !saved.aiProvider) saved.topics = commentArticle.topics;
+      }
+    }
+    saved.generatedAt = new Date().toISOString();
+    saved.articleSource = saved.articleSource || "recording";
+    await fs.promises.writeFile(file, JSON.stringify(saved, null, 2), "utf8");
+    notify("complete", { article: saved, frameCount: saved.videoFrameCount, audioSegmentCount: saved.audioTranscriptSegmentCount || 0 });
+    send("articles:generated", { article: saved });
+    return saved;
+  } catch (error) {
+    notify("error", { message: error.message || String(error) });
+    throw error;
+  } finally {
+    if (extracted) await fs.promises.rm(extracted.directory, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 function listBroadcastArticles() {
   const root = path.join(dataRoot(), "articles");
   const queue = [root];
@@ -1024,12 +1149,19 @@ async function closeCommentWriter() {
   }
   while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
   try {
-    await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
+    const savedArticle = await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
       force: liveArticleSessionActive,
       images: liveArticleSessionActive ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
       audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
       audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
     });
+    if (!liveArticleSessionActive && savedArticle && savedArticle.status === "generated" &&
+        savedArticle.videoFile && getMonitorSettings().aiArticleEnabled !== false) {
+      // Finish video+comment capture first; media analysis continues without
+      // blocking the Stop button or starting another capture process.
+      void queueRecordedArticleAnalysis(savedArticle.articlePath).catch(error =>
+        send("app:error", "録画の映像・音声・コメント記事化に失敗しました: " + error.message));
+    }
   } catch (error) {
     send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
   }
@@ -3781,6 +3913,8 @@ ipcMain.handle("articles:delete", async (_event, value) => {
   return { deleted: true, fileName: path.basename(target) };
 });
 ipcMain.handle("articles:list", () => listBroadcastArticles());
+ipcMain.handle("articles:reanalyze", (_event, articlePath) =>
+  queueRecordedArticleAnalysis(articlePath, { force: true }));
 ipcMain.handle("articles:export-html", async (_event, article) => {
   if (!article || typeof article !== "object" || Array.isArray(article)) throw new Error("記事データが正しくありません。");
   const safeTitle = String(article.title || article.programTitle || "放送記事")
