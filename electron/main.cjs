@@ -692,7 +692,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   const context = {
     broadcasterName: String(input.broadcasterName || "").trim().slice(0, 80),
     broadcasterId: String(input.broadcasterId || "").trim().slice(0, 40),
-    liveId: String(input.liveId || "").trim().slice(0, 32),
+    liveId: String(input.liveId || "").trim() ? safeLiveId(input.liveId) : "",
     programTitle: String(input.programTitle || videoTitle).trim().slice(0, 300),
     description: String(input.description || "").trim().slice(0, 3000),
     generatedAt: new Date().toISOString()
