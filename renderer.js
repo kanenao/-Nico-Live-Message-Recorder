@@ -1732,6 +1732,48 @@ async function loadCaptureLibrary() {
   }
 }
 
+const articleThumbnailQueue = [];
+let articleThumbnailRequests = 0;
+function scheduleArticleThumbnail(thumbnail, placeholder, article) {
+  articleThumbnailQueue.push(async () => {
+    if (!thumbnail.isConnected) return;
+    try {
+      const imageUrl = await api.getArticleThumbnail(article.articlePath);
+      if (!thumbnail.isConnected || !placeholder.isConnected) return;
+      if (typeof imageUrl === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(imageUrl)) {
+        thumbnail.addEventListener("error", () => {
+          thumbnail.remove();
+          placeholder.hidden = false;
+          placeholder.textContent = "画像を表示できません";
+        }, { once: true });
+        thumbnail.src = imageUrl;
+        article.coverImage = imageUrl;
+        thumbnail.hidden = false;
+        placeholder.hidden = true;
+      } else {
+        thumbnail.remove();
+        placeholder.textContent = "放送映像が保存されていません";
+      }
+    } catch (_) {
+      if (!thumbnail.isConnected) return;
+      thumbnail.remove();
+      placeholder.textContent = "サムネイルを取得できません";
+    }
+  });
+  pumpArticleThumbnailQueue();
+}
+function pumpArticleThumbnailQueue() {
+  while (articleThumbnailRequests < 2 && articleThumbnailQueue.length) {
+    const job = articleThumbnailQueue.shift();
+    articleThumbnailRequests++;
+    // Delay until the new card has been added to the document.
+    Promise.resolve().then(job).catch(() => {}).finally(() => {
+      articleThumbnailRequests--;
+      pumpArticleThumbnailQueue();
+    });
+  }
+}
+
 function renderBroadcastArticles() {
   const list = byId("articles-list");
   if (!list) return;
@@ -1822,30 +1864,29 @@ function renderBroadcastArticles() {
       cover.alt = (article.programTitle || article.title || "放送") + " の放送画面";
       cover.loading = "lazy";
       cover.src = coverImage;
-      cover.addEventListener("error", () => { cover.remove(); mediaPlaceholder.hidden = false; }, { once: true });
+      cover.addEventListener("error", () => {
+        cover.remove();
+        mediaPlaceholder.hidden = false;
+        mediaPlaceholder.textContent = "保存画像を表示できません";
+      }, { once: true });
       mediaPlaceholder.hidden = true;
       media.appendChild(cover);
-    } else if (article.videoFile) {
+    } else if (article.articlePath && typeof api.getArticleThumbnail === "function") {
       const thumbnail = document.createElement("img");
       thumbnail.className = "broadcast-article-thumbnail";
-      thumbnail.alt = (article.programTitle || article.title || "放送") + " の映像サムネイル";
+      thumbnail.alt = (article.programTitle || article.title || "放送") + " の録画サムネイル";
       thumbnail.loading = "lazy";
       thumbnail.hidden = true;
+      mediaPlaceholder.textContent = "サムネイルを確認中…";
       media.appendChild(thumbnail);
-      Promise.resolve().then(() => api.getLibraryThumbnail(article.videoFile)).then((imageUrl) => {
-        if (imageUrl) {
-          thumbnail.src = imageUrl;
-          thumbnail.hidden = false;
-          mediaPlaceholder.hidden = true;
-        } else {
-          thumbnail.remove();
-        }
-      }).catch(() => thumbnail.remove());
+      scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article);
+    } else {
+      mediaPlaceholder.textContent = "放送映像が保存されていません";
     }
     const heading = document.createElement("div");
     heading.className = "broadcast-article-heading";
     const title = document.createElement("h3");
-    title.textContent = article.programTitle || article.title || article.liveId || "放送記事";
+    title.textContent = (article.aiProvider && article.title) || article.programTitle || article.title || article.liveId || "放送記事";
     const meta = document.createElement("p");
     meta.className = "broadcast-article-meta";
     meta.textContent = ["ニコニコ生放送", article.liveId || ""].filter(Boolean).join(" · ");
@@ -1875,7 +1916,9 @@ function renderBroadcastArticles() {
     if (article.title && article.programTitle && article.title !== article.programTitle) {
       const editorialTitle = document.createElement("p");
       editorialTitle.className = "broadcast-article-editorial-title";
-      editorialTitle.textContent = "記事見出し：" + article.title;
+      editorialTitle.textContent = article.aiProvider
+        ? "元の番組タイトル：" + article.programTitle
+        : "記事見出し：" + article.title;
       heroCopy.appendChild(editorialTitle);
     }
     const commentSignal = document.createElement("div");
@@ -1884,6 +1927,24 @@ function renderBroadcastArticles() {
       ? "コメント " + Number(article.commentCount).toLocaleString("ja-JP") + "件を取得・記事に反映しています。"
       : (articleIsLive ? "コメントの受信を待っています。" : "取得できたコメントはありません。");
     heroCopy.appendChild(commentSignal);
+    const sources = document.createElement("div");
+    sources.className = "broadcast-article-evidence";
+    const sourceLabels = [];
+    if (Number(article.videoFrameCount) > 0 || article.videoAnalysis) sourceLabels.push("映像フレーム");
+    if (article.audioTranscript || article.audioAnalysis) sourceLabels.push("音声・文字起こし");
+    if (Number(article.commentCount) > 0) sourceLabels.push("保存コメント");
+    if (article.programTitle || article.description) sourceLabels.push("番組情報");
+    if (sourceLabels.length) {
+      const label = document.createElement("strong");
+      label.textContent = "記事の参照資料";
+      sources.appendChild(label);
+      for (const source of sourceLabels) {
+        const pill = document.createElement("span");
+        pill.textContent = source;
+        sources.appendChild(pill);
+      }
+      heroCopy.appendChild(sources);
+    }
     hero.append(media, heroCopy);
 
     const stats = document.createElement("div");
@@ -1925,10 +1986,30 @@ function renderBroadcastArticles() {
       }
       highlights.append(heading, list); body.appendChild(highlights);
     }
-    for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
-      const p = document.createElement("p");
-      p.textContent = paragraph;
-      body.appendChild(p);
+    const articleSections = Array.isArray(article.aiSections)
+      ? article.aiSections.filter(item => item && item.heading && item.body).slice(0, 6)
+      : [];
+    if (articleSections.length) {
+      const sectionLabel = document.createElement("div");
+      sectionLabel.className = "broadcast-article-story-label";
+      sectionLabel.textContent = "放送の詳しい内容";
+      body.appendChild(sectionLabel);
+      for (const chapter of articleSections) {
+        const section = document.createElement("section");
+        section.className = "broadcast-article-chapter";
+        const heading = document.createElement("h4");
+        heading.textContent = String(chapter.heading).slice(0, 90);
+        const text = document.createElement("p");
+        text.textContent = String(chapter.body).slice(0, 2000);
+        section.append(heading, text);
+        body.appendChild(section);
+      }
+    } else {
+      for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
+        const p = document.createElement("p");
+        p.textContent = paragraph;
+        body.appendChild(p);
+      }
     }
     if (Array.isArray(article.aiTimeline) && article.aiTimeline.length) {
       const timeline = document.createElement("section");

@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker, Notification } = require("electron");
-const { spawn, execFileSync } = require("node:child_process");
+const { spawn, execFile, execFileSync } = require("node:child_process");
 const { randomUUID, createHash } = require("node:crypto");
 const {
   findStreamlinkExecutable,
@@ -13,6 +13,7 @@ const {
 const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
+const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
@@ -549,6 +550,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
+    article.aiSections = result.sections || [];
     article.aiHighlights = result.highlights || [];
     article.aiTimeline = result.timeline || [];
     article.aiAudienceReaction = result.audienceReaction || "";
@@ -3583,6 +3585,80 @@ ipcMain.handle("library:thumbnail", (_event, value) => {
     return "";
   }
 });
+// Serve article covers from saved JPEGs or recover them from the actual recording.
+// Keep this separate from library:thumbnail, which only accepts library paths.
+// Cache and limit simultaneous FFmpeg work so large journals do not freeze Electron.
+const articleThumbnailCache = new Map();
+let articleVideoIndex = { expiresAt: 0, items: [] };
+let articleThumbnailActive = 0;
+const articleThumbnailWaiting = [];
+function articleThumbnailSlot() {
+  if (articleThumbnailActive < 2) {
+    articleThumbnailActive += 1;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => articleThumbnailWaiting.push(resolve));
+}
+function releaseArticleThumbnailSlot() {
+  const next = articleThumbnailWaiting.shift();
+  if (next) next();
+  else articleThumbnailActive = Math.max(0, articleThumbnailActive - 1);
+}
+function extractArticleThumbnailFrame(videoPath, ffmpegPath, position) {
+  return new Promise(resolve => {
+    execFile(ffmpegPath, [
+      "-hide_banner", "-loglevel", "error", "-ss", position, "-i", videoPath,
+      "-frames:v", "1", "-vf",
+      "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2",
+      "-q:v", "7", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"
+    ], { windowsHide: true, encoding: "buffer", timeout: 12000, maxBuffer: 1024 * 1024 },
+    (error, output) => {
+      if (error || !output || !output.length) return resolve("");
+      resolve(selectArticleCoverImage([{ image: Buffer.from(output).toString("base64") }]));
+    });
+  });
+}
+async function getArticleThumbnail(articlePath) {
+  const filePath = resolveBroadcastArticlePath(articlePath);
+  let article;
+  try { article = JSON.parse(await fs.promises.readFile(filePath, "utf8")); }
+  catch (_) { return ""; }
+  if (!article || article.status !== "generated") return "";
+  const saved = selectArticleCoverImage([], article.coverImage);
+  if (saved) return saved;
+
+  let videoPath = findArticleVideoCandidate(article, [], value => fs.existsSync(value));
+  if (!videoPath) {
+    if (Date.now() >= articleVideoIndex.expiresAt) {
+      articleVideoIndex = {
+        expiresAt: Date.now() + 60 * 1000,
+        items: listCaptureLibrary().items.filter(item => item.type === "video")
+      };
+    }
+    videoPath = findArticleVideoCandidate(article, articleVideoIndex.items, value => fs.existsSync(value));
+  }
+  if (!videoPath) return "";
+  let stat;
+  try { stat = await fs.promises.stat(videoPath); if (!stat.isFile() || stat.size === 0) return ""; }
+  catch (_) { return ""; }
+  const settings = readAppSettings();
+  const ffmpegPath = findBundledFfmpegExecutable() || findFfmpegExecutable({ customPath: settings.ffmpegPath });
+  if (!ffmpegPath) return "";
+  const key = [videoPath, stat.size, stat.mtimeMs].join("|");
+  if (articleThumbnailCache.has(key)) return articleThumbnailCache.get(key);
+  const promise = (async () => {
+    await articleThumbnailSlot();
+    try {
+      return await extractArticleThumbnailFrame(videoPath, ffmpegPath, "00:00:02")
+        || await extractArticleThumbnailFrame(videoPath, ffmpegPath, "00:00:00");
+    } finally { releaseArticleThumbnailSlot(); }
+  })().catch(() => "");
+  articleThumbnailCache.set(key, promise);
+  if (articleThumbnailCache.size > 80) articleThumbnailCache.delete(articleThumbnailCache.keys().next().value);
+  return promise;
+}
+ipcMain.handle("articles:thumbnail", (_event, articlePath) => getArticleThumbnail(articlePath));
+
 function resolveBroadcastArticlePath(value) {
   const root = path.resolve(dataRoot(), "articles"), target = path.resolve(String(value || ""));
   const relative = path.relative(root, target);
