@@ -61,6 +61,7 @@ test("LIVE preview excludes full article, local paths, large images and transcri
 
 test("LIVE dashboard displays article previews without disturbing recording and watch controls", () => {
   assert.match(main, /ipcMain\.handle\("articles:live-previews"/);
+  assert.match(main, /liveId: String\(input\.liveId \|\| ""\)\.trim\(\) \? safeLiveId\(input\.liveId\)/);
   assert.match(preload, /getLiveArticlePreviews:.*ipcRenderer\.invoke\("articles:live-previews"/);
   assert.match(renderer, /function renderLiveBroadcasts\(/);
   assert.match(renderer, /liveArticlePreviews\.get\(String\(status\.liveId/);
