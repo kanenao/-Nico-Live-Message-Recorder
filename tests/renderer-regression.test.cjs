@@ -212,7 +212,7 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.match(renderer, /function setActivePage\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
   assert.match(renderer, /const groups = new Map\(\)/);
-  assert.match(renderer, /api\.getLibraryThumbnail\(article\.videoFile\)/);
+  assert.match(renderer, /api\.getArticleThumbnail\(article\.articlePath\)/);
   assert.match(main, /ipcMain\.handle\("library:thumbnail"/);
   assert.match(preload, /getLibraryThumbnail:.*ipcRenderer\.invoke\("library:thumbnail"/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
@@ -1042,9 +1042,9 @@ test("broadcast article cards render video thumbnails and newspaper-style grid",
   const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
   const css = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
   assert.match(renderer, /broadcast-article-media/);
-  assert.match(renderer, /getLibraryThumbnail/);
+  assert.match(renderer, /getArticleThumbnail/);
   assert.match(renderer, /broadcast-article-thumbnail/);
-  assert.match(renderer, /放送映像プレビュー/);
+  assert.match(renderer, /放送映像が保存されていません/);
   assert.match(css, /auto-fill/);
   assert.match(css, /aspect-ratio:16\/9/);
 });
@@ -1117,7 +1117,7 @@ test("new journal layout preserves AI errors, Whisper transcript, and existing a
   for (const fragment of ["broadcast-article-audio", "broadcast-article-transcript",
     "broadcast-article-ai-warning", "article.aiFallbackReason", "broadcast-article-body",
     "api.deleteBroadcastArticle(article.articlePath)", "api.exportBroadcastArticleHtml(article)",
-    "api.getLibraryThumbnail(article.videoFile)", "article.coverImage"]) {
+    "scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article)", "article.coverImage"]) {
     assert.ok(articleRender.includes(fragment), "Missing journal feature: " + fragment);
   }
   assert.match(main, /article\.coverImage = selectArticleCoverImage\(extracted\.frames\)/);
