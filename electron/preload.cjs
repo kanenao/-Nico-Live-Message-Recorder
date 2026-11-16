@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   openNicoUserProfile: (userId) => ipcRenderer.invoke("library:open-user-profile", userId),
   setLibraryProfileUserId: (broadcaster, userId) => ipcRenderer.invoke("library:set-profile-user-id", broadcaster, userId),
   getLibraryThumbnail: (filePath) => ipcRenderer.invoke("library:thumbnail", filePath),
+  getLibraryVideoPreview: (filePath) => ipcRenderer.invoke("library:video-preview", filePath),
   getBroadcastArticles: () => ipcRenderer.invoke("articles:list"),
   getLiveArticlePreviews: (liveIds) => ipcRenderer.invoke("articles:live-previews", liveIds),
   reanalyzeBroadcastArticle: (articlePath) => ipcRenderer.invoke("articles:reanalyze", articlePath),
