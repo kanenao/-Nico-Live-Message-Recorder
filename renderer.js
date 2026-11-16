@@ -900,6 +900,12 @@ function openLiveArticleFromDashboard(status, hasArticle) {
   }
   byId("articles-search").value = hasArticle ? status.liveId : "";
   setActivePage("articles");
+  if (hasArticle) {
+    // Skip the large article-generation form and show the selected article.
+    window.requestAnimationFrame(() => {
+      byId("articles-list")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+  }
 }
 
 function renderDashboardStats() {
