@@ -44,7 +44,7 @@ test("live multimedia FFmpeg reads video and speech from a single Streamlink pip
 test("live frame history preserves the beginning and recent frames across many updates", () => {
   let history = [];
   for (let index = 0; index < 80; index += 1) {
-    history = selectLiveArticleFrameHistory([...history, { image: "image-" + index }], 16);
+    history = selectLiveArticleFrameHistory([...history, { image: "image-" + index, capturedAt: new Date(Date.UTC(2026, 10, 16) + index * 15000).toISOString() }], 16);
   }
   assert.equal(history.length, 16);
   assert.equal(history[0].image, "image-0");
