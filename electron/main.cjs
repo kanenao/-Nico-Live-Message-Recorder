@@ -797,11 +797,21 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
   let videoPath = "";
   if (videoCandidate) {
     try {
-      const checked = resolveLibraryItemPath(videoCandidate);
-      if (path.relative(path.join(dataRoot(), "videos"), checked).startsWith("..")) {
-        throw new Error("録画フォルダー外です。");
+      const isManualFile = saved.articleSource === "manual" &&
+        saved.videoFile && path.resolve(videoCandidate) === path.resolve(saved.videoFile);
+      if (isManualFile) {
+        // This exact path was previously selected through the native file
+        // picker and persisted with the manual article.
+        if (![".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts", ".avi"]
+          .includes(path.extname(videoCandidate).toLowerCase())) throw new Error("動画形式が不正です。");
+        if (!fs.statSync(videoCandidate).isFile()) throw new Error("動画ファイルがありません。");
+        videoPath = path.resolve(videoCandidate);
+      } else {
+        const checked = resolveLibraryItemPath(videoCandidate);
+        const relative = path.relative(path.join(dataRoot(), "videos"), checked);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("録画フォルダー外です。");
+        videoPath = checked;
       }
-      videoPath = checked;
     } catch (_) {}
   }
   if (!videoPath) throw new Error("この記事と一致する録画映像が見つかりません。動画を録画ライブラリに保存してから再解析してください。");
