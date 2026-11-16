@@ -1579,6 +1579,7 @@ async function prepareCommentSession(liveId, displayName = "", broadcasterId = "
     provider = null;
   }
   await closeCommentWriter();
+  recordingNamingSession = null;
   currentLiveId = liveId;
   currentProgramInfo = {
     programTitle: String(programInfo.programTitle || programInfo.title || "").slice(0, 300),
@@ -2860,21 +2861,24 @@ async function finalizeStreamlinkRecording(exit) {
 
   if (hasOutput && finalPath && streamlinkLiveId) {
     try {
+      const name = streamlinkBroadcasterName || currentBroadcasterName;
+      const broadcasterId = streamlinkBroadcasterId || currentBroadcasterId;
       const finalDirectory = path.join(dataRoot(), "videos",
-        broadcasterFolderName(streamlinkBroadcasterName || currentBroadcasterName, streamlinkBroadcasterId || currentBroadcasterId));
+        broadcasterFolderName(name, broadcasterId));
       fs.mkdirSync(finalDirectory, { recursive: true });
-      if (path.resolve(path.dirname(finalPath)) !== path.resolve(finalDirectory)) {
-        let organizedPath = path.join(finalDirectory, path.basename(finalPath));
-        if (fs.existsSync(organizedPath)) {
-          organizedPath = path.join(finalDirectory,
-            path.basename(finalPath, path.extname(finalPath)) + "_" + stamp() + path.extname(finalPath));
-        }
+      const startedAt = (currentLiveId === streamlinkLiveId && currentProgramInfo.startedAt) ||
+        streamlinkRecordingTimeHint;
+      const stem = resolvedRecordingStem(streamlinkLiveId, name, broadcasterId,
+        startedAt, streamlinkRecordingFallbackAt);
+      const organizedPath = path.join(finalDirectory, stem + path.extname(finalPath));
+      if (path.resolve(finalPath) !== path.resolve(organizedPath)) {
+        if (fs.existsSync(organizedPath)) throw new Error("同名の録画動画がすでに存在します。");
         await fs.promises.rename(finalPath, organizedPath);
         finalPath = organizedPath;
-        streamlinkFinalOutputPath = organizedPath;
       }
+      streamlinkFinalOutputPath = finalPath;
     } catch (error) {
-      send("app:error", "配信者フォルダーへの整理に失敗しました。元の保存先に残しています: " + error.message);
+      send("app:error", "録画動画の配信者名・放送日時への変更に失敗しました。元の保存先に残しています: " + error.message);
     }
   }
 
@@ -2888,6 +2892,19 @@ async function finalizeStreamlinkRecording(exit) {
   }
   if (hasFinalOutput && converted && finalPath !== rawPath) {
     await fs.promises.unlink(rawPath).catch(() => {});
+  }
+  if (hasFinalOutput && streamlinkLiveId) {
+    try {
+      rememberRecordedVideo(finalPath, {
+        liveId: streamlinkLiveId,
+        broadcasterName: streamlinkBroadcasterName || currentBroadcasterName,
+        broadcasterId: streamlinkBroadcasterId || currentBroadcasterId,
+        startedAt: (currentLiveId === streamlinkLiveId && currentProgramInfo.startedAt) ||
+          streamlinkRecordingTimeHint || streamlinkRecordingFallbackAt
+      });
+    } catch (error) {
+      send("app:error", "録画の番組ID情報を記録できませんでした: " + error.message);
+    }
   }
   if (!hasFinalOutput) {
     finalPath = null;
@@ -2934,6 +2951,8 @@ async function finalizeStreamlinkRecording(exit) {
   streamlinkBroadcasterName = "";
   streamlinkBroadcasterId = "";
   streamlinkFfmpegPath = "";
+  streamlinkRecordingTimeHint = "";
+  streamlinkRecordingFallbackAt = "";
   const finalStderr = streamlinkStderr; streamlinkStderr = "";
   if (runtimeDirectory) {
     await fs.promises.rm(runtimeDirectory, { recursive: true, force: true }).catch(() => {});
@@ -3056,6 +3075,10 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   const cookies = await getNicoAuthCookies();
   const userSession = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), userSession);
+  if (!commentWriter || currentLiveId !== liveId) recordingNamingSession = null;
+  streamlinkRecordingFallbackAt = new Date().toISOString();
+  streamlinkRecordingTimeHint = String(options.timeshiftOriginAt ||
+    (currentLiveId === liveId && currentProgramInfo.startedAt) || "");
   if (displayName) currentBroadcasterName = String(displayName).slice(0, 80);
   if (broadcasterId) currentBroadcasterId = String(broadcasterId);
   const directory = path.join(dataRoot(), "videos", broadcasterFolderName(currentBroadcasterName, currentBroadcasterId));
@@ -3236,7 +3259,8 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
       await prepareCommentSession(
         liveId,
         page && page.broadcasterName || "",
-        page && page.broadcasterId || ""
+        page && page.broadcasterId || "",
+        { startedAt: page && page.beginAt || "" }
       );
       const video = await startVideoInternal(
         liveId,
@@ -3261,7 +3285,8 @@ ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
     let commentCount = 0;
     let commentsTruncated = false;
     let finalCommentFile = "";
-    await prepareCommentSession(liveId, page.broadcasterName, page.broadcasterId);
+    await prepareCommentSession(liveId, page.broadcasterName, page.broadcasterId,
+      { startedAt: page.beginAt || "" });
     video = await startVideoInternal(
       liveId,
       quality,
