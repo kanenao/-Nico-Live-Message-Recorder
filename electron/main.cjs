@@ -550,6 +550,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
+    article.aiSections = result.sections || [];
     article.aiHighlights = result.highlights || [];
     article.aiTimeline = result.timeline || [];
     article.aiAudienceReaction = result.audienceReaction || "";
