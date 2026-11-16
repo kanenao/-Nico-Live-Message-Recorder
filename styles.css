@@ -930,3 +930,10 @@ button, .button {
   .kick-article-layout .broadcast-article-heading h3 { font-size:16px; }
   .kick-article-layout .broadcast-article-actions .button { flex:1 1 auto; }
 }
+
+/* Verified Niconico login state and persistent expired-session warning. */
+.login-state.is-session-expired { color: #ffb7a4; font-weight: 700; }
+.auth-session-warning[hidden] { display: none; }
+.auth-session-warning { padding: 10px 20px; background: #422728; color: #ffcfcc; border-bottom: 1px solid #b76464; font-size: 12px; font-weight: 650; line-height: 1.5; }
+#user-session-status[data-state="valid"] { color: #71e0ba; }
+#user-session-status[data-state="expired"] { color: #ffaeaa; }

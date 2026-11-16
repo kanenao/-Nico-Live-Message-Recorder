@@ -331,19 +331,47 @@ function updateMetadata(metadata) {
   renderLiveBroadcasts();
 }
 
+function renderAuthStatus(result) {
+  const status = result || {};
+  const state = ["valid", "expired", "missing", "unknown"].includes(status.state) ? status.state : "unknown";
+  const name = String(status.nickname || "").slice(0, 80);
+  const userLabel = name ? name + (status.userId ? "（ID: " + status.userId + "）" : "")
+    : (status.userId ? "ID: " + status.userId : "ニコニコアカウント");
+  const labels = { valid: "ログイン済み", expired: "セッション切れ", missing: "未ログイン", unknown: "認証確認不可" };
+  const header = byId("login-state");
+  header.textContent = labels[state];
+  header.className = "login-state" + (state === "valid" ? " is-logged-in" : "")
+    + (state === "expired" ? " is-session-expired" : "");
+  header.title = state === "valid" ? "ニコニコ認証成功：" + userLabel : labels[state];
+  const sessionStatus = byId("user-session-status");
+  const details = {
+    valid: "認証成功：" + userLabel + "。ニコニコのサーバーでログイン状態を確認しました。",
+    expired: "セッションが無効または期限切れです。ニコニコにログインし直すか、新しいuser_sessionを登録してください。",
+    missing: "user_sessionは未設定です。",
+    unknown: "認証状態を確認できません。通信状態を確認し「認証状態を確認」を押してください。セッション切れとは断定できません。"
+  };
+  if (sessionStatus) {
+    sessionStatus.textContent = details[state];
+    sessionStatus.dataset.state = state;
+  }
+  const warning = byId("auth-session-warning");
+  if (warning) {
+    warning.hidden = state !== "expired";
+    if (state === "expired") warning.textContent = details.expired;
+  }
+}
+
 async function refreshAuthStatus() {
+  const sessionStatus = byId("user-session-status");
+  if (sessionStatus) sessionStatus.textContent = "ニコニコに認証状態を問い合わせています…";
   try {
     const status = await api.getAuthStatus();
-    byId("login-state").textContent = status.loggedIn ? "ログイン済み" : "未ログイン";
-    byId("login-state").className = "login-state " + (status.loggedIn ? "is-logged-in" : "");
-    const sessionStatus = byId("user-session-status");
-    if (sessionStatus) sessionStatus.textContent = status.loggedIn
-      ? "user_sessionを検出しました（有効性は未確認）"
-      : "user_sessionは未設定です";
+    renderAuthStatus(status);
+    return status;
   } catch (_) {
-    byId("login-state").textContent = "状態を確認できません";
-    const sessionStatus = byId("user-session-status");
-    if (sessionStatus) sessionStatus.textContent = "認証状態を確認できません";
+    const unknown = { state: "unknown" };
+    renderAuthStatus(unknown);
+    return unknown;
   }
 }
 
@@ -358,10 +386,12 @@ async function saveUserSession() {
   }
   button.disabled = true;
   try {
-    await api.setUserSession(value);
+    const result = await api.setUserSession(value);
     input.value = "";
-    await refreshAuthStatus();
-    showToast("user_sessionを保存しました。");
+    renderAuthStatus(result);
+    showToast(result.state === "valid" ? "ニコニコのログイン確認に成功しました。" :
+      result.state === "expired" ? "保存しましたが、セッションは無効または期限切れです。" :
+      "user_sessionを保存しました。認証結果は確認できませんでした。", result.state !== "valid");
   } catch (error) {
     showToast(error.message || "user_sessionを保存できませんでした。", true);
   } finally {
@@ -374,9 +404,9 @@ async function clearUserSession() {
   const button = byId("clear-user-session-button");
   button.disabled = true;
   try {
-    await api.setUserSession("");
+    const result = await api.setUserSession("");
     byId("setting-user-session").value = "";
-    await refreshAuthStatus();
+    renderAuthStatus(result);
     showToast("user_sessionを削除しました。");
   } catch (error) {
     showToast(error.message || "user_sessionを削除できませんでした。", true);
@@ -2550,7 +2580,8 @@ try {
     (payload.name || payload.userId || "ユーザー") + " の状態確認エラー：" + (payload.error || ""),
     "error"
   );
-  if (channel === "auth:status") refreshAuthStatus();
+  if (channel === "auth:status") renderAuthStatus(payload);
+  if (channel === "auth:expired") showToast("ニコニコのセッションが期限切れです。設定から再ログインしてください。", true);
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
   });
 } catch (error) {
@@ -2644,6 +2675,7 @@ byId("open-watch-button").addEventListener("click", async () => {
 
 byId("save-user-session-button").addEventListener("click", saveUserSession);
 byId("clear-user-session-button").addEventListener("click", clearUserSession);
+byId("check-auth-status-button").addEventListener("click", refreshAuthStatus);
 
 byId("login-button").addEventListener("click", async () => {
   try {
