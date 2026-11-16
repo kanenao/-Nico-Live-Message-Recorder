@@ -1123,3 +1123,42 @@ test("new journal layout preserves AI errors, Whisper transcript, and existing a
   assert.match(main, /article\.coverImage = selectArticleCoverImage\(extracted\.frames\)/);
   assert.match(main, /selectArticleCoverImage\(options\.images, previousArticle && previousArticle\.coverImage\)/);
 });
+
+test("Nico login is verified by a real authenticated-account API, not only the Cookie presence", () => {
+  const checker = require("../electron/nico-auth-check.cjs");
+  assert.equal(checker.ME_URL, "https://account.nicovideo.jp/api/public/v2/user.json");
+  assert.match(main, /checkNicoAuthStatus\(\{ force: true \}\)/);
+  assert.match(main, /verifyNicoSession\(token\)/);
+  assert.match(main, /const AUTH_RECHECK_INTERVAL_MS = 3 \* 60 \* 1000/);
+  assert.match(main, /authCheckTimer = setInterval\(/);
+  assert.match(main, /auth:expired/);
+  assert.match(html, /id="check-auth-status-button"/);
+  assert.match(html, /id="auth-session-warning"/);
+  assert.match(renderer, /api\.setUserSession\(value\)/);
+  assert.doesNotMatch(main, /writeAppSettings\(\{[^}]*user_session/i);
+});
+
+test("auth feedback distinguishes verified login, expiry, missing Cookie, and network uncertainty", () => {
+  const vm = require("node:vm");
+  const start = renderer.indexOf("function renderAuthStatus(result) {");
+  const end = renderer.indexOf("async function refreshAuthStatus()", start);
+  assert.ok(start >= 0 && end > start);
+  const ids = new Map([["login-state", { textContent: "", className: "", title: "" }],
+    ["user-session-status", { textContent: "", dataset: {} }],
+    ["auth-session-warning", { textContent: "", hidden: true }]]);
+  const render = vm.runInNewContext(renderer.slice(start, end) + "\nrenderAuthStatus", {
+    byId: (id) => ids.get(id) || null
+  });
+  render({ state: "valid", userId: "12345678", nickname: "配信者" });
+  assert.equal(ids.get("login-state").textContent, "ログイン済み");
+  assert.match(ids.get("user-session-status").textContent, /認証成功：配信者/);
+  assert.equal(ids.get("auth-session-warning").hidden, true);
+  render({ state: "expired" });
+  assert.equal(ids.get("login-state").textContent, "セッション切れ");
+  assert.equal(ids.get("auth-session-warning").hidden, false);
+  render({ state: "unknown" });
+  assert.equal(ids.get("login-state").textContent, "認証確認不可");
+  assert.equal(ids.get("auth-session-warning").hidden, true);
+  render({ state: "missing" });
+  assert.equal(ids.get("login-state").textContent, "未ログイン");
+});
