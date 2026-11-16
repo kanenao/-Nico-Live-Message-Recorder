@@ -1139,7 +1139,7 @@ function appendMarkerAndWait(type, fields = {}) {
   return writeCommentLine(writer, JSON.stringify(marker)).then(() => marker);
 }
 
-async function closeCommentWriter() {
+async function closeCommentWriter(options = {}) {
   if (!commentWriter) return;
   if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
   if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
@@ -1174,6 +1174,7 @@ async function closeCommentWriter() {
     send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
   }
   while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
+  if (options.skipArticle === true) return;
   try {
     const savedArticle = await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
       force: liveArticleSessionActive,
@@ -1989,10 +1990,11 @@ async function stopLiveArticleSession() {
   }
   articleRefreshPending = false;
   await stopLiveArticleAudioCapture(currentLiveId);
+  let finalizedArticle = null;
   if (commentWriter && commentFilePath) {
-    await refreshLiveBroadcastArticle({ finalize: true });
+    finalizedArticle = await refreshLiveBroadcastArticle({ finalize: true });
   }
-  await closeCommentWriter();
+  await closeCommentWriter({ skipArticle: Boolean(finalizedArticle && finalizedArticle.status === "generated") });
   const liveId = currentLiveId;
   liveArticleSessionActive = false;
   liveArticleFrames = [];
