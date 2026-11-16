@@ -14,6 +14,7 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
+const { parseVideoDuration, videoPreviewTimes, formatVideoTime } = require("./library-video-preview.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
 const articleExport = require("./article-export.cjs");
@@ -4038,23 +4039,9 @@ ipcMain.handle("library:set-profile-user-id", (_event, broadcaster, userId) => {
   writeAppSettings({ libraryProfileIds: next });
   return { userId: id, profileUrl: nicoUserPageUrl(id) };
 });
-ipcMain.handle("library:thumbnail", (_event, value) => {
-  try {
-    const target = resolveLibraryItemPath(value);
-    if (!LIBRARY_VIDEO_EXTENSIONS.has(path.extname(target).toLowerCase())) return "";
-    const settings = readAppSettings();
-    const ffmpegPath = findBundledFfmpegExecutable() || findFfmpegExecutable({ customPath: settings.ffmpegPath });
-    if (!ffmpegPath) return "";
-    const image = execFileSync(ffmpegPath, [
-      "-hide_banner", "-loglevel", "error", "-ss", "00:00:01", "-i", target,
-      "-frames:v", "1", "-vf", "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2",
-      "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"
-    ], { windowsHide: true, timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
-    return image && image.length ? "data:image/jpeg;base64," + image.toString("base64") : "";
-  } catch (_) {
-    return "";
-  }
-});
+// Thumbnails are decoded asynchronously; the UI must never block on FFmpeg.
+ipcMain.handle("library:thumbnail", (_event, value) => getLibraryVideoPreview(value, "poster"));
+ipcMain.handle("library:video-preview", (_event, value) => getLibraryVideoPreview(value, "timeline"));
 // Serve article covers from saved JPEGs or recover them from the actual recording.
 // Keep this separate from library:thumbnail, which only accepts library paths.
 // Cache and limit simultaneous FFmpeg work so large journals do not freeze Electron.
@@ -4128,6 +4115,82 @@ async function getArticleThumbnail(articlePath) {
   return promise;
 }
 ipcMain.handle("articles:thumbnail", (_event, articlePath) => getArticleThumbnail(articlePath));
+
+// Decode only items inside the recorder's saved-video folder. A bounded pool
+// and cache keep large recording libraries responsive while scrolling.
+const libraryVideoPreviewCache = new Map();
+function safeLibraryVideoPath(value) {
+  const videoPath = resolveLibraryItemPath(value);
+  const videosRoot = path.resolve(dataRoot(), "videos");
+  const relative = path.relative(videosRoot, videoPath);
+  if (!relative || relative === ".." || relative.startsWith(".." + path.sep) ||
+      path.isAbsolute(relative) || !LIBRARY_VIDEO_EXTENSIONS.has(path.extname(videoPath).toLowerCase())) {
+    throw new Error("録画ライブラリ内の動画ファイルを指定してください。");
+  }
+  return videoPath;
+}
+
+function probeLibraryVideoDuration(ffmpegPath, videoPath) {
+  return new Promise(resolve => {
+    execFile(ffmpegPath, ["-hide_banner", "-i", videoPath], {
+      windowsHide: true, encoding: "utf8", timeout: 9000, maxBuffer: 256 * 1024
+    }, (_error, _stdout, stderr) => resolve(parseVideoDuration(stderr)));
+  });
+}
+
+async function extractLibraryFrame(videoPath, ffmpegPath, seconds) {
+  await articleThumbnailSlot();
+  try {
+    return await extractArticleThumbnailFrame(videoPath, ffmpegPath, Number(seconds).toFixed(2));
+  } finally {
+    releaseArticleThumbnailSlot();
+  }
+}
+
+async function getLibraryVideoPreview(value, mode = "poster") {
+  const videoPath = safeLibraryVideoPath(value);
+  const stat = await fs.promises.stat(videoPath);
+  if (!stat.isFile() || stat.size <= 0) return mode === "poster" ? "" :
+    { durationSeconds: 0, frames: [], message: "動画のデータがありません。" };
+  const settings = readAppSettings();
+  const ffmpegPath = findBundledFfmpegExecutable() || findFfmpegExecutable({
+    customPath: settings.ffmpegPath
+  });
+  if (!ffmpegPath) return mode === "poster" ? "" :
+    { durationSeconds: 0, frames: [], message: "動画の場面表示にはFFmpegが必要です。" };
+  const kind = mode === "timeline" ? "timeline" : "poster";
+  const key = [kind, videoPath, stat.size, stat.mtimeMs].join("|");
+  if (libraryVideoPreviewCache.has(key)) return libraryVideoPreviewCache.get(key);
+  const task = (async () => {
+    if (kind === "poster") {
+      return await extractLibraryFrame(videoPath, ffmpegPath, 1) ||
+        await extractLibraryFrame(videoPath, ffmpegPath, 0);
+    }
+    const durationSeconds = await probeLibraryVideoDuration(ffmpegPath, videoPath);
+    const positions = videoPreviewTimes(durationSeconds);
+    const frames = [];
+    for (const seconds of positions) {
+      const imageUrl = await extractLibraryFrame(videoPath, ffmpegPath, seconds);
+      if (imageUrl) frames.push({ seconds, label: formatVideoTime(seconds), imageUrl });
+    }
+    if (!frames.length) {
+      const imageUrl = await extractLibraryFrame(videoPath, ffmpegPath, 0);
+      if (imageUrl) frames.push({ seconds: 0, label: "00:00", imageUrl });
+    }
+    return {
+      durationSeconds,
+      frames,
+      message: frames.length ? "" : "動画の場面を抽出できませんでした。破損や形式を確認してください。"
+    };
+  })().catch(error => kind === "poster" ? "" : ({
+    durationSeconds: 0, frames: [],
+    message: "動画の場面を取得できませんでした：" + (error.message || String(error))
+  }));
+  libraryVideoPreviewCache.set(key, task);
+  if (libraryVideoPreviewCache.size > 72)
+    libraryVideoPreviewCache.delete(libraryVideoPreviewCache.keys().next().value);
+  return task;
+}
 
 function resolveBroadcastArticlePath(value) {
   const root = path.resolve(dataRoot(), "articles"), target = path.resolve(String(value || ""));
