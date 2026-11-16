@@ -1357,12 +1357,23 @@ async function connectPreparedCommentSession(liveId) {
     });
     provider = activeProvider;
 
-    activeProvider.on("comment", (data) => appendEvent("comment", data));
-    activeProvider.on("gift", (data) => appendEvent("gift", data));
-    activeProvider.on("emotion", (data) => appendEvent("emotion", data));
-    activeProvider.on("notification", (data) => appendEvent("notification", data));
-    activeProvider.on("operatorComment", (data) => appendEvent("operatorComment", data));
+    activeProvider.on("comment", (data) => {
+      if (epoch === commentSessionEpoch) appendEvent("comment", data);
+    });
+    activeProvider.on("gift", (data) => {
+      if (epoch === commentSessionEpoch) appendEvent("gift", data);
+    });
+    activeProvider.on("emotion", (data) => {
+      if (epoch === commentSessionEpoch) appendEvent("emotion", data);
+    });
+    activeProvider.on("notification", (data) => {
+      if (epoch === commentSessionEpoch) appendEvent("notification", data);
+    });
+    activeProvider.on("operatorComment", (data) => {
+      if (epoch === commentSessionEpoch) appendEvent("operatorComment", data);
+    });
     activeProvider.on("metadata", (metadata) => {
+      if (epoch !== commentSessionEpoch) return;
       updateCurrentBroadcaster(metadata, liveId);
       send("live:metadata", metadata);
     });
