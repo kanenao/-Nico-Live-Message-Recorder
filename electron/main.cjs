@@ -807,6 +807,8 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
 
 function updateCurrentBroadcaster(metadata, liveId) {
   if (!metadata || (liveId && currentLiveId !== liveId)) return;
+  const previousBroadcasterName = currentBroadcasterName;
+  const previousBroadcasterId = currentBroadcasterId;
   const name = String(metadata.broadcasterName || metadata.providerName ||
     (metadata.provider && metadata.provider.name) || "").trim();
   const id = String(metadata.broadcasterUserId || metadata.broadcasterId || metadata.providerId ||
@@ -842,7 +844,8 @@ function updateCurrentBroadcaster(metadata, liveId) {
     visitorCount: readField(["visitorCount", "watchCount", "viewers", "viewerCount", "totalVisitors", "viewCount", "totalViewCount"]) ||
       currentProgramInfo.visitorCount || ""
   };
-  if (Object.keys(nextInfo).some((key) => nextInfo[key] !== "" && nextInfo[key] !== undefined && nextInfo[key] !== currentProgramInfo[key])) {
+  const identityChanged = currentBroadcasterName !== previousBroadcasterName || currentBroadcasterId !== previousBroadcasterId;
+  if (identityChanged || Object.keys(nextInfo).some((key) => nextInfo[key] !== "" && nextInfo[key] !== undefined && nextInfo[key] !== currentProgramInfo[key])) {
     currentProgramInfo = nextInfo;
     if (commentWriter) {
       appendMarker("programMetadata", {
@@ -3359,8 +3362,8 @@ async function discoverLibraryBroadcasterProfile(groupName, groupItems) {
   // Legacy videos have no metadata log sometimes. Look up only their own broadcast IDs.
   const liveIds = [...new Set(groupItems.map(item => item.liveId).filter(Boolean))].slice(0, 3);
   const ids = new Set();
-  for (const liveId of liveIds) {
-    const id = await getLibraryProgramProfile(liveId, groupName);
+  const resolvedIds = await Promise.all(liveIds.map(liveId => getLibraryProgramProfile(liveId, groupName)));
+  for (const id of resolvedIds) {
     if (id) ids.add(id);
     if (ids.size > 1) return "";
   }

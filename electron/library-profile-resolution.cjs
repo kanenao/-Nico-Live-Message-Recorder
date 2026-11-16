@@ -54,6 +54,7 @@ async function readBroadcasterFromCommentLog(filePath, expectedLiveId = "", expe
 
 function verifiedProgramBroadcaster(page, folderName) {
   if (!page || typeof page !== "object") return "";
+  if (/^(?:channel|official|community)$/i.test(String(page.broadcasterType || "").trim())) return "";
   const id = normalizeBroadcastUserId(page.broadcasterId || page.broadcasterUserId);
   if (!id) return "";
   const expectedName = normalizeBroadcasterLabel(folderName);
