@@ -24,3 +24,12 @@ test("rejects cookie separators and whitespace to prevent malformed cookie injec
 test("rejects oversized session values", () => {
   assert.throws(() => normalizeUserSessionInput("x".repeat(4097)), /4096文字以内/);
 });
+
+test("manual root-domain session wins over older host-only session cookies", () => {
+  const { getNicoUserSession } = require("../electron/nico-cookies.cjs");
+  const cookies = [
+    { name: "user_session", value: "old_token", domain: "www.nicovideo.jp" },
+    { name: "user_session", value: "new_token", domain: ".nicovideo.jp" },
+  ];
+  assert.equal(getNicoUserSession(cookies), "new_token");
+});

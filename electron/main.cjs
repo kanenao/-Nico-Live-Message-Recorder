@@ -1137,7 +1137,7 @@ async function checkNicoAuthStatus(options = {}) {
       authStatusCacheAt = Date.now();
       // Always render the checked state; the UI decides whether to show a toast.
       send("auth:status", status);
-      if (previousState === "valid" && status.state === "expired") {
+      if (previousState === "valid" && (status.state === "expired" || status.state === "missing")) {
         send("auth:expired", { message: "ニコニコの認証が期限切れまたは無効になりました。user_sessionを更新してください。" });
       }
     }
