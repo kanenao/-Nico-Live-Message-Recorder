@@ -937,3 +937,43 @@ button, .button {
 .auth-session-warning { padding: 10px 20px; background: #422728; color: #ffcfcc; border-bottom: 1px solid #b76464; font-size: 12px; font-weight: 650; line-height: 1.5; }
 #user-session-status[data-state="valid"] { color: #71e0ba; }
 #user-session-status[data-state="expired"] { color: #ffaeaa; }
+
+/* alpha111: Kick-style editorial chapters and dependable broadcast image column */
+.kick-article-layout .broadcast-article-hero { align-items:stretch; }
+.kick-article-layout .broadcast-article-media {
+  position:relative; min-height:150px; align-self:start; box-shadow:0 8px 24px rgba(0,0,0,.22);
+}
+.kick-article-layout .broadcast-article-thumbnail {
+  display:block; width:100%; height:100%; object-fit:cover; object-position:center;
+}
+.kick-article-layout .broadcast-article-media-placeholder {
+  position:absolute; inset:0; display:grid; place-items:center; padding:18px;
+  text-align:center; line-height:1.8; color:#a6b8ca;
+  background:linear-gradient(155deg,#1c2a36,#0d141c); font-size:12px; font-weight:650;
+}
+.kick-article-layout .broadcast-article-thumbnail[hidden],
+.kick-article-layout .broadcast-article-media-placeholder[hidden] { display:none; }
+.kick-article-layout .broadcast-article-heading h3 { font-size:21px; line-height:1.48; }
+.kick-article-layout .broadcast-article-editorial-title { color:#aab9ce; font-size:11px; line-height:1.65; }
+.broadcast-article-evidence { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
+.broadcast-article-evidence strong { color:#95a2b5; font-size:10px; margin-right:4px; }
+.broadcast-article-evidence span {
+  display:inline-flex; align-items:center; padding:4px 8px; border-radius:5px;
+  background:#202c36; border:1px solid #354859; color:#b6d6ea; font-size:10px;
+}
+.broadcast-article-story-label {
+  padding:9px 0; border-bottom:1px solid #35445a; font-size:12px;
+  font-weight:800; letter-spacing:.04em; color:#a9d4ee;
+}
+.broadcast-article-chapter { padding:12px 0 16px; border-bottom:1px solid #293340; }
+.broadcast-article-chapter h4 {
+  font-size:15px; font-weight:800; color:#e7f1fd; line-height:1.6;
+  margin:0 0 8px; letter-spacing:.012em;
+}
+.kick-article-layout .broadcast-article-chapter p {
+  margin:0; font-size:12px; color:#c9d5e6; line-height:1.96; white-space:pre-wrap;
+}
+@media(max-width:850px) {
+  .kick-article-layout .broadcast-article-hero { grid-template-columns:1fr; }
+  .kick-article-layout .broadcast-article-heading h3 { font-size:18px; }
+}
