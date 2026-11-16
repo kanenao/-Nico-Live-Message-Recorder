@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 
-const FILE_EXTENSIONS = [".ts", ".mp4", ".jsonl", ".csv", ".ass"];
+const FILE_EXTENSIONS = [".ts", ".mp4", ".jsonl", ".csv", ".ass", ".json"];
 
 function safeRecordingBroadcasterName(value) {
   let name = String(value || "").normalize("NFKC")
