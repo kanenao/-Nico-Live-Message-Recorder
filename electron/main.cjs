@@ -4241,6 +4241,18 @@ ipcMain.handle("library:delete-video", async (_event, value) => {
   if (confirmation.response !== 0) return { cancelled: true };
 
   await fs.promises.unlink(target);
+  try {
+    const key = recordingRelativeKey(target);
+    const entries = loadRecordingIndex();
+    if (key && Object.hasOwn(entries, key)) {
+      delete entries[key];
+      const temp = recordingIndexPath() + "." + process.pid + ".tmp";
+      fs.writeFileSync(temp, JSON.stringify({ version: 1, files: entries }, null, 2), "utf8");
+      fs.renameSync(temp, recordingIndexPath());
+    }
+  } catch (error) {
+    send("app:error", "削除した動画の番組情報を整理できませんでした: " + error.message);
+  }
   return { deleted: true, fileName: path.basename(target) };
 });
 
