@@ -1747,6 +1747,7 @@ function scheduleArticleThumbnail(thumbnail, placeholder, article) {
           placeholder.textContent = "画像を表示できません";
         }, { once: true });
         thumbnail.src = imageUrl;
+        article.coverImage = imageUrl;
         thumbnail.hidden = false;
         placeholder.hidden = true;
       } else {
