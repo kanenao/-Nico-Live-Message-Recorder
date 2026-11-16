@@ -1732,6 +1732,47 @@ async function loadCaptureLibrary() {
   }
 }
 
+const articleThumbnailQueue = [];
+let articleThumbnailRequests = 0;
+function scheduleArticleThumbnail(thumbnail, placeholder, article) {
+  articleThumbnailQueue.push(async () => {
+    if (!thumbnail.isConnected) return;
+    try {
+      const imageUrl = await api.getArticleThumbnail(article.articlePath);
+      if (!thumbnail.isConnected || !placeholder.isConnected) return;
+      if (typeof imageUrl === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(imageUrl)) {
+        thumbnail.addEventListener("error", () => {
+          thumbnail.remove();
+          placeholder.hidden = false;
+          placeholder.textContent = "画像を表示できません";
+        }, { once: true });
+        thumbnail.src = imageUrl;
+        thumbnail.hidden = false;
+        placeholder.hidden = true;
+      } else {
+        thumbnail.remove();
+        placeholder.textContent = "放送映像が保存されていません";
+      }
+    } catch (_) {
+      if (!thumbnail.isConnected) return;
+      thumbnail.remove();
+      placeholder.textContent = "サムネイルを取得できません";
+    }
+  });
+  pumpArticleThumbnailQueue();
+}
+function pumpArticleThumbnailQueue() {
+  while (articleThumbnailRequests < 2 && articleThumbnailQueue.length) {
+    const job = articleThumbnailQueue.shift();
+    articleThumbnailRequests++;
+    // Delay until the new card has been added to the document.
+    Promise.resolve().then(job).catch(() => {}).finally(() => {
+      articleThumbnailRequests--;
+      pumpArticleThumbnailQueue();
+    });
+  }
+}
+
 function renderBroadcastArticles() {
   const list = byId("articles-list");
   if (!list) return;
@@ -1822,25 +1863,24 @@ function renderBroadcastArticles() {
       cover.alt = (article.programTitle || article.title || "放送") + " の放送画面";
       cover.loading = "lazy";
       cover.src = coverImage;
-      cover.addEventListener("error", () => { cover.remove(); mediaPlaceholder.hidden = false; }, { once: true });
+      cover.addEventListener("error", () => {
+        cover.remove();
+        mediaPlaceholder.hidden = false;
+        mediaPlaceholder.textContent = "保存画像を表示できません";
+      }, { once: true });
       mediaPlaceholder.hidden = true;
       media.appendChild(cover);
-    } else if (article.videoFile) {
+    } else if (article.articlePath && typeof api.getArticleThumbnail === "function") {
       const thumbnail = document.createElement("img");
       thumbnail.className = "broadcast-article-thumbnail";
-      thumbnail.alt = (article.programTitle || article.title || "放送") + " の映像サムネイル";
+      thumbnail.alt = (article.programTitle || article.title || "放送") + " の録画サムネイル";
       thumbnail.loading = "lazy";
       thumbnail.hidden = true;
+      mediaPlaceholder.textContent = "サムネイルを確認中…";
       media.appendChild(thumbnail);
-      Promise.resolve().then(() => api.getLibraryThumbnail(article.videoFile)).then((imageUrl) => {
-        if (imageUrl) {
-          thumbnail.src = imageUrl;
-          thumbnail.hidden = false;
-          mediaPlaceholder.hidden = true;
-        } else {
-          thumbnail.remove();
-        }
-      }).catch(() => thumbnail.remove());
+      scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article);
+    } else {
+      mediaPlaceholder.textContent = "放送映像が保存されていません";
     }
     const heading = document.createElement("div");
     heading.className = "broadcast-article-heading";
