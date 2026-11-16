@@ -14,8 +14,8 @@ test("Nico broadcast start time uses JST in both video and comment filenames", (
   assert.equal(recordingFileStem("配信者さん", startedAt), "配信者さん_20261117_010509");
   assert.equal(recordingFileStem("配信者さん", startedAt) + ".mp4", "配信者さん_20261117_010509.mp4");
   assert.equal(recordingFileStem("配信者さん", startedAt) + ".jsonl", "配信者さん_20261117_010509.jsonl");
-  assert.equal(recordingDateTime(1794867909), "20261117_010509");
-  assert.equal(recordingDateTime(1794867909000), "20261117_010509");
+  assert.equal(recordingDateTime(1794845109), "20261117_010509");
+  assert.equal(recordingDateTime(1794845109000), "20261117_010509");
 });
 
 test("Nico broadcast time falls back to recording start when program start cannot be fetched", () => {
@@ -25,7 +25,7 @@ test("Nico broadcast time falls back to recording start when program start canno
 });
 
 test("sanitize unsafe Windows filename characters, reserved names and trailing dots", () => {
-  assert.equal(safeRecordingBroadcasterName('A/B:<C>?"*\\|'), "A_B__C____");
+  assert.equal(safeRecordingBroadcasterName('A/B:<C>?"*\\|'), "A_B__C______");
   assert.equal(safeRecordingBroadcasterName("CON"), "_CON");
   assert.equal(safeRecordingBroadcasterName("配信者.  "), "配信者");
   assert.equal(safeRecordingBroadcasterName(""), "配信者名未取得");
