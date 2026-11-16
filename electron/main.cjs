@@ -14,6 +14,7 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
+const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
@@ -89,6 +90,9 @@ let liveArticleAudioFfmpegClosePromise = null;
 let liveArticleAudioRuntimeDirectory = "";
 let liveArticleAudioPath = "";
 let liveArticleAudioSegmentDirectory = "";
+let liveArticleVideoFrameDirectory = "";
+let liveArticleVideoProcessedFiles = new Set();
+let liveArticleVideoSource = "none";
 let liveArticleAudioSegmentTimer = null;
 let liveArticleAudioProcessing = false;
 let liveArticleAudioProcessedFiles = new Set();
@@ -543,10 +547,13 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
         || visionModels[0]
         || (configuredInstalled && visionPattern.test(configuredInstalled.name) ? configuredInstalled : null)
       : null;
-    if (options.images && options.images.length && !visionModel) throw new Error("動画の映像分析には画像対応モデルが必要です。Ollamaで「ollama pull qwen2.5vl:3b」を実行してください。");
-    const model = options.images && options.images.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
+    // Never throw away an entire audio/comment article when the optional vision
+    // model is not installed. Use a text-only model and clearly mark images as unanalyzed.
+    const selectedImages = visionModel ? (options.images || []) : [];
+    const model = selectedImages.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
     if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
-    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: options.images || [], audioTranscript: options.audioTranscript || "" });
+    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: selectedImages, audioTranscript: options.audioTranscript || "" });
+    article.videoAiAnalyzed = selectedImages.length > 0;
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
@@ -560,6 +567,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     if (result.topics.length) article.topics = result.topics.map(term => ({ term, count: 0 }));
     article.aiProvider = result.provider;
     article.aiModel = result.model;
+    delete article.aiFallbackReason;
   } catch (error) {
     article.aiFallbackReason = error.message || String(error);
     send("articles:ai-fallback", { liveId: article.liveId, reason: article.aiFallbackReason });
@@ -587,7 +595,7 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   await enhanceBroadcastArticleWithOllama(article, records, articleContext, options);
   if (options.images && options.images.length) {
     article.videoFrameCount = options.images.length;
-    article.videoAnalysis = article.aiProvider ? "生放送画面から取得した代表フレームを分析済み" : "生放送画面の代表フレームを取得（画像AI分析は未完了）";
+    article.videoAnalysis = article.videoAiAnalyzed ? "放送映像の代表フレームを画像AIで分析済み" : "放送映像の代表フレームを取得（画像AI分析は未完了）";
   }
   if (options.audioTranscript) {
     article.audioTranscript = String(options.audioTranscript).slice(0, 30000);
@@ -612,7 +620,9 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   article.commentFile = commentPath;
   let previousArticle = null;
   try { previousArticle = JSON.parse(fs.readFileSync(articlePath, "utf8")); } catch (_) {}
+  const videoStop = records.filter(row => row && row.type === "videoStop" && row.videoFile).at(-1);
   if (context.videoFile) article.videoFile = context.videoFile;
+  else if (videoStop && videoStop.videoFile) article.videoFile = videoStop.videoFile;
   else if (previousArticle && previousArticle.videoFile) article.videoFile = previousArticle.videoFile;
   // Save one bounded JPEG still so live articles can show their broadcast image even without recording a video.
   const coverImage = selectArticleCoverImage(options.images, previousArticle && previousArticle.coverImage);
@@ -695,6 +705,18 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   try {
     if (videoPath) {
       extracted = await extractArticleVideoFrames(videoPath);
+      if (!records.length && !commentsText.trim()) {
+        const matched = findMatchingCommentLog(videoPath, listCaptureLibrary().items.filter(item => item.type === "comment"));
+        if (matched) {
+          const parsed = parseCommentLog(fs.readFileSync(matched, "utf8"));
+          records.push(...parsed);
+          article.commentFile = matched;
+          // Regenerate the metadata/comment summary before running multimodal AI.
+          const recovered = generateBroadcastArticle(records, context);
+          if (recovered.status === "generated") Object.assign(article, recovered);
+          article.commentFile = matched;
+        }
+      }
       const audioSettings = readAppSettings();
       if (audioSettings.articleWhisperCliPath && audioSettings.articleWhisperModelPath) {
         try {
@@ -718,7 +740,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
       article.videoFrameCount = extracted ? extracted.frames.length : 0;
       // Preserve one representative video frame for the journal even when the video is moved later.
       if (extracted && extracted.frames.length) article.coverImage = selectArticleCoverImage(extracted.frames);
-      article.videoAnalysis = article.aiProvider ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
+      article.videoAnalysis = article.videoAiAnalyzed ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
       if (audioTranscriptionError) article.audioTranscriptionError = audioTranscriptionError;
       if (!audioTranscript && !audioTranscriptionError) article.audioTranscriptionStatus = "未設定（Whisper実行ファイルと日本語モデルを選択すると音声も分析できます）";
     }
