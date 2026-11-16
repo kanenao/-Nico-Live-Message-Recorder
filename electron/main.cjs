@@ -14,6 +14,7 @@ const { generateAssFromRecords } = require("./ass.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
+const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const articleExport = require("./article-export.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
 const { getOllamaStatus, generateArticleWithOllama } = require("./ollama.cjs");
@@ -89,6 +90,10 @@ let liveArticleAudioFfmpegClosePromise = null;
 let liveArticleAudioRuntimeDirectory = "";
 let liveArticleAudioPath = "";
 let liveArticleAudioSegmentDirectory = "";
+let liveArticleVideoFrameDirectory = "";
+let liveArticleVideoProcessedFiles = new Set();
+let liveArticleVideoSource = "none";
+let liveArticleCaptureStartedAt = 0;
 let liveArticleAudioSegmentTimer = null;
 let liveArticleAudioProcessing = false;
 let liveArticleAudioProcessedFiles = new Set();
@@ -543,10 +548,13 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
         || visionModels[0]
         || (configuredInstalled && visionPattern.test(configuredInstalled.name) ? configuredInstalled : null)
       : null;
-    if (options.images && options.images.length && !visionModel) throw new Error("動画の映像分析には画像対応モデルが必要です。Ollamaで「ollama pull qwen2.5vl:3b」を実行してください。");
-    const model = options.images && options.images.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
+    // Never throw away an entire audio/comment article when the optional vision
+    // model is not installed. Use a text-only model and clearly mark images as unanalyzed.
+    const selectedImages = visionModel ? (options.images || []) : [];
+    const model = selectedImages.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
     if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
-    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: options.images || [], audioTranscript: options.audioTranscript || "" });
+    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: selectedImages, audioTranscript: options.audioTranscript || "" });
+    article.videoAiAnalyzed = selectedImages.length > 0;
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
@@ -560,6 +568,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     if (result.topics.length) article.topics = result.topics.map(term => ({ term, count: 0 }));
     article.aiProvider = result.provider;
     article.aiModel = result.model;
+    delete article.aiFallbackReason;
   } catch (error) {
     article.aiFallbackReason = error.message || String(error);
     send("articles:ai-fallback", { liveId: article.liveId, reason: article.aiFallbackReason });
@@ -584,10 +593,12 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
     try { return JSON.parse(line); } catch (_) { return null; }
   }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
-  await enhanceBroadcastArticleWithOllama(article, records, articleContext, options);
+  const endedRecordedSession = Boolean(options.deferAiForRecordedVideo &&
+    records.some(row => row && row.type === "videoStop" && row.videoFile));
+  if (!endedRecordedSession) await enhanceBroadcastArticleWithOllama(article, records, articleContext, options);
   if (options.images && options.images.length) {
     article.videoFrameCount = options.images.length;
-    article.videoAnalysis = article.aiProvider ? "生放送画面から取得した代表フレームを分析済み" : "生放送画面の代表フレームを取得（画像AI分析は未完了）";
+    article.videoAnalysis = article.videoAiAnalyzed ? "放送映像の代表フレームを画像AIで分析済み" : "放送映像の代表フレームを取得（画像AI分析は未完了）";
   }
   if (options.audioTranscript) {
     article.audioTranscript = String(options.audioTranscript).slice(0, 30000);
@@ -612,7 +623,9 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   article.commentFile = commentPath;
   let previousArticle = null;
   try { previousArticle = JSON.parse(fs.readFileSync(articlePath, "utf8")); } catch (_) {}
+  const videoStop = records.filter(row => row && row.type === "videoStop" && row.videoFile).at(-1);
   if (context.videoFile) article.videoFile = context.videoFile;
+  else if (videoStop && videoStop.videoFile) article.videoFile = videoStop.videoFile;
   else if (previousArticle && previousArticle.videoFile) article.videoFile = previousArticle.videoFile;
   // Save one bounded JPEG still so live articles can show their broadcast image even without recording a video.
   const coverImage = selectArticleCoverImage(options.images, previousArticle && previousArticle.coverImage);
@@ -626,7 +639,7 @@ async function extractArticleVideoFrames(videoPath) {
   const resolvedPath = path.resolve(String(videoPath || ""));
   if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) throw new Error("選択した動画ファイルが見つかりません。");
   if (![".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts", ".avi"].includes(path.extname(resolvedPath).toLowerCase())) throw new Error("対応していない動画形式です。MP4 / MKV / WebM / MOV / TS / AVIを選択してください。");
-  if (fs.statSync(resolvedPath).size > 4 * 1024 * 1024 * 1024) throw new Error("記事生成に使う動画は4GB以下にしてください。");
+  if (fs.statSync(resolvedPath).size > 64 * 1024 * 1024 * 1024) throw new Error("記事生成に使う動画は64GB以下にしてください。");
   const ffmpegPath = getVideoToolStatus().ffmpegPath;
   if (!ffmpegPath) throw new Error("映像分析にはFFmpegが必要です。アプリ同梱FFmpegまたは設定済みFFmpegを確認してください。");
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "nico-article-frames-"));
@@ -695,6 +708,19 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   try {
     if (videoPath) {
       extracted = await extractArticleVideoFrames(videoPath);
+      if (!records.length && !commentsText.trim()) {
+        const matched = findMatchingCommentLog(videoPath, listCaptureLibrary().items.filter(item => item.type === "comment"));
+        if (matched) {
+          const parsed = parseCommentLog(fs.readFileSync(matched, "utf8"));
+          records.push(...parsed);
+          article.commentFile = matched;
+          // Regenerate the metadata/comment summary before running multimodal AI.
+          const recovered = generateBroadcastArticle(records, context);
+          if (recovered.status !== "generated") return recovered;
+          Object.assign(article, recovered);
+          article.commentFile = matched;
+        }
+      }
       const audioSettings = readAppSettings();
       if (audioSettings.articleWhisperCliPath && audioSettings.articleWhisperModelPath) {
         try {
@@ -718,9 +744,23 @@ async function generateStandaloneBroadcastArticle(input = {}) {
       article.videoFrameCount = extracted ? extracted.frames.length : 0;
       // Preserve one representative video frame for the journal even when the video is moved later.
       if (extracted && extracted.frames.length) article.coverImage = selectArticleCoverImage(extracted.frames);
-      article.videoAnalysis = article.aiProvider ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
+      article.videoAnalysis = article.videoAiAnalyzed ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
+      if (audioTranscript) {
+        article.audioTranscript = audioTranscript.text;
+        article.audioTranscriptSegmentCount = audioTranscript.segmentCount;
+        article.audioAnalysis = "録画の放送音声をWhisper.cppで分割文字起こし済み";
+        article.audioTranscriptionStatus = "完了";
+        if (audioTranscript.partialErrors && audioTranscript.partialErrors.length) {
+          article.audioTranscriptionError = audioTranscript.partialErrors.join(" / ").slice(0, 1200);
+        }
+      }
       if (audioTranscriptionError) article.audioTranscriptionError = audioTranscriptionError;
       if (!audioTranscript && !audioTranscriptionError) article.audioTranscriptionStatus = "未設定（Whisper実行ファイルと日本語モデルを選択すると音声も分析できます）";
+      article.mediaAnalysis = {
+        video: article.videoAiAnalyzed ? "analyzed" : "sampled",
+        audio: audioTranscript ? "transcribed" : "unavailable",
+        comments: records.some(row => row.type === "comment") ? "analyzed" : "unavailable"
+      };
     }
   } finally { if (extracted) fs.rmSync(extracted.directory, { recursive: true, force: true }); }
   article.articleSource = "manual";
@@ -731,6 +771,155 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   fs.writeFileSync(article.articlePath, JSON.stringify(article, null, 2), "utf8");
   send("articles:generated", { article });
   return article;
+}
+
+// One analysis job at a time: Whisper and vision Ollama are CPU/GPU-heavy.
+// A recording stop must remain responsive; finished recordings can be retried
+// through the explicit article reanalysis button after an app restart.
+const recordedArticleAnalysisInFlight = new Map();
+let recordedArticleAnalysisQueue = Promise.resolve();
+function queueRecordedArticleAnalysis(articlePath, options = {}) {
+  const key = path.resolve(String(articlePath || ""));
+  if (recordedArticleAnalysisInFlight.has(key)) return recordedArticleAnalysisInFlight.get(key);
+  const job = recordedArticleAnalysisQueue.catch(() => {}).then(() => analyzeSavedRecordedArticle(key, options));
+  recordedArticleAnalysisQueue = job.catch(() => {});
+  recordedArticleAnalysisInFlight.set(key, job);
+  void job.finally(() => recordedArticleAnalysisInFlight.delete(key)).catch(() => {});
+  return job;
+}
+async function analyzeSavedRecordedArticle(articlePath, options = {}) {
+  const file = resolveBroadcastArticlePath(articlePath);
+  const saved = JSON.parse(await fs.promises.readFile(file, "utf8"));
+  if (!saved || saved.status !== "generated") throw new Error("再解析できる放送記事が見つかりません。");
+  const library = listCaptureLibrary();
+  const videos = library.items.filter(item => item.type === "video");
+  const videoCandidate = findArticleVideoCandidate(saved, videos, value => fs.existsSync(value));
+  let videoPath = "";
+  if (videoCandidate) {
+    try {
+      const isManualFile = saved.articleSource === "manual" &&
+        saved.videoFile && path.resolve(videoCandidate) === path.resolve(saved.videoFile);
+      if (isManualFile) {
+        // This exact path was previously selected through the native file
+        // picker and persisted with the manual article.
+        if (![".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts", ".avi"]
+          .includes(path.extname(videoCandidate).toLowerCase())) throw new Error("動画形式が不正です。");
+        if (!fs.statSync(videoCandidate).isFile()) throw new Error("動画ファイルがありません。");
+        videoPath = path.resolve(videoCandidate);
+      } else {
+        const checked = resolveLibraryItemPath(videoCandidate);
+        const relative = path.relative(path.join(dataRoot(), "videos"), checked);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("録画フォルダー外です。");
+        videoPath = checked;
+      }
+    } catch (_) {}
+  }
+  if (!videoPath) throw new Error("この記事と一致する録画映像が見つかりません。動画を録画ライブラリに保存してから再解析してください。");
+  const notify = (state, info = {}) => send("articles:analysis-state", {
+    state, articlePath: file, liveId: saved.liveId || "", ...info
+  });
+  notify("starting", { videoFile: videoPath });
+  let records = [];
+  let commentFile = "";
+  try {
+    commentFile = saved.commentFile ? resolveLibraryItemPath(saved.commentFile) : "";
+  } catch (_) {}
+  if (!commentFile) {
+    const candidate = findMatchingCommentLog(videoPath, library.items.filter(item => item.type === "comment"));
+    if (candidate) {
+      try { commentFile = resolveLibraryItemPath(candidate); } catch (_) {}
+    }
+  }
+  if (commentFile) {
+    records = parseCommentLog(await fs.promises.readFile(commentFile, "utf8"));
+    if (records.length > 1000000) throw new Error("コメントログが大きすぎます。");
+  }
+  const context = {
+    broadcasterName: saved.broadcasterName, broadcasterId: saved.broadcasterId,
+    programTitle: saved.programTitle, description: saved.description,
+    liveId: saved.liveId, startedAt: saved.startedAt, endedAt: saved.endedAt,
+    liveStatus: "ended", visitorCount: saved.visitorCount
+  };
+  const contentPolicy = generateBroadcastArticle(records, context);
+  if (contentPolicy.optOutTerm) {
+    throw new Error("この記事は配信者の指定によりAI記事化できません：" + contentPolicy.optOutTerm);
+  }
+  let extracted = null, audioTranscript = null, audioError = "";
+  try {
+    notify("video", { commentCount: records.filter(row => row.type === "comment").length });
+    extracted = await extractArticleVideoFrames(videoPath);
+    const settings = readAppSettings();
+    if (settings.articleWhisperCliPath && settings.articleWhisperModelPath &&
+        fs.existsSync(settings.articleWhisperCliPath) && fs.existsSync(settings.articleWhisperModelPath)) {
+      notify("audio", { frameCount: extracted.frames.length });
+      try {
+        audioTranscript = await transcribeVideoAudio({
+          videoPath,
+          ffmpegPath: getVideoToolStatus().ffmpegPath,
+          whisperCliPath: settings.articleWhisperCliPath,
+          modelPath: settings.articleWhisperModelPath,
+          onProgress: progress => notify("audio-progress", progress)
+        });
+      } catch (error) {
+        audioError = error.message || String(error);
+      }
+    } else {
+      audioError = "Whisper.cppが未設定のため音声の解析を省略しました。";
+    }
+    notify("ai", {
+      frameCount: extracted.frames.length,
+      commentCount: records.filter(row => row.type === "comment").length,
+      audioSegmentCount: audioTranscript ? audioTranscript.segmentCount : 0
+    });
+    await enhanceBroadcastArticleWithOllama(saved, records, context, {
+      force: options.force === true,
+      images: extracted.frames,
+      audioTranscript: audioTranscript ? audioTranscript.text : ""
+    });
+    saved.videoFile = videoPath;
+    saved.videoFrameCount = extracted.frames.length;
+    saved.coverImage = selectArticleCoverImage(extracted.frames, saved.coverImage);
+    saved.videoAnalysis = saved.videoAiAnalyzed
+      ? "録画映像全体から取得した代表フレームをAI分析済み"
+      : "録画映像の代表フレームを抽出（画像対応モデル未導入・未分析）";
+    if (commentFile) saved.commentFile = commentFile;
+    if (audioTranscript) {
+      saved.audioTranscript = audioTranscript.text;
+      saved.audioTranscriptSegmentCount = audioTranscript.segmentCount;
+      saved.audioAnalysis = "録画全体の音声をWhisper.cppで分割文字起こし済み";
+      saved.audioTranscriptionStatus = "完了";
+      if (audioTranscript.partialErrors && audioTranscript.partialErrors.length) {
+        saved.audioTranscriptionError = audioTranscript.partialErrors.join(" / ").slice(0, 1200);
+      } else delete saved.audioTranscriptionError;
+    } else {
+      saved.audioTranscriptionStatus = audioError || "音声解析未実行";
+      if (audioError) saved.audioTranscriptionError = audioError;
+    }
+    saved.mediaAnalysis = {
+      video: extracted.frames.length ? (saved.videoAiAnalyzed ? "analyzed" : "sampled") : "missing",
+      audio: audioTranscript ? "transcribed" : "unavailable",
+      comments: records.some(row => row.type === "comment") ? "analyzed" : "unavailable"
+    };
+    if (records.length) {
+      const commentArticle = generateBroadcastArticle(records, context);
+      if (commentArticle.status === "generated") {
+        saved.commentCount = commentArticle.commentCount;
+        saved.uniqueCommenters = commentArticle.uniqueCommenters;
+        if (commentArticle.topics && !saved.aiProvider) saved.topics = commentArticle.topics;
+      }
+    }
+    saved.generatedAt = new Date().toISOString();
+    saved.articleSource = saved.articleSource || "recording";
+    await fs.promises.writeFile(file, JSON.stringify(saved, null, 2), "utf8");
+    notify("complete", { article: saved, frameCount: saved.videoFrameCount, audioSegmentCount: saved.audioTranscriptSegmentCount || 0 });
+    send("articles:generated", { article: saved });
+    return saved;
+  } catch (error) {
+    notify("error", { message: error.message || String(error) });
+    throw error;
+  } finally {
+    if (extracted) await fs.promises.rm(extracted.directory, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 function listBroadcastArticles() {
@@ -910,7 +1099,7 @@ async function refreshLiveBroadcastArticle(options = {}) {
     liveId,
     broadcasterName: currentBroadcasterName,
     broadcasterId: currentBroadcasterId,
-    liveUpdate: true,
+    liveUpdate: !options.finalize,
     liveStatus: options.finalize ? "ended" : "live"
   };
   articleUpdateInProgress = true;
@@ -965,7 +1154,7 @@ function appendMarkerAndWait(type, fields = {}) {
   return writeCommentLine(writer, JSON.stringify(marker)).then(() => marker);
 }
 
-async function closeCommentWriter() {
+async function closeCommentWriter(options = {}) {
   if (!commentWriter) return;
   if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
   if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
@@ -976,7 +1165,7 @@ async function closeCommentWriter() {
     broadcasterName: currentBroadcasterName,
     broadcasterId: currentBroadcasterId,
     ...currentProgramInfo,
-    liveStatus: streamlinkProcess && streamlinkLiveId === currentLiveId ? "live" : "unknown"
+    liveStatus: liveArticleSessionActive ? "ended" : (streamlinkProcess && streamlinkLiveId === currentLiveId ? "live" : "unknown")
   };
   commentWriter = null;
   let writeFailure = commentWriterError;
@@ -1000,13 +1189,22 @@ async function closeCommentWriter() {
     send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
   }
   while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
+  if (options.skipArticle === true) return;
   try {
-    await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
+    const savedArticle = await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
       force: liveArticleSessionActive,
+      deferAiForRecordedVideo: !liveArticleSessionActive,
       images: liveArticleSessionActive ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
       audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
       audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
     });
+    if (!liveArticleSessionActive && savedArticle && savedArticle.status === "generated" &&
+        savedArticle.videoFile && getMonitorSettings().aiArticleEnabled !== false) {
+      // Finish video+comment capture first; media analysis continues without
+      // blocking the Stop button or starting another capture process.
+      void queueRecordedArticleAnalysis(savedArticle.articlePath).catch(error =>
+        send("app:error", "録画の映像・音声・コメント記事化に失敗しました: " + error.message));
+    }
   } catch (error) {
     send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
   }
@@ -1461,28 +1659,76 @@ function closeHiddenLiveArticleCapture() {
   return { closed: true };
 }
 
+async function collectLiveArticleStreamFrames(includeLatest = false) {
+  const directory = liveArticleVideoFrameDirectory;
+  if (!directory || !fs.existsSync(directory)) return 0;
+  const names = (await fs.promises.readdir(directory))
+    .filter(name => /^frame-\d{6}\.jpg$/i.test(name)).sort();
+  // FFmpeg writes the most recent JPEG without atomic rename. Skip until the
+  // next one appears, unless the capture process has finished.
+  const ready = includeLatest ? names : names.slice(0, -1);
+  let added = 0;
+  for (const name of ready) {
+    if (liveArticleVideoProcessedFiles.has(name)) continue;
+    const filePath = path.join(directory, name);
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size < 1000 || stat.size > 400000) continue;
+      const data = (await fs.promises.readFile(filePath)).toString("base64");
+      const checked = selectArticleCoverImage([{ image: data }]);
+      if (!checked) continue;
+      const sequence = Number((name.match(/(\d{6})/) || [])[1]) || 1;
+      const baseTime = liveArticleCaptureStartedAt || Date.now();
+      liveArticleFrames = selectLiveArticleFrameHistory([...liveArticleFrames, {
+        image: data,
+        capturedAt: new Date(baseTime + (sequence - 1) * LIVE_ARTICLE_FRAME_INTERVAL_MS).toISOString()
+      }], LIVE_ARTICLE_MAX_FRAMES);
+      added += 1;
+    } catch (_) {
+      // Skip a partially written frame and retry when the next one arrives.
+      continue;
+    }
+    liveArticleVideoProcessedFiles.add(name);
+    await fs.promises.rm(filePath, { force: true }).catch(() => {});
+  }
+  if (added) send("articles:live-state", {
+    state: "capturing", liveId: currentLiveId,
+    frameCount: liveArticleFrames.length, videoSource: "streamlink",
+    audioCapturing: Boolean(liveArticleAudioSegmentDirectory)
+  });
+  return added;
+}
+
 async function captureLiveArticleFrame() {
-  if (!liveArticleSessionActive || liveArticleCaptureInProgress || !liveArticleCaptureWindow ||
-      liveArticleCaptureWindow.isDestroyed() || liveArticleCaptureWindowLiveId !== currentLiveId) return null;
+  if (!liveArticleSessionActive || liveArticleCaptureInProgress) return null;
   liveArticleCaptureInProgress = true;
   try {
+    if (liveArticleVideoFrameDirectory) {
+      await collectLiveArticleStreamFrames();
+      return { frameCount: liveArticleFrames.length, videoSource: "streamlink" };
+    }
+    if (!liveArticleCaptureWindow || liveArticleCaptureWindow.isDestroyed() ||
+        liveArticleCaptureWindowLiveId !== currentLiveId) return null;
+    // Fallback only: a hidden watch-page screenshot is not guaranteed to
+    // contain the player, so prefer actual Streamlink video when available.
     const image = await liveArticleCaptureWindow.webContents.capturePage();
     if (!image || image.isEmpty()) return null;
     const resized = image.resize({ width: 640 });
     const encoded = resized.toJPEG(62).toString("base64");
     if (!encoded) return null;
-    liveArticleFrames.push({ image: encoded, capturedAt: new Date().toISOString() });
-    if (liveArticleFrames.length > LIVE_ARTICLE_MAX_FRAMES) liveArticleFrames.shift();
-    send("articles:live-state", { state: "capturing", liveId: currentLiveId, frameCount: liveArticleFrames.length, audioCapturing: Boolean(liveArticleAudioProcess) });
-    return { frameCount: liveArticleFrames.length };
+    liveArticleFrames = selectLiveArticleFrameHistory([...liveArticleFrames,
+      { image: encoded, capturedAt: new Date().toISOString() }], LIVE_ARTICLE_MAX_FRAMES);
+    send("articles:live-state", {
+      state: "capturing", liveId: currentLiveId,
+      frameCount: liveArticleFrames.length, videoSource: "watch-page",
+      audioCapturing: Boolean(liveArticleAudioSegmentDirectory)
+    });
+    return { frameCount: liveArticleFrames.length, videoSource: "watch-page" };
   } catch (error) {
     send("articles:live-state", { state: "capture-error", liveId: currentLiveId, message: error.message || String(error) });
     return null;
-  } finally {
-    liveArticleCaptureInProgress = false;
-  }
+  } finally { liveArticleCaptureInProgress = false; }
 }
-
 
 function formatLiveAudioOffset(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -1514,7 +1760,7 @@ async function processLiveArticleAudioSegments(liveId, includeCurrent = false) {
             "【配信経過 " + formatLiveAudioOffset(index * LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS) + "】\n" + result.text
           );
           liveArticleAudioTranscript = {
-            text: liveArticleAudioTranscriptSegments.join("\n").slice(-30000),
+            text: liveArticleAudioTranscriptSegments.join("\n").slice(0, 250000),
             segmentCount: liveArticleAudioTranscriptSegments.length
           };
           send("articles:live-state", {
@@ -1543,37 +1789,38 @@ async function startLiveArticleAudioCapture(liveId) {
   const settings = readAppSettings();
   const whisperCliPath = String(settings.articleWhisperCliPath || "");
   const modelPath = String(settings.articleWhisperModelPath || "");
-  if (!whisperCliPath || !modelPath || !fs.existsSync(whisperCliPath) || !fs.existsSync(modelPath)) {
-    send("articles:live-state", { state: "audio-disabled", liveId, message: "Whisper.cppの実行ファイルと日本語モデルを設定すると、生放送の音声も記事に反映できます。" });
-    return { enabled: false, reason: "Whisper.cpp未設定" };
+  const audioEnabled = Boolean(whisperCliPath && modelPath && fs.existsSync(whisperCliPath) && fs.existsSync(modelPath));
+  if (!audioEnabled) {
+    send("articles:live-state", { state: "audio-disabled", liveId,
+      message: "音声文字起こしにはWhisper.cppと日本語モデルが必要です。映像・コメントの分析は継続します。" });
   }
-  const tools = getVideoToolStatus();
-  if (!tools.streamlinkPath || !tools.ffmpegPath) {
-    send("articles:live-state", { state: "audio-error", liveId, message: "生放送音声の取得にはStreamlinkとFFmpegが必要です。" });
+  const videoTools = getVideoToolStatus();
+  if (!videoTools.streamlinkPath || !videoTools.ffmpegPath) {
+    send("articles:live-state", { state: "video-error", liveId,
+      message: "放送映像の直接取得にはStreamlinkとFFmpegが必要です。視聴ページの画像へ切り替えます。" });
     return { enabled: false, reason: "Streamlink / FFmpeg未検出" };
   }
   const cookies = await getNicoAuthCookies();
   const token = getNicoUserSession(cookies);
   const runtime = createStreamlinkRuntime(app.getPath("temp"), token);
-  const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-audio-"));
+  const captureDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "nlmr-live-media-"));
+  const frameDirectory = path.join(captureDirectory, "frames");
   const segmentDirectory = path.join(captureDirectory, "segments");
-  fs.mkdirSync(segmentDirectory, { recursive: true });
+  fs.mkdirSync(frameDirectory, { recursive: true });
+  if (audioEnabled) fs.mkdirSync(segmentDirectory, { recursive: true });
   const streamArgs = buildStreamlinkArgs({
     configPath: runtime.configPath, liveId, quality: "best",
-    stdout: true, ffmpegPath: tools.ffmpegPath
+    stdout: true, ffmpegPath: videoTools.ffmpegPath
   });
-  const ffmpegArgs = [
-    "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-vn",
-    "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
-    "-f", "segment", "-segment_time", String(LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS),
-    "-reset_timestamps", "1", "-segment_format", "wav",
-    path.join(segmentDirectory, "audio-%05d.wav")
-  ];
+  const ffmpegArgs = buildLiveArticleFfmpegArgs(
+    frameDirectory, segmentDirectory, audioEnabled,
+    LIVE_ARTICLE_FRAME_INTERVAL_MS / 1000, LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS
+  );
   let streamChild, ffmpegChild;
   try {
-    ffmpegChild = spawn(tools.ffmpegPath, ffmpegArgs, { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    ffmpegChild = spawn(videoTools.ffmpegPath, ffmpegArgs, { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
     await new Promise((resolve, reject) => { ffmpegChild.once("spawn", resolve); ffmpegChild.once("error", reject); });
-    streamChild = spawn(tools.streamlinkPath, streamArgs, {
+    streamChild = spawn(videoTools.streamlinkPath, streamArgs, {
       windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: runtime.env
     });
     await new Promise((resolve, reject) => { streamChild.once("spawn", resolve); streamChild.once("error", reject); });
@@ -1581,34 +1828,70 @@ async function startLiveArticleAudioCapture(liveId) {
     streamChild.stdout.pipe(ffmpegChild.stdin);
     ffmpegChild.stderr.on("data", chunk => {
       const message = chunk.toString("utf8").trim();
-      if (message) send("articles:live-state", { state: "audio-warning", liveId, message: message.slice(-500) });
+      if (message) send("articles:live-state", { state: "video-warning", liveId, message: message.slice(-500) });
     });
     streamChild.stderr.on("data", chunk => {
       const message = chunk.toString("utf8");
-      if (/error|failed|unable/i.test(message)) send("articles:live-state", { state: "audio-warning", liveId, message: message.trim().slice(-500) });
+      if (/error|failed|unable/i.test(message)) {
+        send("articles:live-state", { state: "video-warning", liveId, message: message.trim().slice(-500) });
+      }
     });
   } catch (error) {
     for (const child of [streamChild, ffmpegChild]) if (child) { try { child.kill(); } catch (_) {} }
     await fs.promises.rm(runtime.runtimeDirectory, { recursive: true, force: true }).catch(() => {});
     await fs.promises.rm(captureDirectory, { recursive: true, force: true }).catch(() => {});
-    send("articles:live-state", { state: "audio-error", liveId, message: "リアルタイム音声取得を開始できませんでした: " + (error.message || String(error)) });
+    send("articles:live-state", { state: "video-error", liveId,
+      message: "放送映像・音声の直接取得を開始できませんでした: " + (error.message || String(error)) });
     return { enabled: false, reason: error.message || String(error) };
   }
   liveArticleAudioProcess = streamChild;
   liveArticleAudioFfmpegProcess = ffmpegChild;
   liveArticleAudioRuntimeDirectory = runtime.runtimeDirectory;
   liveArticleAudioPath = captureDirectory;
-  liveArticleAudioSegmentDirectory = segmentDirectory;
+  liveArticleAudioSegmentDirectory = audioEnabled ? segmentDirectory : "";
+  liveArticleVideoFrameDirectory = frameDirectory;
+  liveArticleVideoSource = "streamlink";
+  liveArticleCaptureStartedAt = Date.now();
+  liveArticleVideoProcessedFiles = new Set();
   liveArticleAudioProcessedFiles = new Set();
   liveArticleAudioTranscriptSegments = [];
   liveArticleAudioTranscript = null;
   liveArticleAudioLastArticleUpdateAt = 0;
   liveArticleAudioClosePromise = new Promise(resolve => streamChild.once("close", (code, signal) => resolve({ code, signal })));
   liveArticleAudioFfmpegClosePromise = new Promise(resolve => ffmpegChild.once("close", (code, signal) => resolve({ code, signal })));
-  liveArticleAudioSegmentTimer = setInterval(() => void processLiveArticleAudioSegments(liveId, false), LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS);
+  // Stream decoding can fail after both processes have successfully spawned.
+  // When it fails unexpectedly, switch to the hidden watch-page fallback.
+  ffmpegChild.once("close", code => {
+    if (!liveArticleSessionActive || currentLiveId !== liveId || !liveArticleAudioSegmentTimer) return;
+    void (async () => {
+      await collectLiveArticleStreamFrames(true).catch(() => {});
+      liveArticleVideoFrameDirectory = "";
+      liveArticleVideoSource = "watch-page";
+      if (streamChild && !streamChild.killed) {
+        try { streamChild.kill(); } catch (_) {}
+      }
+      try {
+        await openHiddenLiveArticleCapture(liveId);
+        send("articles:live-state", {
+          state: "video-warning", liveId,
+          message: "配信ストリームの映像抽出が途中で終了したため、視聴ページの画像取得に切り替えました（FFmpeg終了コード：" + code + "）。"
+        });
+      } catch (error) {
+        send("articles:live-state", { state: "video-error", liveId,
+          message: "配信映像の代替取得にも失敗しました：" + (error.message || String(error)) });
+      }
+    })();
+  });
+  liveArticleAudioSegmentTimer = setInterval(() => {
+    void processLiveArticleAudioSegments(liveId, false);
+    void collectLiveArticleStreamFrames().catch(() => {});
+  }, LIVE_ARTICLE_AUDIO_POLL_INTERVAL_MS);
   if (typeof liveArticleAudioSegmentTimer.unref === "function") liveArticleAudioSegmentTimer.unref();
-  send("articles:live-state", { state: "audio-capturing", liveId, segmentSeconds: LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS });
-  return { enabled: true, segmentSeconds: LIVE_ARTICLE_AUDIO_SEGMENT_SECONDS };
+  send("articles:live-state", {
+    state: "video-capturing", liveId, videoSource: "streamlink",
+    audioCapturing: audioEnabled, frameIntervalSeconds: LIVE_ARTICLE_FRAME_INTERVAL_MS / 1000
+  });
+  return { enabled: true, audioEnabled, videoSource: "streamlink" };
 }
 async function stopLiveArticleAudioCapture(liveId) {
   const streamChild = liveArticleAudioProcess;
@@ -1623,9 +1906,20 @@ async function stopLiveArticleAudioCapture(liveId) {
     if (ffmpegChild && ffmpegChild.stdin && !ffmpegChild.stdin.destroyed) { try { ffmpegChild.stdin.end(); } catch (_) {} }
     if (liveArticleAudioFfmpegClosePromise) await Promise.race([liveArticleAudioFfmpegClosePromise, new Promise(resolve => setTimeout(resolve, 20000))]);
     while (liveArticleAudioProcessing) await new Promise(resolve => setTimeout(resolve, 100));
-    await processLiveArticleAudioSegments(liveId, true);
-    if (!liveArticleAudioTranscript || !liveArticleAudioTranscript.text) throw new Error("音声を文字起こしできませんでした。");
-    send("articles:live-state", { state: "audio-complete", liveId, segmentCount: liveArticleAudioTranscript.segmentCount, characterCount: liveArticleAudioTranscript.text.length });
+    await collectLiveArticleStreamFrames(true);
+    if (liveArticleAudioSegmentDirectory) {
+      await processLiveArticleAudioSegments(liveId, true);
+      if (!liveArticleAudioTranscript || !liveArticleAudioTranscript.text) {
+        send("articles:live-state", { state: "audio-warning", liveId, message: "音声を文字起こしできませんでした。映像とコメントを利用します。" });
+      }
+    }
+    if (liveArticleAudioTranscript && liveArticleAudioTranscript.text) {
+      send("articles:live-state", { state: "audio-complete", liveId,
+        segmentCount: liveArticleAudioTranscript.segmentCount,
+        characterCount: liveArticleAudioTranscript.text.length });
+    } else {
+      send("articles:live-state", { state: "video-complete", liveId, frameCount: liveArticleFrames.length });
+    }
     return liveArticleAudioTranscript;
   } catch (error) {
     send("articles:live-state", { state: "audio-error", liveId, message: error.message || String(error) });
@@ -1637,6 +1931,10 @@ async function stopLiveArticleAudioCapture(liveId) {
     liveArticleAudioFfmpegClosePromise = null;
     liveArticleAudioPath = "";
     liveArticleAudioSegmentDirectory = "";
+    liveArticleVideoFrameDirectory = "";
+    liveArticleVideoSource = "none";
+    liveArticleCaptureStartedAt = 0;
+    liveArticleVideoProcessedFiles = new Set();
     liveArticleAudioProcessing = false;
     liveArticleAudioProcessedFiles = new Set();
     const runtimeDirectory = liveArticleAudioRuntimeDirectory;
@@ -1661,9 +1959,14 @@ async function startLiveArticleSession(input = {}) {
   liveArticleSessionActive = true;
   try {
     await prepareCommentSession(liveId, displayName, "", programInfo);
-    await openHiddenLiveArticleCapture(liveId);
     await connectPreparedCommentSession(liveId);
-    await startLiveArticleAudioCapture(liveId);
+    const media = await startLiveArticleAudioCapture(liveId);
+    if (!media.enabled) {
+      // The HTML player is only a fallback. The preferred path samples actual
+      // video and audio directly from one Streamlink -> FFmpeg pipeline.
+      await openHiddenLiveArticleCapture(liveId);
+      liveArticleVideoSource = "watch-page";
+    }
     await new Promise(resolve => setTimeout(resolve, 8000));
     if (articleUpdateTimer) clearInterval(articleUpdateTimer);
     articleUpdateTimer = setInterval(() => { void refreshLiveBroadcastArticle(); }, LIVE_ARTICLE_REFRESH_INTERVAL_MS);
@@ -1673,7 +1976,7 @@ async function startLiveArticleSession(input = {}) {
     if (typeof liveArticleCaptureTimer.unref === "function") liveArticleCaptureTimer.unref();
     await captureLiveArticleFrame();
     articleRefreshPending = false;
-    send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length });
+    send("articles:live-state", { state: "started", liveId, frameCount: liveArticleFrames.length, videoSource: liveArticleVideoSource });
     // Do not wait for the five-minute interval: create the first article as soon as
     // the live preview and comment connection are ready.
     void refreshLiveBroadcastArticle();
@@ -1702,10 +2005,11 @@ async function stopLiveArticleSession() {
   }
   articleRefreshPending = false;
   await stopLiveArticleAudioCapture(currentLiveId);
+  let finalizedArticle = null;
   if (commentWriter && commentFilePath) {
-    await refreshLiveBroadcastArticle({ finalize: true });
+    finalizedArticle = await refreshLiveBroadcastArticle({ finalize: true });
   }
-  await closeCommentWriter();
+  await closeCommentWriter({ skipArticle: Boolean(finalizedArticle && finalizedArticle.status === "generated") });
   const liveId = currentLiveId;
   liveArticleSessionActive = false;
   liveArticleFrames = [];
@@ -3682,6 +3986,8 @@ ipcMain.handle("articles:delete", async (_event, value) => {
   return { deleted: true, fileName: path.basename(target) };
 });
 ipcMain.handle("articles:list", () => listBroadcastArticles());
+ipcMain.handle("articles:reanalyze", (_event, articlePath) =>
+  queueRecordedArticleAnalysis(articlePath, { force: true }));
 ipcMain.handle("articles:export-html", async (_event, article) => {
   if (!article || typeof article !== "object" || Array.isArray(article)) throw new Error("記事データが正しくありません。");
   const safeTitle = String(article.title || article.programTitle || "放送記事")

@@ -8,6 +8,17 @@ const { spawn } = require("node:child_process");
 function buildFfmpegAudioArgs(inputPath, outputPath) {
   return ["-hide_banner", "-loglevel", "error", "-y", "-i", inputPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", outputPath];
 }
+function buildFfmpegSegmentArgs(inputPath, outputPattern, seconds = 120) {
+  return ["-hide_banner", "-loglevel", "error", "-y", "-i", inputPath, "-vn",
+    "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "segment",
+    "-segment_time", String(seconds), "-reset_timestamps", "1",
+    "-segment_format", "wav", outputPattern];
+}
+function formatAudioOffset(seconds) {
+  const whole = Math.max(0, Math.floor(Number(seconds) || 0));
+  return [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60]
+    .map(value => String(value).padStart(2, "0")).join(":");
+}
 function buildWhisperArgs(modelPath, audioPath, outputPrefix) {
   return ["-m", modelPath, "-f", audioPath, "-l", "ja", "-oj", "-of", outputPrefix, "-np", "-nt", "-ng"];
 }
@@ -83,11 +94,40 @@ async function transcribeVideoAudio(options = {}) {
   if (!whisperCliPath || !fs.existsSync(whisperCliPath)) throw new Error("whisper-cli実行ファイルが選択されていません。");
   if (!modelPath || !fs.existsSync(modelPath)) throw new Error("Whisperの日本語モデルファイルが選択されていません。");
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "nico-article-audio-"));
-  const wavPath = path.join(directory, "audio-16khz-mono.wav");
-  const outputPrefix = path.join(directory, "transcript");
+  const pattern = path.join(directory, "audio-%05d.wav");
+  const segmentSeconds = 120;
   try {
-    await runProcess(ffmpegPath, buildFfmpegAudioArgs(videoPath, wavPath), 10 * 60 * 1000, "FFmpeg音声抽出");
-    return await transcribeAudioFile({ audioPath: wavPath, whisperCliPath, modelPath });
+    await runProcess(ffmpegPath, buildFfmpegSegmentArgs(videoPath, pattern, segmentSeconds),
+      60 * 60 * 1000, "FFmpeg音声分割");
+    const names = fs.readdirSync(directory).filter(name => /^audio-\d{5}\.wav$/.test(name)).sort();
+    if (!names.length) throw new Error("録画から音声トラックを取得できませんでした。");
+    const segments = [];
+    let segmentCount = 0;
+    const errors = [];
+    for (const name of names) {
+      const audioPath = path.join(directory, name);
+      try {
+        const part = await transcribeAudioFile({ audioPath, whisperCliPath, modelPath });
+        const index = Number((name.match(/\d{5}/) || [])[0]) || 0;
+        segments.push("【配信経過 " + formatAudioOffset(index * segmentSeconds) + "】\n" + part.text);
+        segmentCount += part.segmentCount;
+        if (typeof options.onProgress === "function") {
+          options.onProgress({ processed: segments.length, total: names.length, segmentCount });
+        }
+      } catch (error) {
+        errors.push(name + ": " + (error.message || String(error)));
+      } finally {
+        await fs.promises.rm(audioPath, { force: true }).catch(() => {});
+      }
+    }
+    if (!segments.length) throw new Error("録画音声の文字起こしに失敗しました。" + errors.slice(0, 2).join(" / "));
+    return {
+      text: segments.join("\n").slice(0, 250000),
+      segmentCount,
+      processedChunks: segments.length,
+      totalChunks: names.length,
+      partialErrors: errors.slice(0, 10)
+    };
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
-module.exports = { buildFfmpegAudioArgs, buildWhisperArgs, normalizeTimestamp, parseWhisperJson, transcribeAudioFile, transcribeVideoAudio };
+module.exports = { buildFfmpegAudioArgs, buildFfmpegSegmentArgs, formatAudioOffset, buildWhisperArgs, normalizeTimestamp, parseWhisperJson, transcribeAudioFile, transcribeVideoAudio };
