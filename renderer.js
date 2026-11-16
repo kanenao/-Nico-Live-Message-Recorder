@@ -77,6 +77,118 @@ let monitorAutoProcessing = false;
 let recordStartInProgress = false;
 let captureLibraryItems = [];
 const expandedLibraryBroadcasters = new Set();
+const libraryThumbnailQueue = [];
+let libraryThumbnailRequests = 0;
+function pumpLibraryThumbnailQueue() {
+  while (libraryThumbnailRequests < 2 && libraryThumbnailQueue.length) {
+    const job = libraryThumbnailQueue.shift();
+    libraryThumbnailRequests += 1;
+    Promise.resolve().then(job).catch(error => {
+      console.warn("録画動画のサムネイル取得エラー:", error);
+    }).finally(() => {
+      libraryThumbnailRequests -= 1;
+      pumpLibraryThumbnailQueue();
+    });
+  }
+}
+function scheduleLibraryThumbnail(image, placeholder, item) {
+  libraryThumbnailQueue.push(async () => {
+    if (!image.isConnected) return;
+    try {
+      const imageUrl = await api.getLibraryThumbnail(item.path);
+      if (!image.isConnected || !placeholder.isConnected) return;
+      if (!String(imageUrl || "").startsWith("data:image/jpeg;base64,")) {
+        placeholder.textContent = "サムネイルなし";
+        return;
+      }
+      image.addEventListener("error", () => {
+        if (!image.isConnected) return;
+        image.hidden = true;
+        placeholder.hidden = false;
+        placeholder.textContent = "画像を表示できません";
+      }, { once: true });
+      image.src = imageUrl;
+      image.hidden = false;
+      placeholder.hidden = true;
+    } catch (_) {
+      if (placeholder.isConnected) placeholder.textContent = "サムネイル取得失敗";
+    }
+  });
+  pumpLibraryThumbnailQueue();
+}
+function makeLibraryVideoScenesPanel(item) {
+  const panel = document.createElement("div");
+  panel.className = "library-video-scenes";
+  panel.hidden = true;
+  let loaded = false;
+  let pending = false;
+  const heading = document.createElement("strong");
+  heading.textContent = "動画内の場面を確認";
+  const status = document.createElement("p");
+  status.className = "library-video-scenes-status";
+  status.textContent = "表示すると動画の複数箇所から画像を取得します。";
+  panel.append(heading, status);
+  const expand = async () => {
+    panel.hidden = !panel.hidden;
+    if (panel.hidden || loaded || pending) return;
+    pending = true;
+    status.textContent = "FFmpegで動画内の場面を読み込み中…";
+    try {
+      const result = await api.getLibraryVideoPreview(item.path);
+      if (!panel.isConnected) return;
+      const frames = Array.isArray(result && result.frames) ? result.frames
+        .filter(frame => frame && String(frame.imageUrl || "").startsWith("data:image/jpeg;base64,"))
+        : [];
+      if (!frames.length) {
+        status.textContent = result && result.message || "場面の取得に失敗しました。";
+        return;
+      }
+      status.textContent = result.durationSeconds
+        ? "動画の長さ：" + formatDuration(result.durationSeconds * 1000) + "　場面を選ぶと画像が切り替わります。"
+        : "動画内の画像を表示しています。";
+      const selected = document.createElement("div");
+      selected.className = "library-video-selected";
+      const bigImage = document.createElement("img");
+      bigImage.src = frames[0].imageUrl;
+      bigImage.alt = "録画動画内の " + frames[0].label + " の場面";
+      const selectedLabel = document.createElement("span");
+      selectedLabel.textContent = frames[0].label;
+      selected.append(bigImage, selectedLabel);
+      const filmstrip = document.createElement("div");
+      filmstrip.className = "library-video-filmstrip";
+      const buttons = [];
+      frames.forEach((frame, index) => {
+        const scene = document.createElement("button");
+        scene.type = "button";
+        scene.className = "library-video-scene";
+        scene.title = frame.label + " の場面を表示";
+        scene.setAttribute("aria-pressed", String(index === 0));
+        const img = document.createElement("img");
+        img.src = frame.imageUrl;
+        img.alt = "動画の " + frame.label + " の場面";
+        const label = document.createElement("span");
+        label.textContent = frame.label;
+        scene.append(img, label);
+        scene.addEventListener("click", () => {
+          for (const button of buttons) button.setAttribute("aria-pressed", String(button === scene));
+          bigImage.src = frame.imageUrl;
+          bigImage.alt = img.alt;
+          selectedLabel.textContent = frame.label;
+        });
+        buttons.push(scene);
+        filmstrip.appendChild(scene);
+      });
+      panel.append(selected, filmstrip);
+      loaded = true;
+    } catch (error) {
+      if (panel.isConnected) status.textContent =
+        "動画内の画像を読み込めませんでした：" + (error.message || String(error));
+    } finally {
+      pending = false;
+    }
+  };
+  return { panel, expand };
+}
 
 function requireCaptureApi(method) {
   if (!api || typeof api[method] !== "function") {
@@ -1733,6 +1845,26 @@ function renderCaptureLibrary() {
     file.className = "library-file-cell";
     file.appendChild(createLibraryText("library-file-name", item.fileName));
     file.appendChild(createLibraryText("library-file-meta", item.liveId || item.extension));
+    let scenes = null;
+    if (item.type === "video") {
+      scenes = makeLibraryVideoScenesPanel(item);
+      const thumbnail = document.createElement("button");
+      thumbnail.type = "button";
+      thumbnail.className = "library-video-thumbnail";
+      thumbnail.title = "動画内の別の場面も見る";
+      thumbnail.setAttribute("aria-label", item.fileName + " の動画内の場面を見る");
+      const image = document.createElement("img");
+      image.alt = item.fileName + " の録画映像から取得したサムネイル";
+      image.loading = "lazy";
+      image.hidden = true;
+      const placeholder = document.createElement("span");
+      placeholder.className = "library-video-thumbnail-placeholder";
+      placeholder.textContent = "サムネイル取得中…";
+      thumbnail.append(image, placeholder);
+      thumbnail.addEventListener("click", () => void scenes.expand());
+      file.appendChild(thumbnail);
+      if (expanded) scheduleLibraryThumbnail(image, placeholder, item);
+    }
     row.appendChild(file);
     if (item.type === "video" && item.article) {
       const articleSummary = document.createElement("div"); articleSummary.className = "library-article-summary";
@@ -1792,6 +1924,12 @@ function renderCaptureLibrary() {
       actions.appendChild(articleButton);
     }
     if (item.type === "video") {
+      const scenesButton = document.createElement("button");
+      scenesButton.type = "button";
+      scenesButton.className = "button button-outline button-small library-video-scenes-button";
+      scenesButton.textContent = "動画内を見る";
+      scenesButton.addEventListener("click", () => void scenes.expand());
+      actions.appendChild(scenesButton);
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.className = "button button-danger button-small";
@@ -1813,6 +1951,7 @@ function renderCaptureLibrary() {
       actions.appendChild(deleteButton);
     }
     row.appendChild(actions);
+    if (scenes) row.appendChild(scenes.panel);
     contents.appendChild(row);
     }
     list.appendChild(card);
