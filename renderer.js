@@ -31,6 +31,11 @@ if (disconnectButton) {
     Promise.resolve().then(disconnectLive).catch((error) => reportCaptureButtonError("コメント切断", error));
   });
 }
+if (stopRecordButton) {
+  stopRecordButton.addEventListener("click", () => {
+    Promise.resolve().then(stopVideoRecording).catch((error) => reportCaptureButtonError("録画・コメント停止", error));
+  });
+}
 
 let connected = false;
 let recordStartedAt = 0;
@@ -488,6 +493,7 @@ async function startVideoRecording(target = null) {
 
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
   currentRecordingIsTimeshift = timeshift;
+  stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
   if (currentLiveId !== liveId) currentProgramMetadata = {};
   currentLiveId = liveId;
   liveInput.value = liveId;
@@ -2630,7 +2636,7 @@ byId("record-mode").addEventListener("change", () => {
     ? "● 過去配信（映像＋コメント）を録画"
     : "● 接続して映像・音声＋コメントを録画";
 });
-stopRecordButton.addEventListener("click", stopVideoRecording);
+// The stop control is bound with the other primary buttons before optional initialization.
 byId("check-update-button").addEventListener("click", checkAppUpdates);
 byId("retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
 byId("settings-retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
