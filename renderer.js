@@ -1908,7 +1908,9 @@ function renderBroadcastArticles() {
     if (article.aiProvider) addTag("AI生成 · " + article.aiProvider + (article.aiModel ? " / " + article.aiModel : ""), "ai");
     else addTag("統計・コメント整理記事", "local");
     if (article.articleSource === "manual") addTag("登録なし・手動生成");
-    if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚", "video");
+    if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚" + (article.videoAiAnalyzed ? "・AI解析済み" : "・フレーム取得済み"), "video");
+    if (article.mediaAnalysis && article.mediaAnalysis.audio === "unavailable") addTag("音声未解析", "local");
+    if (article.mediaAnalysis && article.mediaAnalysis.comments === "unavailable") addTag("コメント未取得", "local");
     if (article.audioAnalysis || article.audioTranscriptSegmentCount) addTag("音声文字起こし済み", "audio");
     if (article.liveStatus === "live" || article.isLive) addTag("ライブ更新中", "live");
     if (tags.childElementCount) heading.appendChild(tags);
@@ -2079,6 +2081,28 @@ function renderBroadcastArticles() {
       });
       actions.appendChild(video);
     }
+    if (article.articlePath && !(article.liveStatus === "live" || article.isLive)) {
+      const reanalyze = document.createElement("button");
+      reanalyze.type = "button";
+      reanalyze.className = "button button-primary button-small";
+      reanalyze.textContent = "映像・音声・コメントを再解析";
+      reanalyze.title = "録画から映像を抽出し、音声を文字起こしして保存コメントと照合します。";
+      reanalyze.addEventListener("click", async () => {
+        reanalyze.disabled = true;
+        reanalyze.textContent = "再解析中…";
+        try {
+          const updated = await api.reanalyzeBroadcastArticle(article.articlePath);
+          showToast("映像・音声・コメントの再解析が完了しました：" + (updated.title || updated.programTitle || "放送記事"));
+          await loadBroadcastArticles();
+        } catch (error) {
+          showToast(error.message || "録画の再解析に失敗しました。", true);
+        } finally {
+          reanalyze.disabled = false;
+          reanalyze.textContent = "映像・音声・コメントを再解析";
+        }
+      });
+      actions.appendChild(reanalyze);
+    }
     const exportArticle = document.createElement("button");
     exportArticle.type = "button";
     exportArticle.className = "button button-outline button-small";
@@ -2179,7 +2203,7 @@ async function startLiveArticleSession() {
     liveArticleSessionActive = true;
     button.hidden = true;
     byId("manual-article-live-stop-button").hidden = false;
-    status.textContent = "生放送の記事生成を開始しました。視聴ページは表示せず、コメント取得と映像フレーム取得を行います。初回記事を生成しています。録画は行いません。";
+    status.textContent = "生放送の記事生成を開始しました。実際の配信映像をStreamlink経由でサンプリングし、放送音声とコメントを照合して記事を更新します。録画ファイルは残しません。";
     showToast("生放送の記事生成を開始しました。");
   } catch (error) {
     status.textContent = error.message || "生放送記事を開始できませんでした。";
@@ -2653,7 +2677,7 @@ try {
     const status = byId("manual-article-live-status");
     const frameCount = Number(payload.frameCount) || 0;
     if (payload.state === "capturing") {
-      status.textContent = "生放送中：映像フレームを取得しました（累計 " + frameCount + " 枚）。15秒ごとに取得します。" + (payload.audioCapturing ? " Whisper.cpp用の音声も一時取得中です。" : "");
+      status.textContent = "生放送中：映像フレーム " + frameCount + "枚を保持中（" + (payload.videoSource === "streamlink" ? "配信ストリーム直接取得" : "視聴ページから取得") + "）。" + (payload.audioCapturing ? " Whisper.cppで音声も逐次解析中。" : "");
     } else if (payload.state === "generating") {
       status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…" + (payload.audioCapturing ? " 音声も取得中です。" : "");
     } else if (payload.state === "updated") {
@@ -2662,6 +2686,12 @@ try {
         : "生放送中：記事の材料を取得中です。コメント・番組情報が揃うと記事を生成します。";
     } else if (payload.state === "capture-error") {
       status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
+    } else if (payload.state === "video-capturing") {
+      status.textContent = "配信映像を直接取得中（15秒ごと）。" +
+        (payload.audioCapturing ? "音声もWhisper.cpp用に取り込み中。" : "Whisper未設定のため音声解析は省略。") +
+        "コメントも受信中です。";
+    } else if (payload.state === "video-error" || payload.state === "video-warning") {
+      status.textContent = "配信映像取得の注意：" + (payload.message || "ストリームを確認しています。");
     } else if (payload.state === "audio-capturing") {
       status.textContent = "生放送中：音声を約25秒ごとに分割し、Whisper.cppで逐次文字起こししています。";
     } else if (payload.state === "audio-transcribing") {
@@ -2678,6 +2708,26 @@ try {
       status.textContent = "生放送の音声解析に失敗しました：" + (payload.message || "不明なエラー") + "。映像とコメントの記事生成は継続します。";
     } else if (payload.state === "error") {
       status.textContent = "記事更新エラー：" + (payload.message || "不明なエラー") + "。次回更新時に再試行します。";
+    }
+  }
+  if (channel === "articles:analysis-state" && payload) {
+    const status = byId("manual-article-status");
+    const stages = {
+      starting: "録画の記事解析を準備中…",
+      video: "録画映像を全体から抽出しています…",
+      audio: "録画の音声を2分ごとに分割して文字起こししています…",
+      ai: "映像・音声・コメントをOllamaで照合して記事を生成中…",
+      complete: "録画の映像・音声・コメントを使った記事生成が完了しました。"
+    };
+    if (payload.state === "audio-progress") {
+      status.textContent = "録画音声を文字起こし中：" + (Number(payload.processed) || 0) +
+        " / " + (Number(payload.total) || 0) + "区間";
+    } else if (payload.state === "error") {
+      status.textContent = "録画記事の解析に失敗：" + (payload.message || "不明なエラー");
+      addMonitorActivity(status.textContent, "error");
+    } else if (stages[payload.state]) {
+      status.textContent = stages[payload.state];
+      if (payload.state === "complete" && !byId("articles-panel").hidden) loadBroadcastArticles();
     }
   }
   if (channel === "articles:generated") {
