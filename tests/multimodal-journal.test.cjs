@@ -74,5 +74,5 @@ test("article pipeline enriches finished recordings and supports on-demand reana
   assert.match(preload, /reanalyzeBroadcastArticle:.*ipcRenderer\.invoke\("articles:reanalyze"/);
   assert.match(renderer, /api\.reanalyzeBroadcastArticle\(article\.articlePath\)/);
   assert.match(renderer, /articles:analysis-state/);
-  assert.match(html, /配信映像を15秒間隔のJPEG画像として抽出/);
+  assert.match(html, /放送映像を15秒間隔のJPEG画像として抽出/);
 });
