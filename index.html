@@ -159,7 +159,7 @@
             <div>
               <div class="eyebrow">BROADCAST JOURNAL / LOCAL ARCHIVE</div>
               <h2>放送記事・無料AI記事生成</h2>
-              <p class="session-description">監視リストへの登録や録画は不要です。任意の配信者情報・番組情報・コメントログから記事を作成できます。</p>
+              <p class="session-description">録画済み動画と生放送の両方で、映像・音声・コメントを総合してニュース形式の記事を作れます。録画終了後の自動解析にも対応します。</p>
             </div>
             <div class="library-heading-actions">
               <button class="button button-primary button-small" id="articles-refresh-button" type="button">記事を更新</button>
@@ -172,8 +172,8 @@
               <label>放送ID / 視聴URL（任意）<input id="manual-article-live-id" type="text" maxlength="2048" placeholder="lv123456789 または https://live.nicovideo.jp/watch/lv123456789" autocomplete="url"></label>
               <label class="article-manual-wide">番組タイトル<input id="manual-article-title" type="text" maxlength="300" placeholder="番組・配信のタイトル"></label>
               <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
-              <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択。番組情報だけでも記事を生成できます。</small></label>
-              <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像と音声をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームと音声を分析します。</small></div></div>
+              <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択でも録画動画を選べば同じ放送の保存コメントを自動的に探します。番組情報だけでも記事を生成できます。</small></label>
+              <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像と音声をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームと、2分区切りで録画全体の音声を分析します。</small></div></div>
               <div class="article-manual-wide article-audio-tools">
                 <strong>無料の音声文字起こし（Whisper.cpp）</strong>
                 <div class="article-audio-tool-row"><button class="button button-primary button-small" id="manual-article-whisper-auto-button" type="button">Whisper.cppと日本語モデルを自動ダウンロード</button><small id="manual-article-whisper-download-status" role="status">初回のみ約160MBをダウンロードします。</small></div>
@@ -181,9 +181,9 @@
                 <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-model-button" type="button">日本語モデルを手動選択</button><small id="manual-article-whisper-model-name">未設定（ggml-base.bin推奨）</small></div>
                 <p class="hint">自動セットアップは公式whisper.cppのWindows x64実行ファイルとHugging Faceの日本語対応baseモデルを取得し、SHA-256／SHA-1を検証してPC内に保存します。音声はPC内で文字起こしし、Ollamaへ渡します。未設定でも映像・コメントの記事生成は利用できます。</p>
               </div>
-              <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDまたは視聴URL全体を入力して開始すると、通常の録画ファイルを残さずコメントと映像を取得します。視聴ページは画面に表示せず、記事生成専用の非表示ウィンドウで映像を取得します。Whisper.cppを設定すると音声も一時取得し、配信中に音声を約25秒ごとに分割してWhisper.cppで逐次文字起こしし、完了した区間から記事へ反映します。音声解析用データは一時保存し、終了後に削除します（音声はStreamlinkからFFmpegへ直接渡し、音声区間だけを一時保存します）。映像は15秒ごとに取得し、最大16枚を時系列で保持。約2分ごとにOllamaのqwen2.5vl:3bで映像・音声・コメントを照合します。AI処理はPC内で行い、有料APIは使用しません。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
+              <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDまたは視聴URLを入力すると、録画ファイルを残さず記事生成専用の取得を開始します。StreamlinkとFFmpegで実際の放送映像を15秒間隔のJPEG画像として抽出し、コメントをリアルタイム保存します。Whisper.cppを設定していれば、同じ配信の音声を約25秒ごとに分割して日本語文字起こしします。映像・音声・コメントを約2分ごとにOllamaへ渡して更新し、終了時に最終記事へ反映します。AI処理はPC内で行い、有料APIは使用しません。映像の直接取得ができない場合は視聴ページの画像取得に切り替わり、音声解析は利用できないことがあります。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
             </div>
-            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能ならAIで記事を作成します。映像分析にはOllamaの qwen2.5vl:3b を推奨します（ollama pull qwen2.5vl:3b）。未導入時は画像分析を行わず、コメント中心の記事に切り替わります。音声分析にはWhisper.cppの実行ファイルと日本語モデルを選択してください。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
+            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能なら映像・音声・コメントを照合した記事を作成します。映像分析は qwen2.5vl:3b、音声認識はWhisper.cpp＋日本語モデルを使用します。未導入の処理は未解析として表示し、取得できた情報のみで記事を作ります。録画終了後の自動解析の結果は記事一覧に反映されます。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
             <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>
           </section>
           <div class="library-summary article-summary">
