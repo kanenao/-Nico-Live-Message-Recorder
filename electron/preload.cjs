@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   startVideo: (liveId, quality, options) => ipcRenderer.invoke("video:start", liveId, quality, options),
   startCapture: (liveId, quality, options) => ipcRenderer.invoke("capture:start", liveId, quality, options),
   stopVideo: () => ipcRenderer.invoke("video:stop"),
+  stopCapture: () => ipcRenderer.invoke("capture:stop"),
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
   exportCsv: () => ipcRenderer.invoke("comments:export-csv"),
   exportAss: () => ipcRenderer.invoke("comments:export-ass"),

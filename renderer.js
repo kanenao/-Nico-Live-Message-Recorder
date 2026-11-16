@@ -31,6 +31,11 @@ if (disconnectButton) {
     Promise.resolve().then(disconnectLive).catch((error) => reportCaptureButtonError("コメント切断", error));
   });
 }
+if (stopRecordButton) {
+  stopRecordButton.addEventListener("click", () => {
+    Promise.resolve().then(stopVideoRecording).catch((error) => reportCaptureButtonError("録画・コメント停止", error));
+  });
+}
 
 let connected = false;
 let recordStartedAt = 0;
@@ -40,6 +45,8 @@ let currentProgramMetadata = {};
 let currentCaptureTarget = null;
 let commentCaptureState = "disconnected";
 let videoCaptureState = "idle";
+let captureStopInProgress = false;
+let currentRecordingIsTimeshift = false;
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
@@ -169,8 +176,8 @@ function setConnection(state, label) {
     text.textContent = label || "未接続";
     connected = false;
   }
-  connectButton.disabled = state === "connecting" || state === "connected";
-  disconnectButton.disabled = state !== "connected" && state !== "connecting";
+  connectButton.disabled = captureStopInProgress || state === "connecting" || state === "connected";
+  disconnectButton.disabled = captureStopInProgress || (state !== "connected" && state !== "connecting");
   updateCaptureIndicators();
 }
 
@@ -416,6 +423,7 @@ async function clearUserSession() {
 }
 
 async function connectLive() {
+  if (captureStopInProgress) return showToast("録画・コメントの停止完了後に接続してください。", true);
   const liveId = normalizeId(liveInput.value);
   if (!liveId) {
     showToast("放送IDまたは視聴URLを入力してください。", true);
@@ -450,6 +458,7 @@ async function connectLive() {
 }
 
 async function disconnectLive() {
+  if (captureStopInProgress) return;
   try {
     requireCaptureApi("disconnectLive");
     await api.disconnectLive();
@@ -472,7 +481,7 @@ function formatDuration(milliseconds) {
 
 async function startVideoRecording(target = null) {
   const selectedTarget = target && typeof target === "object" && target.liveId ? target : null;
-  if (recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
+  if (captureStopInProgress || recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
     showToast("別の配信を録画中、または録画準備中です。終了後に開始してください。", true);
     return;
   }
@@ -483,6 +492,8 @@ async function startVideoRecording(target = null) {
   }
 
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
+  currentRecordingIsTimeshift = timeshift;
+  stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
   if (currentLiveId !== liveId) currentProgramMetadata = {};
   currentLiveId = liveId;
   liveInput.value = liveId;
@@ -583,6 +594,7 @@ async function startVideoRecording(target = null) {
     }
   } catch (error) {
     currentCaptureTarget = null;
+    currentRecordingIsTimeshift = false;
     renderSessionProgramInfo();
     setVideoState(false);
     if (!connected) setConnection("error");
@@ -590,7 +602,7 @@ async function startVideoRecording(target = null) {
     showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
   } finally {
     recordStartInProgress = false;
-    recordButton.disabled = videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
+    recordButton.disabled = captureStopInProgress || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
     renderLiveBroadcasts();
   }
   processMonitorAutoQueue();
@@ -618,25 +630,42 @@ function setVideoState(recording, stopping = false) {
   byId("record-status").textContent = stopping
     ? "録画停止中…"
     : recording ? "録画中（直接取得）" : "録画していません";
-  recordButton.disabled = recording || stopping;
-  stopRecordButton.disabled = !recording || stopping;
+  recordButton.disabled = captureStopInProgress || recording || stopping;
+  stopRecordButton.disabled = captureStopInProgress || !recording || stopping;
   updateCaptureIndicators();
   renderDashboardStats();
   renderLiveBroadcasts();
 }
 
 async function stopVideoRecording() {
-  if (!stopRecordButton.disabled) {
-    setVideoState(true, true);
-    try {
-      const result = await api.stopVideo();
-      if (result.path) {
-        byId("video-file").textContent = "映像：" + result.path;
+  if (captureStopInProgress || stopRecordButton.disabled) return;
+  const timeshift = currentRecordingIsTimeshift;
+  captureStopInProgress = true;
+  setVideoState(true, true);
+  setCaptureDetail(timeshift
+    ? "タイムシフト映像を停止・保存中です…"
+    : "録画ファイルを確定してからコメント接続と保存処理を停止します…");
+  try {
+    requireCaptureApi(timeshift ? "stopVideo" : "stopCapture");
+    const result = timeshift ? await api.stopVideo() : await api.stopCapture();
+    const video = timeshift ? result : (result.video || {});
+    if (video.path) byId("video-file").textContent = "映像：" + video.path;
+    if (!timeshift) {
+      if (result.comment && result.comment.commentFile) {
+        byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
       }
-    } catch (error) {
-      setVideoState(true);
-      showToast(error.message || "録画を停止できませんでした。", true);
+      setConnection("disconnected");
+      setCaptureDetail("映像・音声録画とコメントを停止・保存しました。");
+      showToast("映像・音声録画とコメント取得を同時に停止しました。");
     }
+  } catch (error) {
+    setCaptureDetail("録画・コメント停止エラー：" + (error.message || String(error)));
+    showToast(error.message || "録画・コメントを停止できませんでした。", true);
+  } finally {
+    captureStopInProgress = false;
+    setVideoState(Boolean(recordStartedAt));
+    setConnection(commentCaptureState);
+    if (!recordStartedAt) processMonitorAutoQueue();
   }
 }
 
@@ -721,9 +750,10 @@ function handleVideoState(payload) {
   }
   clearRecordClock();
   currentCaptureTarget = null;
+  currentRecordingIsTimeshift = false;
   renderSessionProgramInfo();
   setVideoState(false);
-  processMonitorAutoQueue();
+  if (!captureStopInProgress) processMonitorAutoQueue();
 }
 
 async function refreshVideoTools() {
@@ -1305,7 +1335,7 @@ function handleMonitorLiveDetected(payload) {
 async function processMonitorAutoQueue() {
   if (monitorAutoProcessing || monitorAutoQueue.length === 0) return;
   // Never interrupt an existing manual or automatic recording.
-  if (recordButton.disabled || recordStartedAt) return;
+  if (captureStopInProgress || recordButton.disabled || recordStartedAt) return;
 
   const target = monitorAutoQueue.shift();
   if (!target || !target.liveId) return;
@@ -1329,6 +1359,7 @@ async function processMonitorAutoQueue() {
       startedAt: target.startedAt || ""
     };
     currentCaptureTarget = { ...target, liveId, isAutomaticRecording: true, isManualRecording: false };
+    currentRecordingIsTimeshift = false;
     liveInput.value = liveId;
     renderSessionProgramInfo();
     clearComments();
@@ -2605,7 +2636,7 @@ byId("record-mode").addEventListener("change", () => {
     ? "● 過去配信（映像＋コメント）を録画"
     : "● 接続して映像・音声＋コメントを録画";
 });
-stopRecordButton.addEventListener("click", stopVideoRecording);
+// The stop control is bound with the other primary buttons before optional initialization.
 byId("check-update-button").addEventListener("click", checkAppUpdates);
 byId("retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
 byId("settings-retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
