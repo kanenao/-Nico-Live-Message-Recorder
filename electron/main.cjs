@@ -3731,6 +3731,62 @@ ipcMain.handle("data:open-folder", async () => {
   return { error: result || "" };
 });
 
+// The filename no longer contains the lv ID. Retain the video-to-broadcast
+// mapping in an internal index so profile lookup, articles and library actions
+// can still work for recordings made without a comment session.
+function recordingIndexPath() {
+  return path.join(dataRoot(), "recording-index.json");
+}
+
+function loadRecordingIndex() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(recordingIndexPath(), "utf8"));
+    return saved && typeof saved === "object" && !Array.isArray(saved) && saved.files &&
+      typeof saved.files === "object" && !Array.isArray(saved.files) ? saved.files : {};
+  } catch (_) { return {}; }
+}
+
+function recordingRelativeKey(filePath) {
+  const relative = path.relative(dataRoot(), path.resolve(filePath)).replace(/\\/g, "/");
+  return relative.startsWith("videos/") && !relative.includes("../") ? relative : "";
+}
+
+function rememberRecordedVideo(filePath, information) {
+  const key = recordingRelativeKey(filePath);
+  if (!key || !/^lv\d{5,}$/i.test(String(information.liveId || ""))) return;
+  const entries = loadRecordingIndex();
+  entries[key] = {
+    liveId: String(information.liveId).toLowerCase(),
+    broadcasterId: String(information.broadcasterId || "").slice(0, 40),
+    broadcasterName: String(information.broadcasterName || "").slice(0, 80),
+    startedAt: String(information.startedAt || "").slice(0, 40)
+  };
+  // Keep the index bounded and prune any recordings removed from disk.
+  const keys = Object.keys(entries);
+  if (keys.length > 3000) {
+    for (const existing of keys) {
+      if (!fs.existsSync(path.join(dataRoot(), existing))) delete entries[existing];
+    }
+  }
+  const temporary = recordingIndexPath() + "." + process.pid + ".tmp";
+  fs.writeFileSync(temporary, JSON.stringify({ version: 1, files: entries }, null, 2), "utf8");
+  fs.renameSync(temporary, recordingIndexPath());
+}
+
+function commentLogLiveId(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const buffer = Buffer.alloc(8192);
+    const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    const first = buffer.subarray(0, bytes).toString("utf8").split(/\r?\n/, 1)[0];
+    const marker = JSON.parse(first);
+    return /^lv\d{5,}$/i.test(String(marker.liveId || ""))
+      ? String(marker.liveId).toLowerCase() : "";
+  } catch (_) { return ""; }
+  finally { if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {} }
+}
+
 const LIBRARY_VIDEO_EXTENSIONS = new Set([".mp4", ".ts", ".mkv", ".webm", ".mov"]);
 const LIBRARY_COMMENT_EXTENSIONS = new Set([".jsonl", ".csv", ".ass"]);
 
@@ -3775,6 +3831,26 @@ function listCaptureLibrary() {
         }
       }
     }
+  }
+  const savedIndex = loadRecordingIndex();
+  const matchedLogs = new Map();
+  for (const item of items) {
+    if (item.type !== "comment" || item.extension !== "JSONL") continue;
+    item.liveId = item.liveId || commentLogLiveId(item.path);
+    if (item.liveId) {
+      const key = item.broadcaster.toLowerCase() + "/" +
+        path.basename(item.path, path.extname(item.path)).toLowerCase();
+      matchedLogs.set(key, item.liveId);
+    }
+  }
+  for (const item of items) {
+    if (item.liveId) continue;
+    const key = item.broadcaster.toLowerCase() + "/" +
+      path.basename(item.path, path.extname(item.path)).toLowerCase();
+    const indexed = item.type === "video"
+      ? savedIndex[recordingRelativeKey(item.path)] : null;
+    item.liveId = indexed && /^lv\d{5,}$/i.test(String(indexed.liveId || ""))
+      ? indexed.liveId : (matchedLogs.get(key) || "");
   }
   const savedArticles = listBroadcastArticles().items;
   for (const item of items) {
