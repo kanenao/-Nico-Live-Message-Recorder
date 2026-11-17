@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
   exportCsv: () => ipcRenderer.invoke("comments:export-csv"),
   exportAss: (options) => ipcRenderer.invoke("comments:export-ass", options),
+  testAssNgRegex: (input) => ipcRenderer.invoke("comments:test-ass-ng", input),
   startCompose: (options) => ipcRenderer.invoke("compose:start", options),
   writeComposeChunk: (chunk) => ipcRenderer.invoke("compose:chunk", chunk),
   finishCompose: () => ipcRenderer.invoke("compose:finish"),

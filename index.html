@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.6.6-alpha.118</span>
+        <span class="version" id="version">v0.6.7-alpha.119</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -74,7 +74,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">α版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.6.6-alpha.118</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.6.7-alpha.119</span></div>
         </div>
       </aside>
 
@@ -618,6 +618,14 @@
               <p class="hint" id="ass-ng-help">1行に1つの正規表現。通常は大文字小文字を区別しません。/パターン/imsu 形式も使用可能。元のJSONLとCSVは変更せず、ASSに出力するコメントだけ除外します。</p>
               <button class="button button-outline button-small" id="save-ass-ng-button" type="button">NG設定を保存</button>
             </div>
+            <div class="ass-ng-test">
+              <label for="ass-ng-test-comment">NG判定を試すコメント</label>
+              <div class="ass-ng-test-controls">
+                <input id="ass-ng-test-comment" type="text" maxlength="2000" autocomplete="off" spellcheck="false" placeholder="ここにコメント例を入力（例：連投しています）">
+                <button class="button button-secondary button-small" id="test-ass-ng-button" type="button">NG判定をテスト</button>
+              </div>
+              <output id="ass-ng-test-result" class="ass-ng-test-result" role="status" aria-live="polite" data-state="idle">変換前に、入力したコメントがNG対象か確認できます。</output>
+            </div>
           </div>
           <div class="comment-header">
             <span>時刻</span><span>ユーザー</span><span>コメント / イベント</span><span>種別</span>
@@ -643,7 +651,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.6.6-alpha.118</strong>
+              <strong id="app-current-version">v0.6.7-alpha.119</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -673,7 +681,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.6.6-alpha.118</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.6.7-alpha.119</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

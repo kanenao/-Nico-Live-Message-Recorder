@@ -3168,6 +3168,33 @@ byId("library-open-folder-button").addEventListener("click", async () => {
   }
 });
 
+byId("test-ass-ng-button").addEventListener("click", async () => {
+  const button = byId("test-ass-ng-button");
+  const output = byId("ass-ng-test-result");
+  button.disabled = true;
+  output.dataset.state = "checking";
+  output.textContent = "NGワードを判定中…";
+  try {
+    const result = await api.testAssNgRegex({
+      ngRegex: byId("ass-ng-regex").value,
+      sample: byId("ass-ng-test-comment").value
+    });
+    output.dataset.state = result.matched ? "match" : "pass";
+    const details = Array.isArray(result.matches)
+      ? result.matches.map(match => match.lineNumber + "行目「" + match.pattern + "」").join("、")
+      : "";
+    output.textContent = result.matched
+      ? "NG対象：ASSには出力されません。（一致：" + details + "）"
+      : "NG対象外：このコメントはASSに出力されます。" +
+          (result.ruleCount ? "（適用ルール " + result.ruleCount + "件）" : "（NGルール未設定）");
+  } catch (error) {
+    output.dataset.state = "error";
+    output.textContent = "NG判定エラー：" + (error.message || String(error));
+  } finally {
+    button.disabled = false;
+  }
+});
+
 byId("save-ass-ng-button").addEventListener("click", async () => {
   const button = byId("save-ass-ng-button");
   button.disabled = true;
