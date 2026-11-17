@@ -181,7 +181,9 @@ test("comment output format and separate capture indicators are selectable", () 
   }
   assert.match(main, /function getCommentFormat/);
   assert.match(main, /async function exportCommentSidecars/);
-  assert.match(main, /generateAssFromRecords\(records\)/);
+  assert.match(main, /generateAssFromRecords\(records, \{/);
+  assert.match(main, /ngRegex: getMonitorSettings\(\)\.assNgRegex/);
+  assert.match(main, /\}\)\.content;/);
   assert.match(renderer, /function updateCaptureIndicators/);
   assert.match(renderer, /videoCaptureState = stopping \? "stopping"/);
   assert.match(renderer, /commentCaptureState = \["connected", "connecting", "error"\]/);
