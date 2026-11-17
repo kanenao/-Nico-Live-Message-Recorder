@@ -57,6 +57,26 @@ test("library video thumbnail and scene gallery use verified local media only", 
   assert.match(preload, /getLibraryVideoPreview:.*ipcRenderer\.invoke\("library:video-preview"/);
 });
 
+test("regression: library frame previews use the installed recorder's FFmpeg, not a missing bundle root", () => {
+  // In alpha.115 this caller invoked findBundledFfmpegExecutable() without its
+  // mandatory bundleRoot. That always returns null even though the installer
+  // includes FFmpeg in resources/streamlink and recording itself works.
+  const gallery = main.match(/async function getLibraryVideoPreview\(value, mode = "poster"\) \{[\s\S]*?\n\}/)?.[0] || "";
+  const article = main.match(/async function getArticleThumbnail\(articlePath\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(gallery, /const ffmpegPath = getVideoToolStatus\(\)\.ffmpegPath;/);
+  assert.match(article, /const ffmpegPath = getVideoToolStatus\(\)\.ffmpegPath;/);
+  assert.doesNotMatch(gallery, /findBundledFfmpegExecutable\(/);
+  assert.doesNotMatch(article, /findBundledFfmpegExecutable\(/);
+  assert.match(main, /function getVideoToolStatus\(\) \{/);
+  assert.match(main, /const bundleRoot = getStreamlinkBundleRoot\(\);/);
+  assert.match(main, /findBundledFfmpegExecutable\(bundleRoot\)/);
+  assert.match(main, /streamlinkPath/);
+  const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.ok(packageConfig.build.extraResources.some(entry =>
+    entry.to === "streamlink" && entry.from === "vendor/streamlink"
+  ), "Windows installer must include the Streamlink and FFmpeg portable binaries");
+});
+
 test("each recorded video shows a poster and on-demand selectable inside-video scenes", () => {
   assert.match(renderer, /function scheduleLibraryThumbnail\(image, placeholder, item\)/);
   assert.match(renderer, /function makeLibraryVideoScenesPanel\(item\)/);
