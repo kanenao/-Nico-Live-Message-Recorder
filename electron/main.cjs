@@ -11,6 +11,7 @@ const {
   formatStreamlinkFailure
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
+const { compileAssNgRegex } = require("./ass-ng-regex.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
@@ -533,9 +534,21 @@ async function exportCommentSidecars(sourcePath) {
   const written = [];
   for (const outputFormat of formats) {
     const outputPath = sourcePath.replace(/\.jsonl$/i, "." + outputFormat);
-    const output = outputFormat === "csv"
-      ? recordsToCsv(records)
-      : generateAssFromRecords(records);
+    let output;
+    if (outputFormat === "csv") {
+      output = recordsToCsv(records);
+    } else {
+      try {
+        output = generateAssFromRecords(records, {
+          ngRegex: getMonitorSettings().assNgRegex
+        }).content;
+      } catch (error) {
+        // A fully filtered recording has no ASS dialogue. Preserve JSONL/CSV
+        // and report the skip without interrupting recording finalization.
+        send("app:error", "ASSの自動作成を省略しました: " + error.message);
+        continue;
+      }
+    }
     fs.writeFileSync(outputPath, output, "utf8");
     written.push(outputPath);
   }
@@ -2213,6 +2226,7 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   keepAwake: true,
   quality: "best",
   commentFormat: "jsonl",
+  assNgRegex: "",
   autoUpdateStreamlink: true,
   notifyOnLive: true,
   aiArticleEnabled: true,
@@ -2241,6 +2255,7 @@ function getMonitorSettings() {
     keepAwake: stored.keepAwake !== false,
     quality: stored.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
+    assNgRegex: typeof stored.assNgRegex === "string" ? stored.assNgRegex.slice(0, 4000) : "",
     autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
     notifyOnLive: stored.notifyOnLive !== false,
     aiArticleEnabled: stored.aiArticleEnabled !== false,
@@ -2263,6 +2278,8 @@ function saveMonitorSettings(nextSettings) {
   if (![10, 15, 30, 60, 120, 300].includes(intervalSeconds)) {
     throw new Error("監視間隔は10秒・15秒・30秒・1分・2分・5分から選択してください。");
   }
+  const assNgRegex = String(candidate.assNgRegex == null ? "" : candidate.assNgRegex);
+  compileAssNgRegex(assNgRegex);
   const normalized = {
     intervalSeconds,
     autoRecord: candidate.autoRecord !== false,
@@ -2272,6 +2289,7 @@ function saveMonitorSettings(nextSettings) {
     keepAwake: candidate.keepAwake !== false,
     quality: candidate.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
+    assNgRegex,
     autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
     notifyOnLive: candidate.notifyOnLive !== false,
     aiArticleEnabled: candidate.aiArticleEnabled !== false,
@@ -4395,7 +4413,9 @@ ipcMain.handle("comments:export-csv", async () => {
   return { path: result.filePath };
 });
 
-ipcMain.handle("comments:export-ass", async () => {
+ipcMain.handle("comments:export-ass", async (_event, options = {}) => {
+  const ngRegex = typeof options.ngRegex === "string" ? options.ngRegex : getMonitorSettings().assNgRegex;
+  compileAssNgRegex(ngRegex);
   const directory = path.join(dataRoot(), "comments");
   if (!fs.existsSync(directory)) throw new Error("保存済みコメントフォルダーがありません。");
   const openResult = await dialog.showOpenDialog(mainWindow, {
@@ -4414,7 +4434,7 @@ ipcMain.handle("comments:export-ass", async () => {
   for (const line of lines) {
     try { records.push(JSON.parse(line)); } catch (_) { /* skip malformed rows */ }
   }
-  const generated = generateAssFromRecords(records);
+  const generated = generateAssFromRecords(records, { ngRegex });
   const saveResult = await dialog.showSaveDialog(mainWindow, {
     title: "ASS字幕を書き出す",
     defaultPath: source.replace(/\.jsonl$/i, ".ass"),
@@ -4422,7 +4442,7 @@ ipcMain.handle("comments:export-ass", async () => {
   });
   if (saveResult.canceled || !saveResult.filePath) return { cancelled: true };
   fs.writeFileSync(saveResult.filePath, "\uFEFF" + generated.content, "utf8");
-  return { path: saveResult.filePath, commentCount: generated.commentCount };
+  return { path: saveResult.filePath, commentCount: generated.commentCount, filteredCount: generated.filteredCount };
 });
 
 app.whenReady().then(async () => {
