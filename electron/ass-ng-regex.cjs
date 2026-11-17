@@ -49,4 +49,27 @@ function isAssNgComment(content, compiledRules) {
   return compiledRules.some(rule => rule.test(sample));
 }
 
-module.exports = { compileAssNgRegex, isAssNgComment };
+
+// Show which original rule lines would hide a sample comment before exporting.
+// This function never writes to disk, touches a recording, or changes settings.
+function testAssNgRegex(ngRegex, sampleComment) {
+  const sample = String(sampleComment == null ? "" : sampleComment);
+  if (sample.length > 2000) throw new Error("NG判定テストのコメントは2000文字以内にしてください。");
+  if (!sample.trim()) throw new Error("NG判定テスト用のコメントを入力してください。");
+  const rules = compileAssNgRegex(ngRegex);
+  const lines = String(ngRegex == null ? "" : ngRegex).replace(/\r\n?/g, "\n").split("\n");
+  const matches = [];
+  let index = 0;
+  for (let lineNumber = 0; lineNumber < lines.length; lineNumber += 1) {
+    const pattern = lines[lineNumber].trim();
+    if (!pattern) continue;
+    const rule = rules[index];
+    index += 1;
+    if (isAssNgComment(sample, [rule])) {
+      matches.push({ lineNumber: lineNumber + 1, pattern });
+    }
+  }
+  return { matched: matches.length > 0, ruleCount: rules.length, matches };
+}
+
+module.exports = { compileAssNgRegex, isAssNgComment, testAssNgRegex };
