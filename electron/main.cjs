@@ -11,7 +11,7 @@ const {
   formatStreamlinkFailure
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
-const { compileAssNgRegex } = require("./ass-ng-regex.cjs");
+const { compileAssNgRegex, testAssNgRegex } = require("./ass-ng-regex.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
@@ -4412,6 +4412,9 @@ ipcMain.handle("comments:export-csv", async () => {
   fs.writeFileSync(result.filePath, recordsToCsv(records), "utf8");
   return { path: result.filePath };
 });
+
+ipcMain.handle("comments:test-ass-ng", (_event, input = {}) =>
+  testAssNgRegex(input && input.ngRegex, input && input.sample));
 
 ipcMain.handle("comments:export-ass", async (_event, options = {}) => {
   const ngRegex = typeof options.ngRegex === "string" ? options.ngRegex : getMonitorSettings().assNgRegex;
