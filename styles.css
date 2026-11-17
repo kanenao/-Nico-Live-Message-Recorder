@@ -1259,6 +1259,13 @@ button, .button {
   gap: 12px;
   flex-wrap: wrap;
 }
+.ass-motion-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ass-motion-settings { grid-column: 1 / -1; }
 .ass-motion-heading h3 {
   margin: 0 0 5px;
   font-size: 14px;
