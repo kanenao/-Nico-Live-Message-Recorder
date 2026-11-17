@@ -67,5 +67,5 @@ test("CSV and ASS export both use the same JSONL parser", () => {
   assert.ok(csvHandler.includes("const records = readCommentJsonlRecords(source);"));
   assert.ok(assHandler.includes("const records = readCommentJsonlRecords(source);"));
   assert.ok(csvHandler.includes("recordsToCsv(records)"));
-  assert.ok(assHandler.includes("generateAssFromRecords(records, { ngRegex })"));
+  assert.ok(assHandler.includes("generateAssFromRecords(records, { ngRegex, ...normalizeAssMotion(options) })"));
 });
