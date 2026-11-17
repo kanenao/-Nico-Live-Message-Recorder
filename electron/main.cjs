@@ -4098,8 +4098,9 @@ async function getArticleThumbnail(articlePath) {
   let stat;
   try { stat = await fs.promises.stat(videoPath); if (!stat.isFile() || stat.size === 0) return ""; }
   catch (_) { return ""; }
-  const settings = readAppSettings();
-  const ffmpegPath = findBundledFfmpegExecutable() || findFfmpegExecutable({ customPath: settings.ffmpegPath });
+  // Use the same resolver as recording and FFmpeg tools. The bundled executable
+  // lives under resources/streamlink, not the process working directory.
+  const ffmpegPath = getVideoToolStatus().ffmpegPath;
   if (!ffmpegPath) return "";
   const key = [videoPath, stat.size, stat.mtimeMs].join("|");
   if (articleThumbnailCache.has(key)) return articleThumbnailCache.get(key);
@@ -4152,12 +4153,13 @@ async function getLibraryVideoPreview(value, mode = "poster") {
   const stat = await fs.promises.stat(videoPath);
   if (!stat.isFile() || stat.size <= 0) return mode === "poster" ? "" :
     { durationSeconds: 0, frames: [], message: "動画のデータがありません。" };
-  const settings = readAppSettings();
-  const ffmpegPath = findBundledFfmpegExecutable() || findFfmpegExecutable({
-    customPath: settings.ffmpegPath
-  });
+  // The installed Windows package puts FFmpeg in resources/streamlink. Reuse
+  // the recorder's proven resolver instead of calling findBundledFfmpegExecutable
+  // without the required bundleRoot (which always returns null).
+  const ffmpegPath = getVideoToolStatus().ffmpegPath;
   if (!ffmpegPath) return mode === "poster" ? "" :
-    { durationSeconds: 0, frames: [], message: "動画の場面表示にはFFmpegが必要です。" };
+    { durationSeconds: 0, frames: [],
+      message: "FFmpegが見つかりません。アプリ同梱ファイルを確認するか、アプリ設定でFFmpegの場所を指定してください。" };
   const kind = mode === "timeline" ? "timeline" : "poster";
   const key = [kind, videoPath, stat.size, stat.mtimeMs].join("|");
   if (libraryVideoPreviewCache.has(key)) return libraryVideoPreviewCache.get(key);
