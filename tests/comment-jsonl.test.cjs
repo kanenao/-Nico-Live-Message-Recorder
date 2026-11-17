@@ -49,7 +49,7 @@ test("the saved JSONL file reader and ASS converter preserve timestamp alignment
     const ass = generateAssFromRecords(parsed, { ngRegex: "普通" });
     assert.equal(ass.commentCount, 1);
     assert.equal(ass.filteredCount, 1);
-    assert.match(ass.content, /0:00:01\\.00/);
+    assert.ok(ass.content.includes("0:00:01.00"));
     assert.match(ass.content, /うぽつ/);
     assert.doesNotMatch(ass.content, /普通のコメント/);
   } finally {
@@ -64,8 +64,8 @@ test("CSV and ASS export both use the same JSONL parser", () => {
   assert.ok(csvStart >= 0 && assStart > csvStart && nextHandler > assStart);
   const csvHandler = main.slice(csvStart, assStart);
   const assHandler = main.slice(assStart, nextHandler);
-  assert.match(csvHandler, /const records = readCommentJsonlRecords\\(source\\);/);
-  assert.match(assHandler, /const records = readCommentJsonlRecords\\(source\\);/);
-  assert.match(csvHandler, /recordsToCsv\\(records\\)/);
-  assert.match(assHandler, /generateAssFromRecords\\(records, \\{ ngRegex \\}\\)/);
+  assert.ok(csvHandler.includes("const records = readCommentJsonlRecords(source);"));
+  assert.ok(assHandler.includes("const records = readCommentJsonlRecords(source);"));
+  assert.ok(csvHandler.includes("recordsToCsv(records)"));
+  assert.ok(assHandler.includes("generateAssFromRecords(records, { ngRegex })"));
 });
