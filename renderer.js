@@ -3247,6 +3247,17 @@ for (const prefix of ["ass-", "setting-ass-"]) {
   }
 }
 
+byId("reset-ass-motion-button").addEventListener("click", () => {
+  applyAssMotionInputs("ass-", {
+    assScrollSpeed: 360,
+    assEntryOffset: 0,
+    assScrollLanes: 18,
+    assFixedDuration: 5,
+    assPreventOverlap: true
+  });
+  showToast("ASSの流れ方をニコ生標準へ戻しました。保存する場合は「流れ方の設定を保存」を押してください。");
+});
+
 byId("save-ass-motion-button").addEventListener("click", async () => {
   const button = byId("save-ass-motion-button");
   button.disabled = true;
