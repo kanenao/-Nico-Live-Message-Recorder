@@ -1,6 +1,7 @@
 "use strict";
 
 const { compileAssNgRegex, isAssNgComment } = require("./ass-ng-regex.cjs");
+const { normalizeAssMotion, calculateAssHeadwayMs } = require("./ass-motion.cjs");
 
 function parseTimestamp(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -53,6 +54,7 @@ function takeLane(lanes, requestedStart) {
 function generateAssFromRecords(records, options = {}) {
   if (!Array.isArray(records)) throw new TypeError("コメントログの形式が正しくありません。");
   const ngRules = compileAssNgRegex(options.ngRegex || "");
+  const motion = normalizeAssMotion(options);
 
   const comments = records
     .filter((record) => record && record.type === "comment" && String(record.content || "").trim())
@@ -83,7 +85,8 @@ function generateAssFromRecords(records, options = {}) {
   const baseFontSize = Math.max(18, Math.min(72, Number(options.fontSize) || 40));
   const playResX = 1920;
   const playResY = 1080;
-  const scrollLanes = Array(18).fill(0);
+  const scrollLanes = Array(motion.assScrollLanes).fill(0);
+  let unconstrainedLaneIndex = 0;
   const topLanes = Array(5).fill(0);
   const bottomLanes = Array(5).fill(0);
   const dialogue = [];
@@ -126,7 +129,7 @@ function generateAssFromRecords(records, options = {}) {
     if (isTop || isBottom) {
       const lanes = isTop ? topLanes : bottomLanes;
       const lane = takeLane(lanes, requestedStart);
-      const duration = 5;
+      const duration = motion.assFixedDuration;
       lanes[lane.index] = lane.start + duration + 0.15;
       const y = isTop ? 48 + lane.index * 42 : playResY - 48 - lane.index * 42;
       const align = isTop ? 8 : 2;
@@ -140,11 +143,20 @@ function generateAssFromRecords(records, options = {}) {
     }
 
     const width = estimateTextWidth(record.content, fontSize);
-    const duration = Math.max(4, Math.min(18, (playResX + width) / 360));
-    const lane = takeLane(scrollLanes, requestedStart);
+    // Constant pixels/second means comments of different lengths travel at
+    // the same velocity. ASS starts just outside the right edge by default.
+    const enteringX = playResX + motion.assEntryOffset;
+    const duration = (enteringX + width) / motion.assScrollSpeed;
+    const lane = motion.assPreventOverlap
+      ? takeLane(scrollLanes, requestedStart)
+      : { index: unconstrainedLaneIndex++ % scrollLanes.length, start: requestedStart };
     const y = 52 + lane.index * 48;
-    scrollLanes[lane.index] = lane.start + duration + 0.25;
-    const movement = "{\\move(" + playResX + "," + y + "," + (-width) + "," + y + ")" + styleTags + "}";
+    // Reserve a lane only until the trailing edge clears the entry point,
+    // rather than unnecessarily postponing comments for their full duration.
+    scrollLanes[lane.index] = motion.assPreventOverlap
+      ? lane.start + calculateAssHeadwayMs(width, motion.assScrollSpeed) / 1000
+      : requestedStart;
+    const movement = "{\\move(" + enteringX + "," + y + "," + (-width) + "," + y + ")" + styleTags + "}";
 
     dialogue.push(
       "Dialogue: 0," + assTime(lane.start * 1000) + "," +
