@@ -62,7 +62,7 @@ test("manual and automatic ASS export share persisted NG regex, but original log
   assert.match(main, /assNgRegex: ""/);
   assert.match(main, /compileAssNgRegex\(assNgRegex\)/);
   assert.match(main, /assNgRegex: typeof stored\.assNgRegex/);
-  assert.match(main, /assNgRegex: getMonitorSettings\(\)\.assNgRegex/);
+  assert.match(main, /ngRegex: getMonitorSettings\(\)\.assNgRegex/);
   assert.match(main, /generateAssFromRecords\(records, \{\s*ngRegex: getMonitorSettings/);
   assert.match(main, /generateAssFromRecords\(records, \{ ngRegex \}\)/);
   assert.match(main, /output = generateAssFromRecords\(records,[\s\S]*?\)\.content/);
