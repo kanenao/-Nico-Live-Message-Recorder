@@ -17,6 +17,7 @@ const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { parseVideoDuration, videoPreviewTimes, formatVideoTime } = require("./library-video-preview.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
+const { resolveSavedCommentFile, isActiveCommentFile } = require("./library-comment-file.cjs");
 const articleExport = require("./article-export.cjs");
 const { selectLiveArticlePreviews } = require("./live-article-preview.cjs");
 const { transcribeVideoAudio, transcribeAudioFile } = require("./audio-transcription.cjs");
@@ -76,6 +77,7 @@ let currentLiveId = "";
 let commentWriter = null;
 let commentFilePath = "";
 let commentWriterError = null;
+let commentFinalizing = false;
 let articleUpdateTimer = null;
 let articleUpdateInProgress = false;
 let articleRefreshPending = false;
@@ -1214,6 +1216,8 @@ function appendMarkerAndWait(type, fields = {}) {
 
 async function closeCommentWriter(options = {}) {
   if (!commentWriter) return;
+  commentFinalizing = true;
+  try {
   if (articleUpdateTimer) { clearInterval(articleUpdateTimer); articleUpdateTimer = null; }
   if (liveArticleCaptureTimer) { clearInterval(liveArticleCaptureTimer); liveArticleCaptureTimer = null; }
   const writer = commentWriter;
@@ -1266,6 +1270,9 @@ async function closeCommentWriter(options = {}) {
     }
   } catch (error) {
     send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
+  }
+  } finally {
+    commentFinalizing = false;
   }
 }
 
@@ -4318,6 +4325,37 @@ ipcMain.handle("library:delete-video", async (_event, value) => {
   } catch (error) {
     send("app:error", "削除した動画の番組情報を整理できませんでした: " + error.message);
   }
+  return { deleted: true, fileName: path.basename(target) };
+});
+
+ipcMain.handle("library:delete-comment", async (_event, value) => {
+  const commentsRoot = path.join(dataRoot(), "comments");
+  const target = resolveSavedCommentFile(value, commentsRoot);
+  const ensureNotActive = () => {
+    if (commentFinalizing || timeshiftCommentFetchActive ||
+        (commentWriter && isActiveCommentFile(target, commentFilePath))) {
+      throw new Error("コメント取得中または保存確定中のファイルは削除できません。保存完了後に再試行してください。");
+    }
+  };
+  ensureNotActive();
+  const confirmation = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "コメントファイルを削除",
+    message: "このコメントファイルを完全に削除しますか？",
+    detail: path.basename(target) +
+      "\n\n削除したコメントは元に戻せません。録画動画とAI記事は残りますが、削除したログからの字幕変換・AI記事の再解析はできなくなる場合があります。CSV・ASSなど別のコメントファイルは削除されません。",
+    buttons: ["キャンセル", "コメントだけ削除"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  });
+  if (confirmation.response !== 1) return { cancelled: true };
+  // The user may have started recording or the file may have changed while
+  // the native confirmation dialog was open. Validate again before unlinking.
+  const confirmedTarget = resolveSavedCommentFile(value, commentsRoot);
+  if (confirmedTarget !== target) throw new Error("確認中にファイルが変更されました。もう一度操作してください。");
+  ensureNotActive();
+  await fs.promises.unlink(target);
   return { deleted: true, fileName: path.basename(target) };
 });
 
