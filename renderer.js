@@ -1296,11 +1296,14 @@ const ASS_MOTION_FIELDS = [
 ];
 
 function refreshAssMotionLabels(prefix) {
+  const autoEnabled = byId(prefix + "auto-motion").checked;
   for (const [, id, unit] of ASS_MOTION_FIELDS) {
     const input = byId(prefix + id);
     const output = byId(prefix + id + "-value");
+    if (input) input.disabled = autoEnabled;
     if (input && output) output.textContent = input.value + unit;
   }
+  byId(prefix + "prevent-overlap").disabled = autoEnabled;
 }
 
 function readAssMotionInputs(prefix) {
@@ -1308,6 +1311,7 @@ function readAssMotionInputs(prefix) {
   for (const [property, id] of ASS_MOTION_FIELDS) {
     settings[property] = Number(byId(prefix + id).value);
   }
+  settings.assAutoMotion = byId(prefix + "auto-motion").checked;
   settings.assPreventOverlap = byId(prefix + "prevent-overlap").checked;
   return settings;
 }
@@ -1322,6 +1326,10 @@ function applyAssMotionInputs(prefix, values, skipFocused = false) {
     if (input && (!skipFocused || document.activeElement !== input)) {
       input.value = String(values[property] ?? defaults[property]);
     }
+  }
+  const auto = byId(prefix + "auto-motion");
+  if (auto && (!skipFocused || document.activeElement !== auto)) {
+    auto.checked = values.assAutoMotion !== false;
   }
   const overlap = byId(prefix + "prevent-overlap");
   if (overlap && (!skipFocused || document.activeElement !== overlap)) {
@@ -3245,17 +3253,20 @@ for (const prefix of ["ass-", "setting-ass-"]) {
   for (const [, id] of ASS_MOTION_FIELDS) {
     byId(prefix + id).addEventListener("input", () => refreshAssMotionLabels(prefix));
   }
+  byId(prefix + "auto-motion").addEventListener("change", () => refreshAssMotionLabels(prefix));
+  refreshAssMotionLabels(prefix);
 }
 
 byId("reset-ass-motion-button").addEventListener("click", () => {
   applyAssMotionInputs("ass-", {
+    assAutoMotion: true,
     assScrollSpeed: 360,
     assEntryOffset: 0,
     assScrollLanes: 18,
     assFixedDuration: 5,
     assPreventOverlap: true
   });
-  showToast("ASSの流れ方をニコ生標準へ戻しました。保存する場合は「流れ方の設定を保存」を押してください。");
+  showToast("ニコ生風の自動調整をONに戻しました。保存する場合は「流れ方の設定を保存」を押してください。");
 });
 
 byId("save-ass-motion-button").addEventListener("click", async () => {
@@ -3294,8 +3305,12 @@ byId("export-ass-button").addEventListener("click", async () => {
   try {
     const result = await api.exportAss({ ngRegex: byId("ass-ng-regex").value, ...readAssMotionInputs("ass-") });
     if (result.cancelled) return;
+    const autoSummary = byId("ass-auto-motion").checked
+      ? "、自動調整 " + (result.automaticallyAdjustedCount || 0) + "件" +
+        ((result.automaticallyDeferredCount || 0) ? "（混雑による時間調整 " + result.automaticallyDeferredCount + "件）" : "")
+      : "";
     showToast("ASSを書き出しました（" + result.commentCount + "件、NG除外 " +
-      (result.filteredCount || 0) + "件）: " + result.path);
+      (result.filteredCount || 0) + "件" + autoSummary + "）: " + result.path);
   } catch (error) {
     showToast(error.message || "ASSを書き出せませんでした。", true);
   } finally {

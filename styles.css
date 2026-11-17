@@ -1311,3 +1311,27 @@ button, .button {
 @media (max-width: 700px) {
   .ass-motion-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* alpha.122: automatic Nico-style motion is enabled by default. */
+.ass-auto-motion-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ass-auto-motion-toggle > span {
+  display: grid;
+  gap: 4px;
+  line-height: 1.45;
+}
+.ass-auto-motion-toggle strong { font-size: 12px; }
+.ass-auto-motion-toggle small { color: var(--text-muted); font-size: 11px; }
+.ass-motion-field input[type="range"]:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.ass-motion-overlap input:disabled {
+  opacity: .4;
+}

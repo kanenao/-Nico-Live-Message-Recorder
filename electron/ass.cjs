@@ -1,7 +1,10 @@
 "use strict";
 
 const { compileAssNgRegex, isAssNgComment } = require("./ass-ng-regex.cjs");
-const { normalizeAssMotion, calculateAssHeadwayMs } = require("./ass-motion.cjs");
+const {
+  normalizeAssMotion, calculateAssHeadwayMs,
+  AUTO_ASS_LANE_ORDER, calculateAutomaticAssMotion, reserveAutomaticAssLane
+} = require("./ass-motion.cjs");
 
 function parseTimestamp(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -85,7 +88,13 @@ function generateAssFromRecords(records, options = {}) {
   const baseFontSize = Math.max(18, Math.min(72, Number(options.fontSize) || 40));
   const playResX = 1920;
   const playResY = 1080;
-  const scrollLanes = Array(motion.assScrollLanes).fill(0);
+  const scrollLanes = Array(motion.assAutoMotion ? 18 : motion.assScrollLanes).fill(0);
+  const automaticLanes = Array(18).fill(null);
+  const recentScrollTimes = [];
+  let firstRecentScroll = 0;
+  let automaticLaneSequence = 0;
+  let automaticallyAdjustedCount = 0;
+  let automaticallyDeferredCount = 0;
   let unconstrainedLaneIndex = 0;
   const topLanes = Array(5).fill(0);
   const bottomLanes = Array(5).fill(0);
@@ -143,19 +152,45 @@ function generateAssFromRecords(records, options = {}) {
     }
 
     const width = estimateTextWidth(record.content, fontSize);
-    // Constant pixels/second means comments of different lengths travel at
-    // the same velocity. ASS starts just outside the right edge by default.
-    const enteringX = playResX + motion.assEntryOffset;
-    const duration = (enteringX + width) / motion.assScrollSpeed;
-    const lane = motion.assPreventOverlap
-      ? takeLane(scrollLanes, requestedStart)
-      : { index: unconstrainedLaneIndex++ % scrollLanes.length, start: requestedStart };
+    // Keep the original comment timestamp and choose a speed and physical row
+    // from a rolling five-second count of visible comments.
+    let automatic = null;
+    if (motion.assAutoMotion) {
+      while (firstRecentScroll < recentScrollTimes.length &&
+             recentScrollTimes[firstRecentScroll] < requestedStart - 5) {
+        firstRecentScroll += 1;
+      }
+      automatic = calculateAutomaticAssMotion(
+        width, recentScrollTimes.length - firstRecentScroll + 1, playResX
+      );
+      recentScrollTimes.push(requestedStart);
+      if (firstRecentScroll > 2048) {
+        recentScrollTimes.splice(0, firstRecentScroll);
+        firstRecentScroll = 0;
+      }
+      automaticallyAdjustedCount += 1;
+    }
+    const enteringX = automatic ? automatic.entryX : playResX + motion.assEntryOffset;
+    const speed = automatic ? automatic.speed : motion.assScrollSpeed;
+    const duration = (enteringX + width) / speed;
+    let lane;
+    if (automatic) {
+      const permittedLanes = AUTO_ASS_LANE_ORDER.slice(0, automatic.laneCount);
+      lane = reserveAutomaticAssLane(
+        automaticLanes, permittedLanes, requestedStart,
+        width, speed, enteringX, automaticLaneSequence
+      );
+      automaticLaneSequence += 1;
+      if (lane.start > requestedStart + 0.01) automaticallyDeferredCount += 1;
+    } else {
+      lane = motion.assPreventOverlap
+        ? takeLane(scrollLanes, requestedStart)
+        : { index: unconstrainedLaneIndex++ % scrollLanes.length, start: requestedStart };
+      scrollLanes[lane.index] = motion.assPreventOverlap
+        ? lane.start + calculateAssHeadwayMs(width, speed) / 1000
+        : requestedStart;
+    }
     const y = 52 + lane.index * 48;
-    // Reserve a lane only until the trailing edge clears the entry point,
-    // rather than unnecessarily postponing comments for their full duration.
-    scrollLanes[lane.index] = motion.assPreventOverlap
-      ? lane.start + calculateAssHeadwayMs(width, motion.assScrollSpeed) / 1000
-      : requestedStart;
     const movement = "{\\move(" + enteringX + "," + y + "," + (-width) + "," + y + ")" + styleTags + "}";
 
     dialogue.push(
@@ -191,7 +226,9 @@ function generateAssFromRecords(records, options = {}) {
   return {
     content: header.join("\r\n") + "\r\n",
     commentCount: dialogue.length,
-    filteredCount
+    filteredCount,
+    automaticallyAdjustedCount,
+    automaticallyDeferredCount
   };
 }
 

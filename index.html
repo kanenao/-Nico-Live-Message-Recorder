@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.6.9-alpha.121</span>
+        <span class="version" id="version">v0.6.10-alpha.122</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -74,7 +74,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">α版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.6.9-alpha.121</span></div>
+          <div class="small-version">BUILD <span id="build-version">0.6.10-alpha.122</span></div>
         </div>
       </aside>
 
@@ -633,6 +633,10 @@
               <div class="ass-motion-heading-actions"><button class="button button-quiet button-small" id="reset-ass-motion-button" type="button">ニコ生標準に戻す</button>
               <button class="button button-outline button-small" id="save-ass-motion-button" type="button">流れ方の設定を保存</button></div>
             </div>
+            <label class="settings-checkbox ass-auto-motion-toggle">
+              <input type="checkbox" id="ass-auto-motion" checked>
+              <span><strong>ニコ生風の自動調整（おすすめ）</strong><small>文章の長さ・コメントの集中度から速度、右端の入り方、表示行を自動決定します。OFFにすると下の手動設定を使います。</small></span>
+            </label>
             <div class="ass-motion-grid">
               <label class="ass-motion-field"><span>コメント速度 <output id="ass-scroll-speed-value">360 px/秒</output></span>
                 <input id="ass-scroll-speed" type="range" min="180" max="720" step="30" value="360"></label>
@@ -645,7 +649,7 @@
               <label class="settings-checkbox ass-motion-overlap"><input type="checkbox" id="ass-prevent-overlap" checked>
                 <span>同じ行のコメント同士が重ならないよう調整する</span></label>
             </div>
-            <p class="hint">右側から入る距離は画面外の待機距離です（0 px＝画面の右端から表示）。変更した設定は「ASSに変換」で即時使用します。録画と元のコメントログは変更しません。</p>
+            <p class="hint">自動ONでは短文・長文・連続投稿に合わせて右端から自然に流し、混雑している行を避けます。手動設定はOFFのときだけ適用。録画と元のコメントログは変更しません。</p>
           </section>
           <div class="comment-header">
             <span>時刻</span><span>ユーザー</span><span>コメント / イベント</span><span>種別</span>
@@ -671,7 +675,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.6.9-alpha.121</strong>
+              <strong id="app-current-version">v0.6.10-alpha.122</strong>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
               <span>新しいバージョン</span>
@@ -701,7 +705,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.6.9-alpha.121</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.6.10-alpha.122</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -791,6 +795,10 @@
           </label>
           <div class="ass-motion-settings">
             <strong>自動ASS作成時のコメント表示</strong>
+            <label class="settings-checkbox ass-auto-motion-toggle">
+              <input type="checkbox" id="setting-ass-auto-motion" checked>
+              <span>ニコ生風に速度・入り方・行配置を自動調整（推奨）</span>
+            </label>
             <div class="ass-motion-grid">
               <label class="ass-motion-field"><span>速度 <output id="setting-ass-scroll-speed-value">360 px/秒</output></span><input id="setting-ass-scroll-speed" type="range" min="180" max="720" step="30" value="360"></label>
               <label class="ass-motion-field"><span>右側の入り込み距離 <output id="setting-ass-entry-offset-value">0 px</output></span><input id="setting-ass-entry-offset" type="range" min="0" max="320" step="40" value="0"></label>
@@ -798,7 +806,7 @@
               <label class="ass-motion-field"><span>上・下固定の表示時間 <output id="setting-ass-fixed-duration-value">5 秒</output></span><input id="setting-ass-fixed-duration" type="range" min="3" max="10" step="1" value="5"></label>
               <label class="settings-checkbox ass-motion-overlap"><input type="checkbox" id="setting-ass-prevent-overlap" checked><span>同じ行の重なりを防ぐ</span></label>
             </div>
-            <small>ここで保存すると録画終了時の自動ASSにも反映。手動変換ではコメントログ画面の編集中の値を使用します。</small>
+            <small>ここで保存すると録画終了時の自動ASSにも反映。自動ONでは下の手動スライダーは使われません。手動変換ではコメントログ画面の編集中の設定を使用します。</small>
           </div>
           </div>
         </section>
