@@ -1950,6 +1950,27 @@ function renderCaptureLibrary() {
       });
       actions.appendChild(deleteButton);
     }
+    if (item.type === "comment") {
+      const deleteCommentButton = document.createElement("button");
+      deleteCommentButton.type = "button";
+      deleteCommentButton.className = "button button-danger button-small";
+      deleteCommentButton.textContent = "削除";
+      deleteCommentButton.title = "確認後、このコメントファイルだけを削除します。録画動画とAI記事は残ります。";
+      deleteCommentButton.addEventListener("click", async () => {
+        deleteCommentButton.disabled = true;
+        try {
+          const result = await api.deleteLibraryComment(item.path);
+          if (result && result.cancelled) return;
+          showToast("コメントファイルを削除しました: " + (result.fileName || item.fileName));
+          await loadCaptureLibrary();
+        } catch (error) {
+          showToast(error.message || "コメントファイルを削除できませんでした。", true);
+        } finally {
+          deleteCommentButton.disabled = false;
+        }
+      });
+      actions.appendChild(deleteCommentButton);
+    }
     row.appendChild(actions);
     if (scenes) row.appendChild(scenes.panel);
     contents.appendChild(row);
