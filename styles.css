@@ -1240,3 +1240,74 @@ button, .button {
 .ass-ng-test-result[data-state="match"] { color: #ffbdad; }
 .ass-ng-test-result[data-state="pass"] { color: #97e9c2; }
 .ass-ng-test-result[data-state="error"] { color: #ffacb6; }
+
+/* alpha.121: Nico Live-style ASS motion controls. */
+.ass-motion-panel,
+.ass-motion-settings {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px;
+  background: var(--surface-soft, rgba(255,255,255,.035));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ass-motion-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ass-motion-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ass-motion-settings { grid-column: 1 / -1; }
+.ass-motion-heading h3 {
+  margin: 0 0 5px;
+  font-size: 14px;
+}
+.ass-motion-heading p,
+.ass-motion-panel .hint,
+.ass-motion-settings small {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.ass-motion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.ass-motion-field {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+}
+.ass-motion-field span {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+}
+.ass-motion-field output {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.ass-motion-field input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.ass-motion-overlap {
+  grid-column: 1 / -1;
+}
+@media (max-width: 700px) {
+  .ass-motion-grid { grid-template-columns: minmax(0, 1fr); }
+}

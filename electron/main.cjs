@@ -12,6 +12,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { compileAssNgRegex, testAssNgRegex } = require("./ass-ng-regex.cjs");
+const { normalizeAssMotion } = require("./ass-motion.cjs");
 const { readCommentJsonlRecords } = require("./comment-jsonl.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
@@ -541,7 +542,8 @@ async function exportCommentSidecars(sourcePath) {
     } else {
       try {
         output = generateAssFromRecords(records, {
-          ngRegex: getMonitorSettings().assNgRegex
+          ngRegex: getMonitorSettings().assNgRegex,
+          ...normalizeAssMotion(getMonitorSettings())
         }).content;
       } catch (error) {
         // A fully filtered recording has no ASS dialogue. Preserve JSONL/CSV
@@ -2228,6 +2230,7 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   quality: "best",
   commentFormat: "jsonl",
   assNgRegex: "",
+  ...normalizeAssMotion(),
   autoUpdateStreamlink: true,
   notifyOnLive: true,
   aiArticleEnabled: true,
@@ -2257,6 +2260,7 @@ function getMonitorSettings() {
     quality: stored.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(stored.commentFormat) ? stored.commentFormat : "jsonl",
     assNgRegex: typeof stored.assNgRegex === "string" ? stored.assNgRegex.slice(0, 4000) : "",
+    ...normalizeAssMotion(stored),
     autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
     notifyOnLive: stored.notifyOnLive !== false,
     aiArticleEnabled: stored.aiArticleEnabled !== false,
@@ -2291,6 +2295,7 @@ function saveMonitorSettings(nextSettings) {
     quality: candidate.quality === "worst" ? "worst" : "best",
     commentFormat: ["jsonl", "csv", "ass", "all"].includes(candidate.commentFormat) ? candidate.commentFormat : "jsonl",
     assNgRegex,
+    ...normalizeAssMotion(candidate),
     autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
     notifyOnLive: candidate.notifyOnLive !== false,
     aiArticleEnabled: candidate.aiArticleEnabled !== false,
@@ -4432,7 +4437,7 @@ ipcMain.handle("comments:export-ass", async (_event, options = {}) => {
     await writeCommentLine(commentWriter, "");
   }
   const records = readCommentJsonlRecords(source);
-  const generated = generateAssFromRecords(records, { ngRegex });
+  const generated = generateAssFromRecords(records, { ngRegex, ...normalizeAssMotion(options) });
   const saveResult = await dialog.showSaveDialog(mainWindow, {
     title: "ASS字幕を書き出す",
     defaultPath: source.replace(/\.jsonl$/i, ".ass"),

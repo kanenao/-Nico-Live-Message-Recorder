@@ -64,7 +64,7 @@ test("manual and automatic ASS export share persisted NG regex, but original log
   assert.match(main, /assNgRegex: typeof stored\.assNgRegex/);
   assert.match(main, /ngRegex: getMonitorSettings\(\)\.assNgRegex/);
   assert.match(main, /generateAssFromRecords\(records, \{\s*ngRegex: getMonitorSettings/);
-  assert.match(main, /generateAssFromRecords\(records, \{ ngRegex \}\)/);
+  assert.match(main, /generateAssFromRecords\(records, \{ ngRegex, \.\.\.normalizeAssMotion\(options\) \}\)/);
   assert.match(main, /output = generateAssFromRecords\(records,[\s\S]*?\)\.content/);
   assert.match(main, /output = recordsToCsv\(records\)/);
   assert.match(main, /return \{ path: saveResult\.filePath, commentCount: generated\.commentCount, filteredCount: generated\.filteredCount \}/);
@@ -72,7 +72,7 @@ test("manual and automatic ASS export share persisted NG regex, but original log
   for (const id of ["ass-ng-regex", "save-ass-ng-button", "setting-ass-ng-regex"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing ASS regex input: " + id);
   }
-  assert.match(renderer, /api\.exportAss\(\{ ngRegex: byId\("ass-ng-regex"\)\.value \}\)/);
+  assert.match(renderer, /api\.exportAss\(\{ ngRegex: byId\("ass-ng-regex"\)\.value, \.\.\.readAssMotionInputs\("ass-"\) \}\)/);
   assert.match(renderer, /api\.saveMonitorSettings\(\{\s*assNgRegex: byId\("ass-ng-regex"\)\.value/);
   assert.match(renderer, /setting-ass-ng-regex/);
 });
