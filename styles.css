@@ -1196,3 +1196,47 @@ button, .button {
 .ass-ng-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 .ass-ng-actions .hint { flex: 1 1 260px; margin: 0; font-size: 10px; line-height: 1.6; }
 .ass-ng-settings-field small { font-size: 10px; color: var(--text-muted); line-height: 1.6; }
+
+/* alpha.119: test an example comment against ASS NG rules before conversion */
+.ass-ng-test {
+  display: grid;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.ass-ng-test > label {
+  font-size: 11px;
+  font-weight: 600;
+}
+.ass-ng-test-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ass-ng-test-controls input {
+  flex: 1 1 230px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(4, 12, 22, .55);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.ass-ng-test-controls input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ass-ng-test-result {
+  display: block;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+.ass-ng-test-result[data-state="match"] { color: #ffbdad; }
+.ass-ng-test-result[data-state="pass"] { color: #97e9c2; }
+.ass-ng-test-result[data-state="error"] { color: #ffacb6; }
