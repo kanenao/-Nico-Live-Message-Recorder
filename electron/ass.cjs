@@ -1,5 +1,7 @@
 "use strict";
 
+const { compileAssNgRegex, isAssNgComment } = require("./ass-ng-regex.cjs");
+
 function parseTimestamp(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value < 1000000000000 ? value * 1000 : value;
@@ -50,6 +52,7 @@ function takeLane(lanes, requestedStart) {
 
 function generateAssFromRecords(records, options = {}) {
   if (!Array.isArray(records)) throw new TypeError("コメントログの形式が正しくありません。");
+  const ngRules = compileAssNgRegex(options.ngRegex || "");
 
   const comments = records
     .filter((record) => record && record.type === "comment" && String(record.content || "").trim())
@@ -84,6 +87,7 @@ function generateAssFromRecords(records, options = {}) {
   const topLanes = Array(5).fill(0);
   const bottomLanes = Array(5).fill(0);
   const dialogue = [];
+  let filteredCount = 0;
 
   const colorTags = {
     red: "\\c&H000000FF&",
@@ -101,6 +105,10 @@ function generateAssFromRecords(records, options = {}) {
     if (stopAt !== null && item.timestamp > stopAt + 250) continue;
 
     const record = item.record;
+    if (isAssNgComment(record.content, ngRules)) {
+      filteredCount += 1;
+      continue;
+    }
     const text = escapeAssText(record.content);
     if (!text) continue;
 
@@ -146,7 +154,7 @@ function generateAssFromRecords(records, options = {}) {
   }
 
   if (dialogue.length === 0) {
-    throw new Error("録画開始後のコメントがありません。録画開始時刻とコメント時刻を確認してください。");
+    throw new Error(filteredCount > 0 ? "NGワード設定によりASSへ出力できるコメントがありません。正規表現を確認してください。" : "録画開始後のコメントがありません。録画開始時刻とコメント時刻を確認してください。");
   }
 
   const header = [
@@ -170,7 +178,8 @@ function generateAssFromRecords(records, options = {}) {
 
   return {
     content: header.join("\r\n") + "\r\n",
-    commentCount: dialogue.length
+    commentCount: dialogue.length,
+    filteredCount
   };
 }
 
