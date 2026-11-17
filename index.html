@@ -627,6 +627,25 @@
               <output id="ass-ng-test-result" class="ass-ng-test-result" role="status" aria-live="polite" data-state="idle">変換前に、入力したコメントがNG対象か確認できます。</output>
             </div>
           </div>
+          <section class="ass-motion-panel" aria-labelledby="ass-motion-title">
+            <div class="ass-motion-heading">
+              <div><h3 id="ass-motion-title">ASS字幕の流れ方（ニコ生風）</h3><p>コメントが右から入る速度と表示位置を調整。保存すると録画終了後の自動ASS作成にも反映します。</p></div>
+              <button class="button button-outline button-small" id="save-ass-motion-button" type="button">流れ方の設定を保存</button>
+            </div>
+            <div class="ass-motion-grid">
+              <label class="ass-motion-field"><span>コメント速度 <output id="ass-scroll-speed-value">360 px/秒</output></span>
+                <input id="ass-scroll-speed" type="range" min="180" max="720" step="30" value="360"></label>
+              <label class="ass-motion-field"><span>右側から入る距離 <output id="ass-entry-offset-value">0 px</output></span>
+                <input id="ass-entry-offset" type="range" min="0" max="320" step="40" value="0"></label>
+              <label class="ass-motion-field"><span>スクロールの行数 <output id="ass-scroll-lanes-value">18 行</output></span>
+                <input id="ass-scroll-lanes" type="range" min="6" max="18" step="1" value="18"></label>
+              <label class="ass-motion-field"><span>上・下固定コメントの表示時間 <output id="ass-fixed-duration-value">5 秒</output></span>
+                <input id="ass-fixed-duration" type="range" min="3" max="10" step="1" value="5"></label>
+              <label class="settings-checkbox ass-motion-overlap"><input type="checkbox" id="ass-prevent-overlap" checked>
+                <span>同じ行のコメント同士が重ならないよう調整する</span></label>
+            </div>
+            <p class="hint">右側から入る距離は画面外の待機距離です（0 px＝画面の右端から表示）。変更した設定は「ASSに変換」で即時使用します。録画と元のコメントログは変更しません。</p>
+          </section>
           <div class="comment-header">
             <span>時刻</span><span>ユーザー</span><span>コメント / イベント</span><span>種別</span>
           </div>
@@ -769,6 +788,17 @@
             <textarea id="setting-ass-ng-regex" rows="4" maxlength="4000" spellcheck="false" placeholder="荒らし|連投&#10;https?://\\S+"></textarea>
             <small>録画終了時の自動ASS作成・コメントログ画面での手動ASS変換に適用します。JSONLとCSVは変更しません。</small>
           </label>
+          <div class="ass-motion-settings">
+            <strong>自動ASS作成時のコメント表示</strong>
+            <div class="ass-motion-grid">
+              <label class="ass-motion-field"><span>速度 <output id="setting-ass-scroll-speed-value">360 px/秒</output></span><input id="setting-ass-scroll-speed" type="range" min="180" max="720" step="30" value="360"></label>
+              <label class="ass-motion-field"><span>右側の入り込み距離 <output id="setting-ass-entry-offset-value">0 px</output></span><input id="setting-ass-entry-offset" type="range" min="0" max="320" step="40" value="0"></label>
+              <label class="ass-motion-field"><span>表示行数 <output id="setting-ass-scroll-lanes-value">18 行</output></span><input id="setting-ass-scroll-lanes" type="range" min="6" max="18" step="1" value="18"></label>
+              <label class="ass-motion-field"><span>上・下固定の表示時間 <output id="setting-ass-fixed-duration-value">5 秒</output></span><input id="setting-ass-fixed-duration" type="range" min="3" max="10" step="1" value="5"></label>
+              <label class="settings-checkbox ass-motion-overlap"><input type="checkbox" id="setting-ass-prevent-overlap" checked><span>同じ行の重なりを防ぐ</span></label>
+            </div>
+            <small>ここで保存すると録画終了時の自動ASSにも反映。手動変換ではコメントログ画面の編集中の値を使用します。</small>
+          </div>
           </div>
         </section>
         <section class="settings-section ">
