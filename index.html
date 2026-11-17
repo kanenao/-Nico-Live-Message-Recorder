@@ -618,6 +618,14 @@
               <p class="hint" id="ass-ng-help">1行に1つの正規表現。通常は大文字小文字を区別しません。/パターン/imsu 形式も使用可能。元のJSONLとCSVは変更せず、ASSに出力するコメントだけ除外します。</p>
               <button class="button button-outline button-small" id="save-ass-ng-button" type="button">NG設定を保存</button>
             </div>
+            <div class="ass-ng-test">
+              <label for="ass-ng-test-comment">NG判定を試すコメント</label>
+              <div class="ass-ng-test-controls">
+                <input id="ass-ng-test-comment" type="text" maxlength="2000" autocomplete="off" spellcheck="false" placeholder="ここにコメント例を入力（例：連投しています）">
+                <button class="button button-secondary button-small" id="test-ass-ng-button" type="button">NG判定をテスト</button>
+              </div>
+              <output id="ass-ng-test-result" class="ass-ng-test-result" role="status" aria-live="polite" data-state="idle">変換前に、入力したコメントがNG対象か確認できます。</output>
+            </div>
           </div>
           <div class="comment-header">
             <span>時刻</span><span>ユーザー</span><span>コメント / イベント</span><span>種別</span>
