@@ -4445,7 +4445,13 @@ ipcMain.handle("comments:export-ass", async (_event, options = {}) => {
   });
   if (saveResult.canceled || !saveResult.filePath) return { cancelled: true };
   fs.writeFileSync(saveResult.filePath, "\uFEFF" + generated.content, "utf8");
-  return { path: saveResult.filePath, commentCount: generated.commentCount, filteredCount: generated.filteredCount };
+  return {
+    path: saveResult.filePath,
+    commentCount: generated.commentCount,
+    filteredCount: generated.filteredCount,
+    automaticallyAdjustedCount: generated.automaticallyAdjustedCount,
+    automaticallyDeferredCount: generated.automaticallyDeferredCount
+  };
 });
 
 app.whenReady().then(async () => {
