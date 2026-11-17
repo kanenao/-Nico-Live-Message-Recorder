@@ -1290,7 +1290,11 @@ function renderMonitorTargets() {
 
 function applyMonitorState(result) {
   if (!result) return;
-  if (result.settings) monitorSettings = result.settings;
+  if (result.settings) {
+    monitorSettings = result.settings;
+    const ngEditor = byId("ass-ng-regex");
+    if (ngEditor && document.activeElement !== ngEditor) ngEditor.value = monitorSettings.assNgRegex || "";
+  }
   if (result.statuses && typeof result.statuses === "object") {
     for (const [userId, status] of Object.entries(result.statuses)) {
       monitorStatuses.set(userId, status);
@@ -1480,6 +1484,7 @@ function openSettings() {
   byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 10);
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
   byId("setting-comment-format").value = ["jsonl", "csv", "ass", "all"].includes(monitorSettings.commentFormat) ? monitorSettings.commentFormat : "jsonl";
+  byId("setting-ass-ng-regex").value = monitorSettings.assNgRegex || "";
   byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
   byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
   byId("setting-run-at-startup").checked = monitorSettings.runAtStartup !== false;
@@ -1503,6 +1508,7 @@ async function saveSettings() {
     intervalSeconds: Number(byId("setting-monitor-interval").value),
     quality: byId("setting-monitor-quality").value,
     commentFormat: byId("setting-comment-format").value,
+    assNgRegex: byId("setting-ass-ng-regex").value,
     autoRecord: byId("setting-auto-record").checked,
     autoStart: byId("setting-auto-start").checked,
     runAtStartup: byId("setting-run-at-startup").checked,
@@ -1517,6 +1523,7 @@ async function saveSettings() {
   button.disabled = true;
   try {
     applyMonitorState(await api.saveMonitorSettings(values));
+    byId("ass-ng-regex").value = values.assNgRegex;
     closeSettings();
     showToast("設定を保存しました。");
   } catch (error) {
@@ -3161,13 +3168,34 @@ byId("library-open-folder-button").addEventListener("click", async () => {
   }
 });
 
-byId("export-ass-button").addEventListener("click", async () => {
+byId("save-ass-ng-button").addEventListener("click", async () => {
+  const button = byId("save-ass-ng-button");
+  button.disabled = true;
   try {
-    const result = await api.exportAss();
+    applyMonitorState(await api.saveMonitorSettings({
+      assNgRegex: byId("ass-ng-regex").value
+    }));
+    byId("setting-ass-ng-regex").value = monitorSettings.assNgRegex || "";
+    showToast("ASS用のNGワード（正規表現）を保存しました。自動ASS作成にも適用されます。");
+  } catch (error) {
+    showToast(error.message || "NGワード設定を保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId("export-ass-button").addEventListener("click", async () => {
+  const button = byId("export-ass-button");
+  button.disabled = true;
+  try {
+    const result = await api.exportAss({ ngRegex: byId("ass-ng-regex").value });
     if (result.cancelled) return;
-    showToast("ASSを書き出しました（" + result.commentCount + "件）: " + result.path);
+    showToast("ASSを書き出しました（" + result.commentCount + "件、NG除外 " +
+      (result.filteredCount || 0) + "件）: " + result.path);
   } catch (error) {
     showToast(error.message || "ASSを書き出せませんでした。", true);
+  } finally {
+    button.disabled = false;
   }
 });
 
