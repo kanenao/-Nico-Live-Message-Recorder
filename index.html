@@ -611,6 +611,14 @@
               <button class="button button-quiet button-small" id="export-button">CSVを書き出す</button>
             </div>
           </div>
+          <div class="ass-ng-panel">
+            <label for="ass-ng-regex"><strong>ASS変換用 NGワード（正規表現）</strong></label>
+            <textarea id="ass-ng-regex" rows="3" maxlength="4000" spellcheck="false" placeholder="荒らし|連投&#10;https?://\\S+&#10;^NGコメント$" aria-describedby="ass-ng-help"></textarea>
+            <div class="ass-ng-actions">
+              <p class="hint" id="ass-ng-help">1行に1つの正規表現。通常は大文字小文字を区別しません。/パターン/imsu 形式も使用可能。元のJSONLとCSVは変更せず、ASSに出力するコメントだけ除外します。</p>
+              <button class="button button-outline button-small" id="save-ass-ng-button" type="button">NG設定を保存</button>
+            </div>
+          </div>
           <div class="comment-header">
             <span>時刻</span><span>ユーザー</span><span>コメント / イベント</span><span>種別</span>
           </div>
@@ -747,6 +755,11 @@
               <option value="ass">ASS字幕を自動作成</option>
               <option value="all">JSONL + CSV + ASS</option>
             </select>
+          </label>
+          <label class="settings-field ass-ng-settings-field">
+            <span>ASS変換用NGワード（正規表現・1行に1つ）</span>
+            <textarea id="setting-ass-ng-regex" rows="4" maxlength="4000" spellcheck="false" placeholder="荒らし|連投&#10;https?://\\S+"></textarea>
+            <small>録画終了時の自動ASS作成・コメントログ画面での手動ASS変換に適用します。JSONLとCSVは変更しません。</small>
           </label>
           </div>
         </section>
