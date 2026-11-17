@@ -1166,3 +1166,33 @@ button, .button {
   .library-video-thumbnail { width: min(100%, 220px); }
   .library-video-filmstrip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* alpha.118: regex NG word editor for manual and automatic ASS exports */
+.ass-ng-panel {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, rgba(255,255,255,.035));
+}
+.ass-ng-panel strong { display: block; font-size: 12px; }
+.ass-ng-panel textarea,
+.ass-ng-settings-field textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(4, 12, 22, .55);
+  color: var(--text-primary);
+  font: 12px/1.55 Consolas, "Meiryo", monospace;
+  resize: vertical;
+}
+.ass-ng-panel textarea:focus-visible,
+.ass-ng-settings-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ass-ng-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.ass-ng-actions .hint { flex: 1 1 260px; margin: 0; font-size: 10px; line-height: 1.6; }
+.ass-ng-settings-field small { font-size: 10px; color: var(--text-muted); line-height: 1.6; }
