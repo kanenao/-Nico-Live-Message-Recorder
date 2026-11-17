@@ -12,6 +12,7 @@ const {
 } = require("./streamlink.cjs");
 const { generateAssFromRecords } = require("./ass.cjs");
 const { compileAssNgRegex, testAssNgRegex } = require("./ass-ng-regex.cjs");
+const { readCommentJsonlRecords } = require("./comment-jsonl.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
@@ -4400,9 +4401,7 @@ ipcMain.handle("comments:export-csv", async () => {
       writeCommentLine(commentWriter, "").then(resolve, reject);
     });
   }
-  const records = fs.readFileSync(source, "utf8").split(/\\r?\\n/).filter(Boolean)
-    .map((line) => { try { return JSON.parse(line); } catch (_) { return null; } })
-    .filter(Boolean);
+  const records = readCommentJsonlRecords(source);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "コメントCSVを書き出す",
     defaultPath: source.replace(/\.jsonl$/i, ".csv"),
@@ -4432,11 +4431,7 @@ ipcMain.handle("comments:export-ass", async (_event, options = {}) => {
   if (commentWriter && source === commentFilePath) {
     await writeCommentLine(commentWriter, "");
   }
-  const records = [];
-  const lines = fs.readFileSync(source, "utf8").split(/\r?\n/).filter(Boolean);
-  for (const line of lines) {
-    try { records.push(JSON.parse(line)); } catch (_) { /* skip malformed rows */ }
-  }
+  const records = readCommentJsonlRecords(source);
   const generated = generateAssFromRecords(records, { ngRegex });
   const saveResult = await dialog.showSaveDialog(mainWindow, {
     title: "ASS字幕を書き出す",
