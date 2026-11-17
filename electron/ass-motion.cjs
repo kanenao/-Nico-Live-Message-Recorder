@@ -12,7 +12,7 @@ const ASS_MOTION_DEFAULTS = Object.freeze({
 
 // Spread sparse traffic vertically rather than repeatedly using the first row.
 // The same physical rows are reused as more lanes become necessary.
-const AUTO_ASS_LANE_ORDER = Object.freeze([8, 3, 13, 0, 16, 5, 11, 2, 14, 7, 17, 4, 10, 1, 15, 6, 12, 9]);
+const AUTO_ASS_LANE_ORDER = Object.freeze([8, 6, 10, 4, 12, 7, 9, 5, 11, 13, 3, 14, 2, 15, 1, 16, 0, 17]);
 
 function boundedNumber(value, fallback, minimum, maximum, integer = false) {
   if (value === undefined || value === null || value === "") return fallback;
