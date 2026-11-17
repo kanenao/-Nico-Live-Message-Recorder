@@ -1288,12 +1288,55 @@ function renderMonitorTargets() {
   renderDashboardStats();
 }
 
+const ASS_MOTION_FIELDS = [
+  ["assScrollSpeed", "scroll-speed", " px/秒"],
+  ["assEntryOffset", "entry-offset", " px"],
+  ["assScrollLanes", "scroll-lanes", " 行"],
+  ["assFixedDuration", "fixed-duration", " 秒"]
+];
+
+function refreshAssMotionLabels(prefix) {
+  for (const [, id, unit] of ASS_MOTION_FIELDS) {
+    const input = byId(prefix + id);
+    const output = byId(prefix + id + "-value");
+    if (input && output) output.textContent = input.value + unit;
+  }
+}
+
+function readAssMotionInputs(prefix) {
+  const settings = {};
+  for (const [property, id] of ASS_MOTION_FIELDS) {
+    settings[property] = Number(byId(prefix + id).value);
+  }
+  settings.assPreventOverlap = byId(prefix + "prevent-overlap").checked;
+  return settings;
+}
+
+function applyAssMotionInputs(prefix, values, skipFocused = false) {
+  const defaults = {
+    assScrollSpeed: 360, assEntryOffset: 0,
+    assScrollLanes: 18, assFixedDuration: 5
+  };
+  for (const [property, id] of ASS_MOTION_FIELDS) {
+    const input = byId(prefix + id);
+    if (input && (!skipFocused || document.activeElement !== input)) {
+      input.value = String(values[property] ?? defaults[property]);
+    }
+  }
+  const overlap = byId(prefix + "prevent-overlap");
+  if (overlap && (!skipFocused || document.activeElement !== overlap)) {
+    overlap.checked = values.assPreventOverlap !== false;
+  }
+  refreshAssMotionLabels(prefix);
+}
+
 function applyMonitorState(result) {
   if (!result) return;
   if (result.settings) {
     monitorSettings = result.settings;
     const ngEditor = byId("ass-ng-regex");
     if (ngEditor && document.activeElement !== ngEditor) ngEditor.value = monitorSettings.assNgRegex || "";
+    applyAssMotionInputs("ass-", monitorSettings, true);
   }
   if (result.statuses && typeof result.statuses === "object") {
     for (const [userId, status] of Object.entries(result.statuses)) {
@@ -1485,6 +1528,7 @@ function openSettings() {
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
   byId("setting-comment-format").value = ["jsonl", "csv", "ass", "all"].includes(monitorSettings.commentFormat) ? monitorSettings.commentFormat : "jsonl";
   byId("setting-ass-ng-regex").value = monitorSettings.assNgRegex || "";
+  applyAssMotionInputs("setting-ass-", monitorSettings);
   byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
   byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
   byId("setting-run-at-startup").checked = monitorSettings.runAtStartup !== false;
@@ -1519,11 +1563,13 @@ async function saveSettings() {
     aiArticleEnabled: byId("setting-ai-article-enabled").checked,
     aiArticleModel: byId("setting-ai-article-model").value.trim() || "qwen2.5:3b"
   };
+  Object.assign(values, readAssMotionInputs("setting-ass-"));
   const button = byId("save-settings-button");
   button.disabled = true;
   try {
     applyMonitorState(await api.saveMonitorSettings(values));
     byId("ass-ng-regex").value = values.assNgRegex;
+    applyAssMotionInputs("ass-", monitorSettings);
     closeSettings();
     showToast("設定を保存しました。");
   } catch (error) {
@@ -3195,6 +3241,26 @@ byId("test-ass-ng-button").addEventListener("click", async () => {
   }
 });
 
+for (const prefix of ["ass-", "setting-ass-"]) {
+  for (const [, id] of ASS_MOTION_FIELDS) {
+    byId(prefix + id).addEventListener("input", () => refreshAssMotionLabels(prefix));
+  }
+}
+
+byId("save-ass-motion-button").addEventListener("click", async () => {
+  const button = byId("save-ass-motion-button");
+  button.disabled = true;
+  try {
+    applyMonitorState(await api.saveMonitorSettings(readAssMotionInputs("ass-")));
+    applyAssMotionInputs("setting-ass-", monitorSettings);
+    showToast("ASSの流れ方を保存しました。録画後の自動ASS作成にも適用します。");
+  } catch (error) {
+    showToast(error.message || "ASS表示設定を保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 byId("save-ass-ng-button").addEventListener("click", async () => {
   const button = byId("save-ass-ng-button");
   button.disabled = true;
@@ -3215,7 +3281,7 @@ byId("export-ass-button").addEventListener("click", async () => {
   const button = byId("export-ass-button");
   button.disabled = true;
   try {
-    const result = await api.exportAss({ ngRegex: byId("ass-ng-regex").value });
+    const result = await api.exportAss({ ngRegex: byId("ass-ng-regex").value, ...readAssMotionInputs("ass-") });
     if (result.cancelled) return;
     showToast("ASSを書き出しました（" + result.commentCount + "件、NG除外 " +
       (result.filteredCount || 0) + "件）: " + result.path);
