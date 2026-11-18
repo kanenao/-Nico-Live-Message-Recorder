@@ -145,9 +145,9 @@ test("capture UI remains operational when optional view elements are absent", ()
   `);
   assert.equal(state.connected, true);
   assert.equal(state.commentCaptureState, "connected");
-  assert.match(renderer, /if \\(recordIndicator\\) recordIndicator\\.classList\\.toggle/);
-  assert.match(renderer, /if \\(stopRecordButton\\) stopRecordButton\\.textContent/);
-  assert.match(renderer, /setCaptureText\\("video-file", "保存先："/);
+  assert.match(renderer, /if \(recordIndicator\) recordIndicator\.classList\.toggle/);
+  assert.match(renderer, /if \(stopRecordButton\) stopRecordButton\.textContent/);
+  assert.match(renderer, /setCaptureText\("video-file", "保存先："/);
 });
 
 test("broadcast connection and direct video/audio recording share one integrated panel", () => {
