@@ -2237,6 +2237,8 @@ function renderBroadcastArticles() {
     };
     if (article.aiProvider) addTag("AI生成 · " + article.aiProvider + (article.aiModel ? " / " + article.aiModel : ""), "ai");
     else addTag("統計・コメント整理記事", "local");
+    if (article.aiGenerationStatus === "recovered") addTag("本文を短縮再生成済み", "ai");
+    if (article.aiGenerationStatus === "fallback") addTag("AI本文未完了・標準記事を表示中", "local");
     if (article.articleSource === "manual") addTag("登録なし・手動生成");
     if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚" + (article.videoAiAnalyzed ? "・AI解析済み" : "・フレーム取得済み"), "video");
     if (article.mediaAnalysis && article.mediaAnalysis.audio === "unavailable") addTag("音声未解析", "local");
