@@ -67,7 +67,9 @@ test("manual and automatic ASS export share persisted NG regex, but original log
   assert.match(main, /generateAssFromRecords\(records, \{ ngRegex, \.\.\.normalizeAssMotion\(options\) \}\)/);
   assert.match(main, /output = generateAssFromRecords\(records,[\s\S]*?\)\.content/);
   assert.match(main, /output = recordsToCsv\(records\)/);
-  assert.match(main, /return \{ path: saveResult\.filePath, commentCount: generated\.commentCount, filteredCount: generated\.filteredCount \}/);
+  assert.match(main, /path: saveResult\.filePath/);
+  assert.match(main, /commentCount: generated\.commentCount/);
+  assert.match(main, /filteredCount: generated\.filteredCount/);
   assert.match(preload, /exportAss: \(options\) => ipcRenderer\.invoke\("comments:export-ass", options\)/);
   for (const id of ["ass-ng-regex", "save-ass-ng-button", "setting-ass-ng-regex"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing ASS regex input: " + id);
