@@ -86,6 +86,10 @@ function formatCommentTimestamp(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value).slice(0, 40) : date.toISOString();
 }
+function isArticleText(value) {
+  return typeof value === "string" && Boolean(value.trim());
+}
+
 async function generateArticleWithOllama(options = {}) {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const model = String(options.model || (Array.isArray(options.images) && options.images.length ? "qwen2.5vl:3b" : "qwen2.5:3b")).trim();
@@ -131,40 +135,54 @@ async function generateArticleWithOllama(options = {}) {
     audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：" + "\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
     options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\n" + frameTimeline : ""
   ].join("\n\n");
-  const data = await requestJson(baseUrl + "/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      format: "json",
-      messages: [
-        { role: "system", content: "出力は指定されたJSONのみ。推測で事実を補わない。" },
-        { role: "user", content: prompt, ...(imageFrames.length ? { images: imageFrames.map(frame => typeof frame === "string" ? frame : String(frame && frame.image || "")).filter(Boolean) } : {}) }
-      ],
-      options: { temperature: 0.25, num_ctx: 8192, num_predict: 3200 }
-    })
-  }, 120000);
-  const result = parseJsonContent(data.message && data.message.content);
-  if (!result || typeof result !== "object") {
-    throw new Error("Ollamaが返した記事の形式が正しくありません。");
+  const payload = {
+    model,
+    stream: false,
+    format: "json",
+    messages: [
+      { role: "system", content: "出力は指定されたJSONのみ。推測で事実を補わない。" },
+      { role: "user", content: prompt, ...(imageFrames.length ? { images: imageFrames.map(frame => typeof frame === "string" ? frame : String(frame && frame.image || "")).filter(Boolean) } : {}) }
+    ],
+    options: { temperature: 0.25, num_ctx: 8192, num_predict: 3200 }
+  };
+  async function requestArticle(attempt = 0) {
+    const data = await requestJson(baseUrl + "/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }, 120000);
+    try {
+      if (data.done_reason === "length" || data.done === false) throw new Error("AIの記事出力が途中で終了しました。");
+      const article = parseJsonContent(data.message && data.message.content);
+      const hasBody = Array.isArray(article.paragraphs) && article.paragraphs.some(isArticleText);
+      const hasSection = Array.isArray(article.sections) && article.sections.some(item =>
+        item && isArticleText(item.heading) && isArticleText(item.body));
+      if (!hasBody && !hasSection) throw new Error("Ollamaが記事本文を生成できませんでした。");
+      return article;
+    } catch (error) {
+      if (attempt) throw error;
+      payload.messages[1].content += "\n前回の出力が不完全でした。確認できる事実に絞り、短い見出し、要約、本文を含む完全なJSONを返してください。";
+      return requestArticle(1);
+    }
   }
+  const result = await requestArticle();
   const allowedSources = new Set(["metadata", "comments", "video", "audio", "mixed"]);
   const sections = (Array.isArray(result.sections) ? result.sections : [])
+    .filter(item => item && isArticleText(item.heading) && isArticleText(item.body))
     .map(item => ({
       heading: String(item && item.heading || "").trim().slice(0, 90),
       body: String(item && item.body || "").trim().slice(0, 2000),
       source: allowedSources.has(item && item.source) ? item.source : "mixed"
     }))
-    .filter(item => item.heading && item.body).slice(0, 6);
+    .slice(0, 6);
   // Older Ollama models sometimes return sections but omit paragraphs.
   const paragraphs = (Array.isArray(result.paragraphs) ? result.paragraphs : [])
-    .map(value => String(value || "").trim()).filter(Boolean).slice(0, 12);
+    .filter(isArticleText).map(value => value.trim()).slice(0, 12);
   if (!paragraphs.length && sections.length) paragraphs.push(...sections.map(item => item.body));
   if (!paragraphs.length) throw new Error("Ollamaが記事本文を生成できませんでした。");
   return {
     title: String(result.title || context.programTitle || "配信記事").slice(0, 300),
-    summary: String(result.summary || "").slice(0, 600),
+    summary: String(result.summary || paragraphs[0]).slice(0, 600),
     paragraphs,
     sections,
     topics: Array.isArray(result.topics) ? result.topics.map(value => String(value).slice(0, 50)).slice(0, 8) : [],

@@ -6,7 +6,7 @@ function writeCommentLine(writer, line) {
   }
   return new Promise((resolve, reject) => {
     try {
-      writer.write(String(line), (error) => error ? reject(error) : resolve());
+      writer.write(line === "" ? "" : String(line) + "\n", (error) => error ? reject(error) : resolve());
     } catch (error) {
       reject(error);
     }
