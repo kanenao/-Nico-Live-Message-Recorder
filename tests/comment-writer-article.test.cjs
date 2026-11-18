@@ -52,3 +52,21 @@ test("pre-delimited records do not gain duplicate separators", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test("previously joined comments remain usable for ASS and article summaries", () => {
+  const { parseCommentJsonlText } = require("../electron/comment-jsonl.cjs");
+  const { generateAssFromRecords } = require("../electron/ass.cjs");
+  const previous = [
+    { type: "videoStart", videoStartedAt: "2026-11-18T12:00:00Z" },
+    { type: "comment", content: "最初のコメント", timestamp: "2026-11-18T12:00:01Z", userId: "1" },
+    { type: "comment", content: "次のコメント", timestamp: "2026-11-18T12:00:02Z", userId: "2" }
+  ];
+  const damaged = previous.map(row => JSON.stringify(row)).join("");
+  const recovered = parseCommentJsonlText(damaged);
+  assert.deepEqual(recovered, previous);
+  assert.equal(generateAssFromRecords(recovered).commentCount, 2);
+  const article = generateBroadcastArticle(damaged, { programTitle: "旧保存形式の復旧" });
+  assert.equal(article.commentCount, 2);
+  assert.equal(article.uniqueCommenters, 2);
+});
