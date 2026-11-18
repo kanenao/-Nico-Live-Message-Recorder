@@ -77,3 +77,49 @@ test("Ollama prompt keeps all-count, phase comments, and source-availability not
     assert.ok(result.qualityNotes.some(item => item.includes("映像")));
   } finally { global.fetch = originalFetch; }
 });
+
+test("failed periodic AI refresh keeps last good LIVE article while updating statistics", () => {
+  const { preserveLastGoodLiveArticle } = require("../electron/article-evidence.cjs");
+  const previous = {
+    status: "generated", liveStatus: "live", aiProvider: "Ollama",
+    aiModel: "qwen2.5:3b", generatedAt: "2026-11-19T00:00:00Z",
+    title: "完成した見出し", paragraphs: ["前回の放送内容に基づく正常な本文です。"],
+    aiSections: [{ heading: "概要", body: "前回の分析結果", source: "comments" }],
+    aiGenerationStatus: "complete", aiEvidence: { commentCount: 10 },
+    aiCommentSampleCount: 10, aiCommentTotalCount: 10
+  };
+  const current = {
+    status: "generated", liveStatus: "live", aiGenerationStatus: "fallback",
+    aiFallbackReason: "Ollama通信失敗", generatedAt: "2026-11-19T00:01:00Z",
+    commentCount: 25, paragraphs: ["簡易記事が前回の本文を上書きする予定でした。"]
+  };
+  const merged = preserveLastGoodLiveArticle(current, previous);
+  assert.equal(merged.title, "完成した見出し");
+  assert.deepEqual(merged.paragraphs, previous.paragraphs);
+  assert.equal(merged.commentCount, 25);
+  assert.equal(merged.aiGenerationStatus, "stale");
+  assert.equal(merged.aiFallbackReason, "Ollama通信失敗");
+  assert.equal(merged.aiLastSuccessfulAt, "2026-11-19T00:00:00Z");
+  assert.ok(merged.aiQualityNotes[0].includes("前回成功"));
+  assert.equal(current.paragraphs[0], "簡易記事が前回の本文を上書きする予定でした。");
+  // Do not reuse a live present-tense narrative after the stream has ended.
+  assert.equal(preserveLastGoodLiveArticle({ ...current, liveStatus: "ended" }, previous).aiGenerationStatus, "fallback");
+  assert.equal(preserveLastGoodLiveArticle(current, { ...previous, aiProvider: "" }).aiGenerationStatus, "fallback");
+});
+
+test("exported AI article explains unavailable sources and older live snapshots", () => {
+  const { renderArticleHtml } = require("../electron/article-export.cjs");
+  const html = renderArticleHtml({
+    title: "テスト記事",
+    aiProvider: "Ollama",
+    aiGenerationStatus: "stale",
+    aiEvidence: { commentCount: 70, sampleCount: 20 },
+    aiSourceCoverage: { video: "unavailable", audio: "transcribed" },
+    aiQualityNotes: ["前回の本文です。<注意>"]
+  });
+  assert.match(html, /記事の根拠・取得状況/);
+  assert.match(html, /70件中20件を抜粋/);
+  assert.match(html, /音声：文字起こしあり/);
+  assert.ok(!html.includes("<注意>"));
+  assert.ok(html.includes("&lt;注意&gt;"));
+});
