@@ -76,3 +76,13 @@ test("article pipeline enriches finished recordings and supports on-demand reana
   assert.match(renderer, /articles:analysis-state/);
   assert.match(html, /放送映像を15秒間隔のJPEG画像として抽出/);
 });
+
+
+test("previously incomplete comment-only articles can be reanalyzed without a recording video", () => {
+  assert.match(main, /if \(!videoPath\) \{\s*\/\/ Articles can be created from comments alone/);
+  assert.match(main, /source: "comment-only"/);
+  assert.match(main, /enhanceBroadcastArticleWithOllama\(rebuilt, records, context/);
+  assert.match(main, /rebuilt\.commentFile = commentFile;/);
+  assert.match(main, /rebuilt\.mediaAnalysis =/);
+  assert.match(main, /await fs\.promises\.writeFile\(file, JSON\.stringify\(rebuilt, null, 2\), "utf8"\)/);
+});

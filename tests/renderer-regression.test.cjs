@@ -745,7 +745,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /item.name === "qwen2.5vl:3b"/);
   assert.ok(main.includes("capturedAt: new Date().toISOString()"));
   assert.match(ollamaSource, /frameTimeline/);
-  assert.ok(ollamaSource.includes('frame => typeof frame === "string" ? frame : String(frame && frame.image'));
+  assert.match(ollamaSource, /imageFrames\.map\(frame\s*=>\s*typeof frame === "string" \? frame : String\(frame && frame\.image/);
 });
 
 test("manual article generation can combine Whisper audio transcript, video frames, and Nico comments", () => {
@@ -967,15 +967,15 @@ test("comment writer waits for write callbacks and reports failed persistence", 
       callback();
     }
   });
-  await writeCommentLine(writer, '{"type":"comment"}\\n');
+  await writeCommentLine(writer, '{"type":"comment"}');
   await finishCommentWriter(writer);
-  assert.equal(chunks.join(""), '{"type":"comment"}\\n');
+  assert.equal(chunks.join(""), '{"type":"comment"}\n');
   assert.equal(writer.writableFinished, true);
   const broken = new Writable({
     write(_chunk, _encoding, callback) { callback(new Error("disk full")); }
   });
   broken.on("error", () => {});
-  await assert.rejects(writeCommentLine(broken, '{"type":"comment"}\\n'), /disk full/);
+  await assert.rejects(writeCommentLine(broken, '{"type":"comment"}'), /disk full/);
 });
 
 test("comment log finalization preserves a failed file and checks every write", () => {
