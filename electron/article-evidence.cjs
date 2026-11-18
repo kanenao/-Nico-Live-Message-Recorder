@@ -111,4 +111,32 @@ function summarizeEvidenceSources(evidence = {}) {
   return notes;
 }
 
-module.exports = { commentTime, cleanEvidenceText, prepareCommentEvidence, summarizeEvidenceSources };
+// Preserve a previously completed live article when a periodic model refresh
+// fails. The saved statistics and current broadcast status remain fresh, while
+// the old AI wording is explicitly identified as an older snapshot.
+function preserveLastGoodLiveArticle(current, previous) {
+  if (!current || !previous || current.status !== "generated" ||
+      previous.status !== "generated" || current.aiGenerationStatus !== "fallback" ||
+      !previous.aiProvider || previous.aiGenerationStatus === "fallback" ||
+      previous.liveStatus !== "live" || current.liveStatus !== "live") return current;
+  const previousBody = Array.isArray(previous.aiSections) && previous.aiSections.some(item => item && item.body) ||
+    Array.isArray(previous.paragraphs) && previous.paragraphs.some(item => typeof item === "string" && item.trim());
+  if (!previousBody) return current;
+  const preserved = { ...current };
+  for (const key of [
+    "title", "summary", "paragraphs", "aiSections", "aiHighlights", "aiTimeline",
+    "aiAudienceReaction", "aiProvider", "aiModel", "aiEvidence", "aiSourceCoverage",
+    "videoAiAnalyzed", "aiCommentSampleCount", "aiCommentTotalCount"
+  ]) {
+    if (previous[key] !== undefined) preserved[key] = previous[key];
+  }
+  preserved.aiGenerationStatus = "stale";
+  preserved.aiLastSuccessfulAt = previous.aiLastSuccessfulAt || previous.generatedAt || "";
+  preserved.aiQualityNotes = [
+    "新しいAI本文の生成に失敗したため、前回成功した配信中の本文を表示しています。コメント件数などの統計は最新です。",
+    ...(Array.isArray(previous.aiQualityNotes) ? previous.aiQualityNotes : [])
+  ].slice(0, 8);
+  return preserved;
+}
+
+module.exports = { commentTime, cleanEvidenceText, prepareCommentEvidence, summarizeEvidenceSources, preserveLastGoodLiveArticle };
