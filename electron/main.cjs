@@ -629,7 +629,8 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     const model = selectedImages.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
     if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
     const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: selectedImages, audioTranscript: options.audioTranscript || "" });
-    article.videoAiAnalyzed = selectedImages.length > 0;
+    article.videoAiAnalyzed = result.usedImages === true;
+    article.aiGenerationStatus = result.compactRetry ? "recovered" : "complete";
     article.title = result.title;
     article.summary = result.summary;
     article.paragraphs = result.paragraphs;
@@ -645,6 +646,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     article.aiModel = result.model;
     delete article.aiFallbackReason;
   } catch (error) {
+    article.aiGenerationStatus = "fallback";
     article.aiFallbackReason = error.message || String(error);
     send("articles:ai-fallback", { liveId: article.liveId, reason: article.aiFallbackReason });
   }
