@@ -1,0 +1,102 @@
+name: Nightly Nico beta regression diagnosis
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/nico-nightly-regression.yml"
+  schedule:
+    # 02:25 JST (GitHub schedules may run later under load).
+    - cron: "25 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nico-nightly-beta-regression
+  cancel-in-progress: false
+
+jobs:
+  diagnose-beta:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout active beta source
+        uses: actions/checkout@v4
+        with:
+          ref: beta
+          persist-credentials: false
+
+      - name: Record the actual beta commit
+        id: beta
+        shell: pwsh
+        run: |
+          $sha = git rev-parse HEAD
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "Checking beta commit $sha"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Check README, version, and release history
+        run: node scripts/update-readme.mjs --check
+
+      - name: Run all application regression tests
+        run: npm test
+
+      - name: Verify Windows installer and portable build
+        run: npm run dist:win
+
+      - name: Verify alpha update manifest and installer integrity
+        run: node scripts/verify-update-manifest.cjs
+
+      - name: Record or update an automatic failure report
+        if: ${{ failure() }}
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA_SHA: ${{ steps.beta.outputs.sha }}
+        run: |
+          $title = "[自動診断] Nico版 beta の回帰テスト失敗"
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $report = Join-Path $env:RUNNER_TEMP "nico-beta-diagnostic.md"
+          @(
+            "Nico Live Message Recorder の定期診断で問題を検出しました。"
+            ""
+            "- 対象ブランチ: beta"
+            "- 対象コミット: $env:BETA_SHA"
+            "- 検査内容: README/バージョン整合性、アプリ回帰テスト、Windowsビルド、α版更新ファイル"
+            "- [失敗した実行ログ]($runUrl)"
+            ""
+            "原因を確認し、テストを追加して修正してください。自動的なソースコードの変更や公開は行いません。"
+          ) | Set-Content -Path $report -Encoding utf8
+          $existing = @(gh issue list --state open --limit 100 --json number,title |
+            ConvertFrom-Json | Where-Object { $_.title -eq $title })
+          if ($existing.Count -gt 0) {
+            gh issue edit $existing[0].number --body-file $report
+          } else {
+            gh issue create --title $title --body-file $report
+          }
+
+      - name: Close diagnostic issue after recovery
+        if: ${{ success() }}
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $title = "[自動診断] Nico版 beta の回帰テスト失敗"
+          $existing = @(gh issue list --state open --limit 100 --json number,title |
+            ConvertFrom-Json | Where-Object { $_.title -eq $title })
+          foreach ($issue in $existing) {
+            gh issue close $issue.number --reason completed
+          }
