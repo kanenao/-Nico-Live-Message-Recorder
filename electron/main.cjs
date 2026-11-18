@@ -896,7 +896,6 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
       }
     } catch (_) {}
   }
-  if (!videoPath) throw new Error("この記事と一致する録画映像が見つかりません。動画を録画ライブラリに保存してから再解析してください。");
   const notify = (state, info = {}) => send("articles:analysis-state", {
     state, articlePath: file, liveId: saved.liveId || "", ...info
   });
@@ -925,6 +924,38 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
   const contentPolicy = generateBroadcastArticle(records, context);
   if (contentPolicy.optOutTerm) {
     throw new Error("この記事は配信者の指定によりAI記事化できません：" + contentPolicy.optOutTerm);
+  }
+  if (!videoPath) {
+    // Articles can be created from comments alone. Recovery should also work
+    // after the recording was deleted or when only a JSONL log was saved.
+    if (!commentFile) throw new Error("この記事と一致する録画映像・コメントログが見つかりません。");
+    if (contentPolicy.status !== "generated") throw new Error(contentPolicy.reason || "コメントから記事を生成できませんでした。");
+    notify("comments", { commentCount: contentPolicy.commentCount, source: "comment-only" });
+    const rebuilt = contentPolicy;
+    await enhanceBroadcastArticleWithOllama(rebuilt, records, context, {
+      force: true, audioTranscript: String(saved.audioTranscript || "")
+    });
+    rebuilt.articlePath = file;
+    rebuilt.commentFile = commentFile;
+    rebuilt.articleSource = saved.articleSource || "recording";
+    rebuilt.videoFile = saved.videoFile || "";
+    rebuilt.coverImage = saved.coverImage || "";
+    rebuilt.videoFrameCount = Number(saved.videoFrameCount) || 0;
+    rebuilt.videoAnalysis = "元の録画動画が見つからないため映像を再解析できませんでした。";
+    if (saved.audioTranscript) {
+      rebuilt.audioTranscript = saved.audioTranscript;
+      rebuilt.audioTranscriptSegmentCount = Number(saved.audioTranscriptSegmentCount) || 0;
+      rebuilt.audioAnalysis = "以前の音声文字起こしを利用";
+    }
+    rebuilt.mediaAnalysis = {
+      video: "unavailable",
+      audio: saved.audioTranscript ? "transcribed" : "unavailable",
+      comments: rebuilt.commentCount > 0 ? "analyzed" : "unavailable"
+    };
+    await fs.promises.writeFile(file, JSON.stringify(rebuilt, null, 2), "utf8");
+    notify("complete", { article: rebuilt, commentCount: rebuilt.commentCount, source: "comment-only" });
+    send("articles:generated", { article: rebuilt });
+    return rebuilt;
   }
   let extracted = null, audioTranscript = null, audioError = "";
   try {
