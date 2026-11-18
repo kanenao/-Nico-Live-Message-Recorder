@@ -783,9 +783,9 @@ async function generateStandaloneBroadcastArticle(input = {}) {
   let extracted = null;
   let audioTranscript = null;
   let audioTranscriptionError = "";
+  let videoExtractionError = "";
   try {
     if (videoPath) {
-      extracted = await extractArticleVideoFrames(videoPath);
       if (!records.length && !commentsText.trim()) {
         const matched = findMatchingCommentLog(videoPath, listCaptureLibrary().items.filter(item => item.type === "comment"));
         if (matched) {
@@ -799,6 +799,8 @@ async function generateStandaloneBroadcastArticle(input = {}) {
           article.commentFile = matched;
         }
       }
+      try { extracted = await extractArticleVideoFrames(videoPath); }
+      catch (error) { videoExtractionError = error.message || String(error); }
       const audioSettings = readAppSettings();
       if (audioSettings.articleWhisperCliPath && audioSettings.articleWhisperModelPath) {
         try {
@@ -822,7 +824,9 @@ async function generateStandaloneBroadcastArticle(input = {}) {
       article.videoFrameCount = extracted ? extracted.frames.length : 0;
       // Preserve one representative video frame for the journal even when the video is moved later.
       if (extracted && extracted.frames.length) article.coverImage = selectArticleCoverImage(extracted.frames);
-      article.videoAnalysis = article.videoAiAnalyzed ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）";
+      article.videoAnalysis = videoExtractionError
+        ? "映像のフレーム抽出は未完了：" + videoExtractionError
+        : (article.videoAiAnalyzed ? "Ollama画像対応モデルで代表フレームを分析済み" : "代表フレーム抽出済み（Ollama画像分析は未完了）");
       if (audioTranscript) {
         article.audioTranscript = audioTranscript.text;
         article.audioTranscriptSegmentCount = audioTranscript.segmentCount;
@@ -835,7 +839,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
       if (audioTranscriptionError) article.audioTranscriptionError = audioTranscriptionError;
       if (!audioTranscript && !audioTranscriptionError) article.audioTranscriptionStatus = "未設定（Whisper実行ファイルと日本語モデルを選択すると音声も分析できます）";
       article.mediaAnalysis = {
-        video: article.videoAiAnalyzed ? "analyzed" : "sampled",
+        video: !extracted ? "unavailable" : (article.videoAiAnalyzed ? "analyzed" : "sampled"),
         audio: audioTranscript ? "transcribed" : "unavailable",
         comments: records.some(row => row.type === "comment") ? "analyzed" : "unavailable"
       };
@@ -925,11 +929,16 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
   let extracted = null, audioTranscript = null, audioError = "";
   try {
     notify("video", { commentCount: records.filter(row => row.type === "comment").length });
-    extracted = await extractArticleVideoFrames(videoPath);
+    let videoExtractionError = "";
+    try { extracted = await extractArticleVideoFrames(videoPath); }
+    catch (error) {
+      videoExtractionError = error.message || String(error);
+      notify("video-warning", { message: "映像フレーム未取得。コメント・音声からの記事生成を続行します: " + videoExtractionError });
+    }
     const settings = readAppSettings();
     if (settings.articleWhisperCliPath && settings.articleWhisperModelPath &&
         fs.existsSync(settings.articleWhisperCliPath) && fs.existsSync(settings.articleWhisperModelPath)) {
-      notify("audio", { frameCount: extracted.frames.length });
+      notify("audio", { frameCount: extracted ? extracted.frames.length : 0 });
       try {
         audioTranscript = await transcribeVideoAudio({
           videoPath,
@@ -945,21 +954,23 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
       audioError = "Whisper.cppが未設定のため音声の解析を省略しました。";
     }
     notify("ai", {
-      frameCount: extracted.frames.length,
+      frameCount: extracted ? extracted.frames.length : 0,
       commentCount: records.filter(row => row.type === "comment").length,
       audioSegmentCount: audioTranscript ? audioTranscript.segmentCount : 0
     });
     await enhanceBroadcastArticleWithOllama(saved, records, context, {
       force: options.force === true,
-      images: extracted.frames,
+      images: extracted ? extracted.frames : [],
       audioTranscript: audioTranscript ? audioTranscript.text : ""
     });
     saved.videoFile = videoPath;
-    saved.videoFrameCount = extracted.frames.length;
-    saved.coverImage = selectArticleCoverImage(extracted.frames, saved.coverImage);
-    saved.videoAnalysis = saved.videoAiAnalyzed
-      ? "録画映像全体から取得した代表フレームをAI分析済み"
-      : "録画映像の代表フレームを抽出（画像対応モデル未導入・未分析）";
+    saved.videoFrameCount = extracted ? extracted.frames.length : 0;
+    if (extracted) saved.coverImage = selectArticleCoverImage(extracted.frames, saved.coverImage);
+    saved.videoAnalysis = videoExtractionError
+      ? "映像フレーム未取得：" + videoExtractionError
+      : (saved.videoAiAnalyzed
+        ? "録画映像全体から取得した代表フレームをAI分析済み"
+        : "録画映像の代表フレームを抽出（画像対応モデル未導入・未分析）");
     if (commentFile) saved.commentFile = commentFile;
     if (audioTranscript) {
       saved.audioTranscript = audioTranscript.text;
@@ -974,7 +985,7 @@ async function analyzeSavedRecordedArticle(articlePath, options = {}) {
       if (audioError) saved.audioTranscriptionError = audioError;
     }
     saved.mediaAnalysis = {
-      video: extracted.frames.length ? (saved.videoAiAnalyzed ? "analyzed" : "sampled") : "missing",
+      video: extracted && extracted.frames.length ? (saved.videoAiAnalyzed ? "analyzed" : "sampled") : "unavailable",
       audio: audioTranscript ? "transcribed" : "unavailable",
       comments: records.some(row => row.type === "comment") ? "analyzed" : "unavailable"
     };
