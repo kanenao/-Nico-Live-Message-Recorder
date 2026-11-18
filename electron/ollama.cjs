@@ -1,6 +1,7 @@
 "use strict";
 
 const DEFAULT_URL = "http://127.0.0.1:11434";
+const { prepareCommentEvidence, summarizeEvidenceSources } = require("./article-evidence.cjs");
 
 function normalizeBaseUrl(value) {
   const raw = String(value || DEFAULT_URL).trim().replace(/\/+$/, "");
@@ -93,14 +94,17 @@ async function generateArticleWithOllama(options = {}) {
   const context = options.context || {};
   const records = Array.isArray(options.records) ? options.records : [];
   const allComments = records.filter(row => row && row.type === "comment" && String(row.content || "").trim());
-  const sampledComments = selectRepresentativeComments(records, 110);
-  const comments = sampledComments.map(row => ({
-    time: formatCommentTimestamp(row.timestamp),
-    text: String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 170)
-  }));
+  const evidence = prepareCommentEvidence(records, 96, 6);
+  const comments = evidence.segments.flatMap(segment => segment.samples);
+  const evidenceTimeline = evidence.segments.filter(segment => segment.total > 0)
+    .map(segment => "区間" + segment.phase + ": 全" + segment.total +
+      "件、重複投稿" + segment.omittedRepeated + "件、抜粋" +
+      segment.samples.length + "件 / " + JSON.stringify(segment.samples)).join("\n");
   const commenterCount = new Set(allComments.map(row => String(row.userId || row.userName || "")).filter(Boolean)).size;
   const commentCoverage = allComments.length
-    ? "コメント全体" + allComments.length + "件中、放送時間全体に分散した" + comments.length + "件を代表サンプルとして提示。確認できる投稿者数は" + (commenterCount || "未取得") + "人。"
+    ? "保存コメント全" + allComments.length + "件。AI入力は" + comments.length +
+      "件、重複を省いた時間帯別抜粋。時刻取得" + evidence.timestampedCount +
+      "件、記録順の補完あり。投稿者数は" + (commenterCount || "未取得") + "人。元のログ・件数は変更しない。"
     : "コメント記録なし。";
   const imageFrames = selectRepresentativeFrames(options.images, 8);
   const audioTranscript = compactTranscript(options.audioTranscript, 12000);
@@ -127,7 +131,7 @@ async function generateArticleWithOllama(options = {}) {
     "放送ID: " + String(context.liveId || "不明"),
     "番組説明: " + String(context.description || "なし").slice(0, 1200),
     "コメント分析範囲: " + commentCoverage,
-    "コメント記録(JSON・投稿者名は除外): " + JSON.stringify(comments),
+    "放送全体を時刻または保存順に分けたコメント記録（投稿者名は除外）: " + evidenceTimeline,
     audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：" + "\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
     options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\n" + frameTimeline : ""
   ].join("\n\n");
@@ -152,7 +156,7 @@ async function generateArticleWithOllama(options = {}) {
   let compactRetry = false;
   try {
     const response = await sendArticleRequest(prompt, true, 3200, 120000);
-    if (response.done_reason === "length") {
+    if (response.done_reason === "length" || response.done === false) {
       throw new Error("AIの出力が最大トークン数に達しました。");
     }
     result = parseJsonContent(response.message && response.message.content);
@@ -167,8 +171,9 @@ async function generateArticleWithOllama(options = {}) {
     // given images, lengthy transcripts and hundreds of comments together.
     // One bounded text-only retry produces a usable story instead of saving
     // an apparently finished but empty AI article.
-    const compactComments = selectRepresentativeComments(records, 36).map(row =>
-      String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 120));
+    const compactEvidence = prepareCommentEvidence(records, 36, 6);
+    const compactComments = compactEvidence.segments.flatMap(segment => segment.samples)
+      .map(row => "[" + row.time + "] " + row.text.slice(0, 120));
     const compactPrompt = [
       "次の配信記録だけを根拠に、読みやすい日本語の放送記事を完成させてください。",
       "本文を途中で終わらせないでください。3段落程度、全体で500〜900文字を目標にし、情報が少ない場合は短くしてください。",
@@ -182,7 +187,7 @@ async function generateArticleWithOllama(options = {}) {
     ].join("\n");
     try {
       const response = await sendArticleRequest(compactPrompt, false, 2200, 90000);
-      if (response.done_reason === "length") {
+      if (response.done_reason === "length" || response.done === false) {
         throw new Error("再生成した本文も途中で切れました。");
       }
       result = parseJsonContent(response.message && response.message.content);
@@ -210,6 +215,17 @@ async function generateArticleWithOllama(options = {}) {
     .map(value => String(value || "").trim()).filter(Boolean).slice(0, 12);
   if (!paragraphs.length && sections.length) paragraphs.push(...sections.map(item => item.body));
   if (!paragraphs.length) throw new Error("Ollamaが記事本文を生成できませんでした。");
+  const sourceCoverage = {
+    comments: allComments.length ? "analyzed" : "unavailable",
+    audio: audioTranscript ? "transcribed" : "unavailable",
+    video: usedImages ? "analyzed" : "unavailable"
+  };
+  const qualityNotes = summarizeEvidenceSources({
+    commentCount: allComments.length,
+    audioAvailable: Boolean(audioTranscript),
+    videoAvailable: usedImages,
+    compactRetry
+  });
   return {
     title: String(result.title || context.programTitle || "配信記事").slice(0, 300),
     summary: String(result.summary || paragraphs[0] || "").slice(0, 600),
@@ -221,6 +237,15 @@ async function generateArticleWithOllama(options = {}) {
     audienceReaction: String(result.audienceReaction || "").trim().slice(0, 600),
     commentSampleCount: comments.length,
     commentTotalCount: allComments.length,
+    evidence: {
+      commentCount: allComments.length,
+      timestampedCount: evidence.timestampedCount,
+      sampleCount: comments.length,
+      repeatedOmittedCount: evidence.repeatedOmittedCount,
+      coverage: evidence.coverage
+    },
+    sourceCoverage,
+    qualityNotes,
     model,
     provider: "Ollama",
     usedImages,
