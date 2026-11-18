@@ -640,6 +640,9 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     article.aiAudienceReaction = result.audienceReaction || "";
     article.aiCommentSampleCount = Number(result.commentSampleCount) || 0;
     article.aiCommentTotalCount = Number(result.commentTotalCount) || 0;
+    article.aiEvidence = result.evidence || {};
+    article.aiSourceCoverage = result.sourceCoverage || {};
+    article.aiQualityNotes = Array.isArray(result.qualityNotes) ? result.qualityNotes : [];
     if (result.summary) article.summary = result.summary;
     if (result.topics.length) article.topics = result.topics.map(term => ({ term, count: 0 }));
     article.aiProvider = result.provider;
