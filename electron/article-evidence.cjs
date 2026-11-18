@@ -9,7 +9,8 @@ function commentTime(value) {
     ? Number(value) : NaN;
   const milliseconds = Number.isFinite(number)
     ? (number < 1e12 ? number * 1000 : number) : Date.parse(value);
-  return Number.isFinite(milliseconds) ? milliseconds : null;
+  return Number.isFinite(milliseconds) && Number.isFinite(new Date(milliseconds).getTime())
+    ? milliseconds : null;
 }
 
 function cleanEvidenceText(value, maxLength = 170) {
@@ -54,34 +55,38 @@ function prepareCommentEvidence(records, limit = 96, bucketCount = 6) {
     slot.seen.add(normalized);
     slot.samples.push({ time: item.at === null ? "時刻不明" : new Date(item.at).toISOString(), text: content });
   }
-  // Allocate a proportional but non-zero share to each populated part.
+  // Give each populated phase a quota, then pick uniformly spaced items from
+  // within that phase. The old incremental picker clustered around the start.
   const active = buckets.filter(bucket => bucket.samples.length);
-  const selected = new Map(buckets.map(bucket => [bucket, []]));
+  const quotas = new Map(buckets.map(bucket => [bucket, 0]));
   let available = maxItems;
   for (const bucket of active) {
-    if (available <= 0) break;
-    selected.get(bucket).push(bucket.samples[0]);
+    if (available === 0) break;
+    quotas.set(bucket, 1);
     available--;
   }
   while (available > 0) {
-    let chosen = null;
-    let score = -1;
+    let chosen = null, bestScore = -1;
     for (const bucket of active) {
-      const current = selected.get(bucket).length;
-      if (current >= bucket.samples.length) continue;
-      const candidateScore = bucket.samples.length / (current + 1);
-      if (candidateScore > score) { chosen = bucket; score = candidateScore; }
+      const quota = quotas.get(bucket);
+      if (quota >= bucket.samples.length) continue;
+      const score = bucket.samples.length / (quota + 1);
+      if (score > bestScore) { chosen = bucket; bestScore = score; }
     }
     if (!chosen) break;
-    const current = selected.get(chosen).length;
-    const span = chosen.samples.length;
-    const nextIndex = Math.min(span - 1, Math.floor(current * span / Math.max(1, Math.min(span, maxItems))));
-    let sample = chosen.samples[nextIndex];
-    if (selected.get(chosen).includes(sample)) sample = chosen.samples.find(item => !selected.get(chosen).includes(item));
-    if (!sample) break;
-    selected.get(chosen).push(sample);
+    quotas.set(chosen, quotas.get(chosen) + 1);
     available--;
   }
+  const selected = new Map(buckets.map(bucket => {
+    const quota = quotas.get(bucket);
+    const count = bucket.samples.length;
+    const samples = Array.from({ length: quota }, (_, index) => {
+      const position = quota === 1 ? Math.floor((count - 1) / 2)
+        : Math.round(index * (count - 1) / (quota - 1));
+      return bucket.samples[position];
+    });
+    return [bucket, samples];
+  }));
   const segments = buckets.map(bucket => ({
     phase: bucket.phase,
     total: bucket.total,
@@ -117,6 +122,7 @@ function summarizeEvidenceSources(evidence = {}) {
 function preserveLastGoodLiveArticle(current, previous) {
   if (!current || !previous || current.status !== "generated" ||
       previous.status !== "generated" || current.aiGenerationStatus !== "fallback" ||
+      (current.liveId && previous.liveId && current.liveId !== previous.liveId) ||
       !previous.aiProvider || previous.aiGenerationStatus === "fallback" ||
       previous.liveStatus !== "live" || current.liveStatus !== "live") return current;
   const previousBody = Array.isArray(previous.aiSections) && previous.aiSections.some(item => item && item.body) ||
