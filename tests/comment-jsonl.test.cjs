@@ -69,3 +69,31 @@ test("CSV and ASS export both use the same JSONL parser", () => {
   assert.ok(csvHandler.includes("recordsToCsv(records)"));
   assert.ok(assHandler.includes("generateAssFromRecords(records, { ngRegex, ...normalizeAssMotion(options) })"));
 });
+
+
+test("recovers legacy concatenated JSON objects without newline delimiters", () => {
+  const legacy = records.map(record => JSON.stringify(record)).join("");
+  assert.deepEqual(parseCommentJsonlText(legacy), records);
+  const article = require("../electron/articles.cjs").generateBroadcastArticle(legacy, {
+    liveId: "lv123456789",
+    programTitle: "旧バージョンのコメント復旧"
+  });
+  assert.equal(article.status, "generated");
+  assert.equal(article.commentCount, 2);
+  assert.equal(article.uniqueCommenters, 0);
+});
+
+test("recovers comments containing braces, escaped quotes and line breaks in mixed logs", () => {
+  const mixedRecords = [
+    { type: "sessionStart", liveId: "lv123456789" },
+    { type: "comment", content: '見た目の括弧 { } と "ダブルクォート"', userId: "1" },
+    { type: "comment", content: "改行\nと終わり", userId: "2" }
+  ];
+  const value = "\uFEFF" + JSON.stringify(mixedRecords[0]) +
+    JSON.stringify(mixedRecords[1]) + "\n" + JSON.stringify(mixedRecords[2]) + "\n" +
+    '{"type":"comment","content":"途切れたログ"';
+  assert.deepEqual(parseCommentJsonlText(value), mixedRecords);
+  const article = require("../electron/articles.cjs").generateBroadcastArticle(value, { programTitle: "復旧" });
+  assert.equal(article.commentCount, 2);
+  assert.equal(article.uniqueCommenters, 2);
+});
