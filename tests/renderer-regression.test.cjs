@@ -745,7 +745,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /item.name === "qwen2.5vl:3b"/);
   assert.ok(main.includes("capturedAt: new Date().toISOString()"));
   assert.match(ollamaSource, /frameTimeline/);
-  assert.ok(ollamaSource.includes('frame => typeof frame === "string" ? frame : String(frame && frame.image'));
+  assert.match(ollamaSource, /imageFrames\.map\(frame\s*=>\s*typeof frame === "string" \? frame : String\(frame && frame\.image/);
 });
 
 test("manual article generation can combine Whisper audio transcript, video frames, and Nico comments", () => {
