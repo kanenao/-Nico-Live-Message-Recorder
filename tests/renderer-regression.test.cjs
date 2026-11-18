@@ -826,7 +826,7 @@ test("AI article cards render a newspaper-style lead, highlights, timeline, and 
   assert.match(main, /aiCommentSampleCount/);
   assert.match(main, /aiCommentTotalCount/);
   assert.match(ollamaSource, /selectRepresentativeComments/);
-  assert.match(ollamaSource, /prepareCommentEvidence\\(records, 96, 6\\)/);
+  assert.ok(ollamaSource.includes("prepareCommentEvidence(records, 96, 6)"));
   assert.match(ollamaSource, /evidenceTimeline/);
   assert.match(ollamaSource, /highlights/);
   assert.match(ollamaSource, /audienceReaction/);
