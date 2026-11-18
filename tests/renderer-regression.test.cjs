@@ -113,6 +113,43 @@ test("primary capture buttons are bound before renderer initialization can fail"
   assert.match(renderer, /reportCaptureButtonError\("映像・音声録画", error\)/);
 });
 
+test("capture UI remains operational when optional view elements are absent", () => {
+  const vm = require("node:vm");
+  const helperStart = renderer.indexOf("function setCaptureDetail(");
+  const helperEnd = renderer.indexOf("\nfunction updateCaptureIndicators(", helperStart);
+  assert.ok(helperStart > 0 && helperEnd > helperStart);
+  const handlers = vm.runInNewContext(
+    renderer.slice(helperStart, helperEnd) + "\n({ setCaptureDetail, setCaptureText, showToast })",
+    {
+      byId: () => null,
+      console: { warn() {} },
+      window: { clearTimeout() {}, setTimeout() { throw Error("unexpected timer"); } }
+    }
+  );
+  assert.doesNotThrow(() => handlers.setCaptureDetail("録画中"));
+  assert.doesNotThrow(() => handlers.setCaptureText("video-file", "録画中"));
+  assert.doesNotThrow(() => handlers.showToast("通知"));
+  const stateStart = renderer.indexOf("function setConnection(state, label) {");
+  const stateEnd = renderer.indexOf("\nfunction normalizeId(", stateStart);
+  assert.ok(stateStart > 0 && stateEnd > stateStart);
+  const state = vm.runInNewContext(`
+    let connected = false;
+    let commentCaptureState = "disconnected";
+    let captureStopInProgress = false;
+    const connectButton = null, disconnectButton = null;
+    const byId = () => null;
+    const updateCaptureIndicators = () => {};
+    ${renderer.slice(stateStart, stateEnd)}
+    setConnection("connected");
+    ({ connected, commentCaptureState });
+  `);
+  assert.equal(state.connected, true);
+  assert.equal(state.commentCaptureState, "connected");
+  assert.match(renderer, /if \\(recordIndicator\\) recordIndicator\\.classList\\.toggle/);
+  assert.match(renderer, /if \\(stopRecordButton\\) stopRecordButton\\.textContent/);
+  assert.match(renderer, /setCaptureText\\("video-file", "保存先："/);
+});
+
 test("broadcast connection and direct video/audio recording share one integrated panel", () => {
   const panelStart = html.indexOf('<section class="panel session-panel"');
   const panelEnd = html.indexOf("</section>", panelStart);
