@@ -30,8 +30,12 @@ function prepareCommentEvidence(records, limit = 96, bucketCount = 6) {
   const timed = all.map((row, index) => ({ row, index, at: commentTime(row.timestamp) }));
   const timestamped = timed.filter(item => item.at !== null);
   const timedCount = timestamped.length;
-  const start = timedCount ? Math.min(...timestamped.map(item => item.at)) : 0;
-  const end = timedCount ? Math.max(...timestamped.map(item => item.at)) : 0;
+  let start = Infinity, end = -Infinity;
+  for (const item of timestamped) {
+    if (item.at < start) start = item.at;
+    if (item.at > end) end = item.at;
+  }
+  if (!timedCount) { start = 0; end = 0; }
   const buckets = Array.from({ length: phases }, (_, index) => ({
     phase: index + 1, total: 0, omittedRepeated: 0, samples: [], seen: new Set()
   }));
