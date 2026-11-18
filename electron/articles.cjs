@@ -1,5 +1,7 @@
 "use strict";
 
+const { parseCommentJsonlText } = require("./comment-jsonl.cjs");
+
 const OPT_OUT_TERMS = [
   "無断転載禁止", "転載禁止", "転載不可", "切り抜き禁止", "切り抜き不可",
   "生成AI禁止", "AI生成禁止", "AI利用禁止", "AI学習禁止", "AI禁止",
@@ -28,18 +30,7 @@ function cleanText(value, maxLength = 2000) {
 }
 
 function parseCommentLog(input) {
-  const records = [];
-  for (const line of String(input || "").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const value = JSON.parse(trimmed);
-      if (value && typeof value === "object" && !Array.isArray(value)) records.push(value);
-    } catch (_) {
-      // Ignore an incomplete last line in a log that is still being written.
-    }
-  }
-  return records;
+  return parseCommentJsonlText(input);
 }
 
 function firstValue(values) {
