@@ -15,6 +15,7 @@ const { compileAssNgRegex, testAssNgRegex } = require("./ass-ng-regex.cjs");
 const { normalizeAssMotion } = require("./ass-motion.cjs");
 const { readCommentJsonlRecords } = require("./comment-jsonl.cjs");
 const { generateBroadcastArticle, parseCommentLog } = require("./articles.cjs");
+const { preserveLastGoodLiveArticle } = require("./article-evidence.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { parseVideoDuration, videoPreviewTimes, formatVideoTime } = require("./library-video-preview.cjs");
@@ -640,6 +641,9 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     article.aiAudienceReaction = result.audienceReaction || "";
     article.aiCommentSampleCount = Number(result.commentSampleCount) || 0;
     article.aiCommentTotalCount = Number(result.commentTotalCount) || 0;
+    article.aiEvidence = result.evidence || {};
+    article.aiSourceCoverage = result.sourceCoverage || {};
+    article.aiQualityNotes = Array.isArray(result.qualityNotes) ? result.qualityNotes : [];
     if (result.summary) article.summary = result.summary;
     if (result.topics.length) article.topics = result.topics.map(term => ({ term, count: 0 }));
     article.aiProvider = result.provider;
@@ -701,6 +705,7 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   };
   let previousArticle = null;
   try { previousArticle = JSON.parse(fs.readFileSync(articlePath, "utf8")); } catch (_) {}
+  Object.assign(article, preserveLastGoodLiveArticle(article, previousArticle));
   const videoStop = records.filter(row => row && row.type === "videoStop" && row.videoFile).at(-1);
   if (context.videoFile) article.videoFile = context.videoFile;
   else if (videoStop && videoStop.videoFile) article.videoFile = videoStop.videoFile;

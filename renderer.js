@@ -201,8 +201,18 @@ function setCaptureDetail(message) {
   if (detail) detail.textContent = String(message || "");
 }
 
+// A missing or temporarily replaced view must not abort an ongoing recording.
+function setCaptureText(id, value) {
+  const element = byId(id);
+  if (element) element.textContent = value;
+}
+
 function showToast(message, isError) {
   const toast = byId("toast");
+  if (!toast) {
+    console.warn("[capture-ui] 通知先がありません:", message);
+    return;
+  }
   toast.textContent = message;
   toast.className = "toast visible" + (isError ? " error" : "");
   window.clearTimeout(showToast.timer);
@@ -274,26 +284,26 @@ function updateCaptureIndicators() {
 function setConnection(state, label) {
   const badge = byId("connection-badge");
   const text = byId("connection-label");
-  badge.classList.remove("online", "busy", "failed");
+  if (badge) badge.classList.remove("online", "busy", "failed");
   commentCaptureState = ["connected", "connecting", "error"].includes(state) ? state : "disconnected";
   if (state === "connected") {
-    badge.classList.add("online");
-    text.textContent = "コメント受信中";
+    if (badge) badge.classList.add("online");
+    if (text) text.textContent = "コメント受信中";
     connected = true;
   } else if (state === "connecting") {
-    badge.classList.add("busy");
-    text.textContent = "接続中";
+    if (badge) badge.classList.add("busy");
+    if (text) text.textContent = "接続中";
     connected = false;
   } else if (state === "error") {
-    badge.classList.add("failed");
-    text.textContent = "接続エラー";
+    if (badge) badge.classList.add("failed");
+    if (text) text.textContent = "接続エラー";
     connected = false;
   } else {
-    text.textContent = label || "未接続";
+    if (text) text.textContent = label || "未接続";
     connected = false;
   }
-  connectButton.disabled = captureStopInProgress || state === "connecting" || state === "connected";
-  disconnectButton.disabled = captureStopInProgress || (state !== "connected" && state !== "connecting");
+  if (connectButton) connectButton.disabled = captureStopInProgress || state === "connecting" || state === "connected";
+  if (disconnectButton) disconnectButton.disabled = captureStopInProgress || (state !== "connected" && state !== "connecting");
   updateCaptureIndicators();
 }
 
@@ -303,12 +313,12 @@ function normalizeId(value) {
 }
 
 function clearComments() {
-  commentList.replaceChildren();
+  if (commentList) commentList.replaceChildren();
   commentCount = 0;
   eventCount = 0;
   displayedComments = 0;
-  byId("comment-count").textContent = "0";
-  byId("event-count").textContent = "0";
+  setCaptureText("comment-count", "0");
+  setCaptureText("event-count", "0");
 }
 
 function eventText(record) {
@@ -334,10 +344,10 @@ function eventLabel(type) {
 function renderEvent(record) {
   if (!record) return;
   eventCount += 1;
-  byId("event-count").textContent = eventCount.toLocaleString("ja-JP");
+  setCaptureText("event-count", eventCount.toLocaleString("ja-JP"));
   if (record.type === "comment") {
     commentCount += 1;
-    byId("comment-count").textContent = commentCount.toLocaleString("ja-JP");
+    setCaptureText("comment-count", commentCount.toLocaleString("ja-JP"));
   }
 
   const empty = byId("empty-state");
@@ -367,14 +377,14 @@ function renderEvent(record) {
   type.textContent = eventLabel(record.type);
 
   row.append(time, user, body, type);
-  commentList.appendChild(row);
+  if (commentList) commentList.appendChild(row);
   displayedComments += 1;
 
-  if (displayedComments > 1500) {
+  if (commentList && displayedComments > 1500 && commentList.firstElementChild) {
     commentList.firstElementChild.remove();
     displayedComments -= 1;
   }
-  commentList.scrollTop = commentList.scrollHeight;
+  if (commentList) commentList.scrollTop = commentList.scrollHeight;
 }
 
 function renderSessionProgramInfo() {
@@ -446,10 +456,10 @@ function updateMetadata(metadata) {
       viewerCount: currentProgramMetadata.viewerCount ?? currentCaptureTarget.viewerCount
     };
   }
-  byId("live-title").textContent = currentProgramMetadata.title || "番組タイトルを取得できませんでした";
+  setCaptureText("live-title", currentProgramMetadata.title || "番組タイトルを取得できませんでした");
   const status = String(readValue(["status"]) || "").trim();
-  byId("live-meta").textContent = (currentProgramMetadata.broadcasterName || "放送者情報なし") +
-    (status ? " ・ " + status : "");
+  setCaptureText("live-meta", (currentProgramMetadata.broadcasterName || "放送者情報なし") +
+    (status ? " ・ " + status : ""));
   renderSessionProgramInfo();
   renderLiveBroadcasts();
 }
@@ -555,14 +565,14 @@ async function connectLive() {
   renderSessionProgramInfo();
   clearComments();
   setConnection("connecting");
-  byId("live-title").textContent = "番組情報を取得中…";
-  byId("live-meta").textContent = "コメントサーバーに接続しています";
+  setCaptureText("live-title", "番組情報を取得中…");
+  setCaptureText("live-meta", "コメントサーバーに接続しています");
   try {
     requireCaptureApi("connectLive");
     setCaptureDetail("コメント接続要求を送信しました。ニコニコ側の応答を待っています…");
     const result = await api.connectLive(liveId);
     updateMetadata(result.metadata);
-    byId("comment-file").textContent = "コメント：" + result.commentFile;
+    setCaptureText("comment-file", "コメント：" + result.commentFile);
     setConnection("connected");
     setCaptureDetail("コメント保存先：" + result.commentFile);
     showToast("コメント取得を開始しました。");
@@ -609,7 +619,7 @@ async function startVideoRecording(target = null) {
 
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
   currentRecordingIsTimeshift = timeshift;
-  stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
+  if (stopRecordButton) stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
   if (currentLiveId !== liveId) currentProgramMetadata = {};
   currentLiveId = liveId;
   liveInput.value = liveId;
@@ -634,13 +644,13 @@ async function startVideoRecording(target = null) {
     title: currentProgramMetadata.title || ""
   };
   if (selectedTarget) {
-    byId("live-title").textContent = selectedTarget.title || "番組情報を取得中…";
-    byId("live-meta").textContent = (selectedTarget.name || "登録配信者") +
-      " · " + liveId + " · LIVE一覧から録画開始";
+    setCaptureText("live-title", selectedTarget.title || "番組情報を取得中…");
+    setCaptureText("live-meta", (selectedTarget.name || "登録配信者") +
+      " · " + liveId + " · LIVE一覧から録画開始");
   }
   renderSessionProgramInfo();
   recordStartInProgress = true;
-  recordButton.disabled = true;
+  if (recordButton) recordButton.disabled = true;
   renderLiveBroadcasts();
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
   setCaptureDetail(timeshift ? "タイムシフト録画要求を送信しました。映像・音声と過去コメントの応答を待っています…" : "映像・音声＋コメント録画要求を送信しました。Streamlinkとコメントサーバーの起動を待っています…");
@@ -669,7 +679,7 @@ async function startVideoRecording(target = null) {
     }
     if (result.comment && result.comment.metadata) updateMetadata(result.comment.metadata);
     if (result.comment && result.comment.commentFile) {
-      byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
+      setCaptureText("comment-file", "コメント：" + result.comment.commentFile);
     }
     if (result.commentsConnected) {
       setConnection("connected");
@@ -680,7 +690,7 @@ async function startVideoRecording(target = null) {
     }
 
     const video = result.video || {};
-    byId("video-file").textContent = "保存先：" + (video.path || "");
+    setCaptureText("video-file", "保存先：" + (video.path || ""));
     setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") +
       (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : "") +
       (result.commentPending ? " ／ コメント接続を継続中…" : ""));
@@ -718,7 +728,7 @@ async function startVideoRecording(target = null) {
     showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
   } finally {
     recordStartInProgress = false;
-    recordButton.disabled = captureStopInProgress || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
+    if (recordButton) recordButton.disabled = captureStopInProgress || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
     renderLiveBroadcasts();
   }
   processMonitorAutoQueue();
@@ -728,7 +738,7 @@ function startRecordClock() {
   if (recordClock) return;
   if (!recordStartedAt) recordStartedAt = Date.now();
   recordClock = window.setInterval(() => {
-    byId("record-timer").textContent = formatDuration(Date.now() - recordStartedAt);
+    setCaptureText("record-timer", formatDuration(Date.now() - recordStartedAt));
   }, 500);
 }
 
@@ -736,25 +746,26 @@ function clearRecordClock() {
   if (recordClock) window.clearInterval(recordClock);
   recordClock = null;
   recordStartedAt = 0;
-  byId("record-timer").textContent = "00:00:00";
+  setCaptureText("record-timer", "00:00:00");
 }
 
 function setVideoState(recording, stopping = false) {
   videoCaptureState = stopping ? "stopping" : (recording ? "recording" : "idle");
   renderSessionProgramInfo();
-  byId("record-indicator").classList.toggle("recording", recording);
-  byId("record-status").textContent = stopping
+  const recordIndicator = byId("record-indicator");
+  if (recordIndicator) recordIndicator.classList.toggle("recording", recording);
+  setCaptureText("record-status", stopping
     ? "録画停止中…"
-    : recording ? "録画中（直接取得）" : "録画していません";
-  recordButton.disabled = captureStopInProgress || recording || stopping;
-  stopRecordButton.disabled = captureStopInProgress || !recording || stopping;
+    : recording ? "録画中（直接取得）" : "録画していません");
+  if (recordButton) recordButton.disabled = captureStopInProgress || recording || stopping;
+  if (stopRecordButton) stopRecordButton.disabled = captureStopInProgress || !recording || stopping;
   updateCaptureIndicators();
   renderDashboardStats();
   renderLiveBroadcasts();
 }
 
 async function stopVideoRecording() {
-  if (captureStopInProgress || stopRecordButton.disabled) return;
+  if (captureStopInProgress || (stopRecordButton && stopRecordButton.disabled)) return;
   const timeshift = currentRecordingIsTimeshift;
   captureStopInProgress = true;
   setVideoState(true, true);
@@ -765,10 +776,10 @@ async function stopVideoRecording() {
     requireCaptureApi(timeshift ? "stopVideo" : "stopCapture");
     const result = timeshift ? await api.stopVideo() : await api.stopCapture();
     const video = timeshift ? result : (result.video || {});
-    if (video.path) byId("video-file").textContent = "映像：" + video.path;
+    if (video.path) setCaptureText("video-file", "映像：" + video.path);
     if (!timeshift) {
       if (result.comment && result.comment.commentFile) {
-        byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
+        setCaptureText("comment-file", "コメント：" + result.comment.commentFile);
       }
       setConnection("disconnected");
       setCaptureDetail("映像・音声録画とコメントを停止・保存しました。");
@@ -849,7 +860,7 @@ async function closeLivePreview() {
 function handleVideoState(payload) {
   if (!payload) return;
   if (payload.recording) {
-    if (payload.path) byId("video-file").textContent = "映像：" + payload.path;
+    if (payload.path) setCaptureText("video-file", "映像：" + payload.path);
     recordStartedAt = payload.startedAt ? new Date(payload.startedAt).getTime() : (recordStartedAt || Date.now());
     setVideoState(true);
     startRecordClock();
@@ -857,7 +868,7 @@ function handleVideoState(payload) {
   }
 
   if (payload.path) {
-    byId("video-file").textContent = "映像：" + payload.path;
+    setCaptureText("video-file", "映像：" + payload.path);
     showToast(payload.converted
       ? "録画を保存しました（MP4変換済み）: " + payload.path
       : "録画を保存しました（TS形式）: " + payload.path);
@@ -1621,7 +1632,7 @@ async function processMonitorAutoQueue() {
   const target = monitorAutoQueue.shift();
   if (!target || !target.liveId) return;
   monitorAutoProcessing = true;
-  recordButton.disabled = true;
+  if (recordButton) recordButton.disabled = true;
   renderLiveBroadcasts();
 
   try {
@@ -1645,8 +1656,8 @@ async function processMonitorAutoQueue() {
     renderSessionProgramInfo();
     clearComments();
     setConnection("connecting");
-    byId("live-title").textContent = target.title || "番組情報を取得中…";
-    byId("live-meta").textContent = "配信監視から自動録画を開始しています";
+    setCaptureText("live-title", target.title || "番組情報を取得中…");
+    setCaptureText("live-meta", "配信監視から自動録画を開始しています");
 
     setConnection("connecting");
     const capture = await api.startCapture(liveId, monitorSettings.quality || "best", {
@@ -1657,12 +1668,12 @@ async function processMonitorAutoQueue() {
     });
     if (capture.comment && capture.comment.metadata) updateMetadata(capture.comment.metadata);
     if (capture.comment && capture.comment.commentFile) {
-      byId("comment-file").textContent = "コメント：" + capture.comment.commentFile;
+      setCaptureText("comment-file", "コメント：" + capture.comment.commentFile);
     }
     setConnection(capture.commentsConnected ? "connected" : "error");
 
     const result = capture.video || {};
-    byId("video-file").textContent = "保存先：" + (result.path || "");
+    setCaptureText("video-file", "保存先：" + (result.path || ""));
     recordStartedAt = result.startedAt ? new Date(result.startedAt).getTime() : Date.now();
     setVideoState(true);
     startRecordClock();
@@ -1705,7 +1716,7 @@ async function processMonitorAutoQueue() {
     if (!recordStartedAt && videoCaptureState !== "recording") {
       currentCaptureTarget = null;
       renderSessionProgramInfo();
-      recordButton.disabled = recordStartInProgress || videoCaptureState === "stopping";
+      if (recordButton) recordButton.disabled = recordStartInProgress || videoCaptureState === "stopping";
     }
     renderLiveBroadcasts();
     if (monitorAutoQueue.length > 0 && !recordButton.disabled) {
@@ -2238,6 +2249,7 @@ function renderBroadcastArticles() {
     if (article.aiProvider) addTag("AI生成 · " + article.aiProvider + (article.aiModel ? " / " + article.aiModel : ""), "ai");
     else addTag("統計・コメント整理記事", "local");
     if (article.aiGenerationStatus === "recovered") addTag("本文を短縮再生成済み", "ai");
+    if (article.aiGenerationStatus === "stale") addTag("前回の完成記事を保持（今回のAI更新失敗）", "local");
     if (article.aiGenerationStatus === "fallback") addTag("AI本文未完了・標準記事を表示中", "local");
     if (article.articleSource === "manual") addTag("登録なし・手動生成");
     if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚" + (article.videoAiAnalyzed ? "・AI解析済み" : "・フレーム取得済み"), "video");
@@ -2381,11 +2393,25 @@ function renderBroadcastArticles() {
     if (Number(article.aiCommentTotalCount) > 0) {
       sourceDetails.push("AI参照コメント：" + Number(article.aiCommentSampleCount || 0).toLocaleString("ja-JP") + " / " + Number(article.aiCommentTotalCount).toLocaleString("ja-JP") + "件");
     }
+    if (article.aiSourceCoverage && article.aiProvider) {
+      const coverage = article.aiSourceCoverage;
+      sourceDetails.push("映像AI：" + (coverage.video === "analyzed" ? "解析あり" : "未解析"));
+      sourceDetails.push("音声AI：" + (coverage.audio === "transcribed" ? "文字起こしを参照" : "未解析"));
+    }
+    if (article.aiEvidence && Number(article.aiEvidence.timestampedCount) > 0) {
+      sourceDetails.push("時刻付きコメント：" + Number(article.aiEvidence.timestampedCount).toLocaleString("ja-JP") + "件");
+    }
     if (sourceDetails.length) {
       const sources = document.createElement("p");
       sources.className = "broadcast-article-sources";
       sources.textContent = sourceDetails.join("　｜　");
       body.appendChild(sources);
+    }
+    if (Array.isArray(article.aiQualityNotes) && article.aiQualityNotes.length) {
+      const quality = document.createElement("p");
+      quality.className = "broadcast-article-sources";
+      quality.textContent = "記事の取得状況：" + article.aiQualityNotes.slice(0, 4).join(" ／ ");
+      body.appendChild(quality);
     }
     body.appendChild(note);
 
@@ -2926,7 +2952,7 @@ try {
     setConnection(state);
   }
   if (channel === "comments:file" && payload && payload.path) {
-    byId("comment-file").textContent = "コメント：" + payload.path;
+    setCaptureText("comment-file", "コメント：" + payload.path);
   }
   if (channel === "video:state") {
     if (payload && payload.starting) {
@@ -2966,8 +2992,8 @@ try {
   if (channel === "timeshift:comments-progress" && payload) {
     const count = Number(payload.eventCount) || 0;
     const segments = Number(payload.segmentsFetched) || 0;
-    byId("live-meta").textContent = "過去コメント取得中：" + count.toLocaleString("ja-JP") +
-      "件 / " + segments + "セグメント";
+    setCaptureText("live-meta", "過去コメント取得中：" + count.toLocaleString("ja-JP") +
+      "件 / " + segments + "セグメント");
     byId("capture-status-detail").textContent = "タイムシフトの映像録画を継続しながら、過去コメントを取得しています。";
   }
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
