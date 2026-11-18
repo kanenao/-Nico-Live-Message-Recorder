@@ -529,10 +529,7 @@ async function exportCommentSidecars(sourcePath) {
   const formats = format === "all" ? ["csv", "ass"] : (format === "jsonl" ? [] : [format]);
   if (!formats.length || !sourcePath || !fs.existsSync(sourcePath)) return [];
 
-  const records = [];
-  for (const line of fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).filter(Boolean)) {
-    try { records.push(JSON.parse(line)); } catch (_) {}
-  }
+  const records = readCommentJsonlRecords(sourcePath);
   const written = [];
   for (const outputFormat of formats) {
     const outputPath = sourcePath.replace(/\.jsonl$/i, "." + outputFormat);
@@ -664,9 +661,7 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
     ...context,
     generatedAt: new Date().toISOString()
   };
-  const records = recordsText.split(/\r?\n/).filter(Boolean).map(line => {
-    try { return JSON.parse(line); } catch (_) { return null; }
-  }).filter(Boolean);
+  const records = parseCommentLog(recordsText);
   const article = generateBroadcastArticle(records, articleContext);
   const endedRecordedSession = Boolean(options.deferAiForRecordedVideo &&
     records.some(row => row && row.type === "videoStop" && row.videoFile));
@@ -787,7 +782,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
         const matched = findMatchingCommentLog(videoPath, listCaptureLibrary().items.filter(item => item.type === "comment"));
         if (matched) {
           const parsed = parseCommentLog(fs.readFileSync(matched, "utf8"));
-          records.push(...parsed);
+          for (const record of parsed) records.push(record);
           article.commentFile = matched;
           // Regenerate the metadata/comment summary before running multimodal AI.
           const recovered = generateBroadcastArticle(records, context);

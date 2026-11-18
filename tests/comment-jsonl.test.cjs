@@ -69,3 +69,12 @@ test("CSV and ASS export both use the same JSONL parser", () => {
   assert.ok(csvHandler.includes("recordsToCsv(records)"));
   assert.ok(assHandler.includes("generateAssFromRecords(records, { ngRegex, ...normalizeAssMotion(options) })"));
 });
+
+test("article generation recovers joined records and ignores the unfinished tail", () => {
+  const { generateBroadcastArticle, parseCommentLog } = require("../electron/articles.cjs");
+  const rows = [...records, { type: "comment", content: '文字列中の }{ と "引用"', extra: { nested: true } }];
+  const joined = rows.map(row => JSON.stringify(row)).join("") + '{"type":"comment","content":"途中';
+  const parsed = parseCommentLog(joined);
+  assert.deepEqual(parsed, rows);
+  assert.equal(generateBroadcastArticle(parsed, {}).commentCount, 3);
+});
