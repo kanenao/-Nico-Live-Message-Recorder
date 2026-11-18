@@ -655,7 +655,7 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   if (!commentPath || !fs.existsSync(commentPath)) {
     return { status: "skipped", reason: "コメントログが見つかりません。" };
   }
-  const recordsText = fs.readFileSync(commentPath, "utf8");
+  const records = readCommentJsonlRecords(commentPath);
   const articleContext = {
     ...currentProgramInfo,
     broadcasterName: currentBroadcasterName,
@@ -664,9 +664,6 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
     ...context,
     generatedAt: new Date().toISOString()
   };
-  const records = recordsText.split(/\r?\n/).filter(Boolean).map(line => {
-    try { return JSON.parse(line); } catch (_) { return null; }
-  }).filter(Boolean);
   const article = generateBroadcastArticle(records, articleContext);
   const endedRecordedSession = Boolean(options.deferAiForRecordedVideo &&
     records.some(row => row && row.type === "videoStop" && row.videoFile));
@@ -696,6 +693,10 @@ async function createAndSaveBroadcastArticle(commentPath, context = {}, options 
   const articlePath = path.join(directory, baseName + ".json");
   article.articlePath = articlePath;
   article.commentFile = commentPath;
+  article.mediaAnalysis = {
+    ...(article.mediaAnalysis || {}),
+    comments: article.commentCount > 0 ? "analyzed" : "unavailable"
+  };
   let previousArticle = null;
   try { previousArticle = JSON.parse(fs.readFileSync(articlePath, "utf8")); } catch (_) {}
   const videoStop = records.filter(row => row && row.type === "videoStop" && row.videoFile).at(-1);
