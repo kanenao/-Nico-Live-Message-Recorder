@@ -131,7 +131,7 @@ async function generateArticleWithOllama(options = {}) {
     audioTranscript ? "音声認識テキスト（Whisperによる自動文字起こし。誤認識の可能性あり。配信者の発言とコメントを区別すること）：" + "\n" + audioTranscript : "音声認識テキストはありません。音声の内容を推測しないでください。",
     options.images && options.images.length ? "画像は動画全体または生放送中の異なる時刻から抽出した代表フレームです。画像の順番と取得時刻を照合し、確認できる範囲で場面の変化を時系列に整理してください。画像で確認できる景色・動作・物体・画面内テキストだけを記述し、音声や会話、画像間で写っていない動きを推測しないでください。\n" + frameTimeline : ""
   ].join("\n\n");
-  const data = await requestJson(baseUrl + "/api/chat", {
+  const sendArticleRequest = (articlePrompt, attachImages, maxTokens, timeoutMs) => requestJson(baseUrl + "/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -140,14 +140,62 @@ async function generateArticleWithOllama(options = {}) {
       format: "json",
       messages: [
         { role: "system", content: "出力は指定されたJSONのみ。推測で事実を補わない。" },
-        { role: "user", content: prompt, ...(imageFrames.length ? { images: imageFrames.map(frame => typeof frame === "string" ? frame : String(frame && frame.image || "")).filter(Boolean) } : {}) }
+        { role: "user", content: articlePrompt,
+          ...(attachImages && imageFrames.length ? { images: imageFrames.map(frame =>
+            typeof frame === "string" ? frame : String(frame && frame.image || "")).filter(Boolean) } : {}) }
       ],
-      options: { temperature: 0.25, num_ctx: 8192, num_predict: 3200 }
+      options: { temperature: 0.25, num_ctx: 8192, num_predict: maxTokens }
     })
-  }, 120000);
-  const result = parseJsonContent(data.message && data.message.content);
-  if (!result || typeof result !== "object") {
-    throw new Error("Ollamaが返した記事の形式が正しくありません。");
+  }, timeoutMs);
+  let result;
+  let usedImages = false;
+  let compactRetry = false;
+  try {
+    const response = await sendArticleRequest(prompt, true, 3200, 120000);
+    if (response.done_reason === "length") {
+      throw new Error("AIの出力が最大トークン数に達しました。");
+    }
+    result = parseJsonContent(response.message && response.message.content);
+    if (!result || typeof result !== "object" ||
+        !(Array.isArray(result.sections) && result.sections.some(item => item && String(item.body || "").trim()) ||
+          Array.isArray(result.paragraphs) && result.paragraphs.some(item => String(item || "").trim()))) {
+      throw new Error("AIが記事本文を最後まで生成できませんでした。");
+    }
+    usedImages = imageFrames.length > 0;
+  } catch (initialError) {
+    // Smaller local models frequently truncate a full JSON newspaper when
+    // given images, lengthy transcripts and hundreds of comments together.
+    // One bounded text-only retry produces a usable story instead of saving
+    // an apparently finished but empty AI article.
+    const compactComments = selectRepresentativeComments(records, 36).map(row =>
+      String(row.content || "").replace(/[\u0000-\u001f]/g, " ").slice(0, 120));
+    const compactPrompt = [
+      "次の配信記録だけを根拠に、読みやすい日本語の放送記事を完成させてください。",
+      "本文を途中で終わらせないでください。3段落程度、全体で500〜900文字を目標にし、情報が少ない場合は短くしてください。",
+      "推測で内容を補わず、視聴者のコメントを配信者の発言と混同しないでください。",
+      "JSON形式のみで回答：{\"title\":\"見出し\",\"summary\":\"120文字以内の要約\",\"paragraphs\":[\"導入\",\"主な展開\",\"視聴者の反応\"]}",
+      "番組名：" + String(context.programTitle || context.title || "不明").slice(0, 150),
+      "番組説明：" + String(context.description || "").slice(0, 500),
+      "コメント全件数：" + allComments.length + "件。代表サンプル：" + JSON.stringify(compactComments),
+      "音声認識の抜粋：" + compactTranscript(options.audioTranscript, 3200),
+      "配信中：" + Boolean(context.liveUpdate || context.liveStatus === "live")
+    ].join("\n");
+    try {
+      const response = await sendArticleRequest(compactPrompt, false, 2200, 90000);
+      if (response.done_reason === "length") {
+        throw new Error("再生成した本文も途中で切れました。");
+      }
+      result = parseJsonContent(response.message && response.message.content);
+      if (!result || !(Array.isArray(result.paragraphs) && result.paragraphs.some(Boolean) ||
+          Array.isArray(result.sections) && result.sections.some(item => item && item.body))) {
+        throw new Error("再生成しても本文を取得できませんでした。");
+      }
+      compactRetry = true;
+    } catch (retryError) {
+      throw new Error("AI記事の出力が途中で終了しました。短縮再生成も失敗: " +
+        (retryError.message || String(retryError)) + "（初回: " +
+        (initialError.message || String(initialError)) + "）");
+    }
   }
   const allowedSources = new Set(["metadata", "comments", "video", "audio", "mixed"]);
   const sections = (Array.isArray(result.sections) ? result.sections : [])
@@ -164,7 +212,7 @@ async function generateArticleWithOllama(options = {}) {
   if (!paragraphs.length) throw new Error("Ollamaが記事本文を生成できませんでした。");
   return {
     title: String(result.title || context.programTitle || "配信記事").slice(0, 300),
-    summary: String(result.summary || "").slice(0, 600),
+    summary: String(result.summary || paragraphs[0] || "").slice(0, 600),
     paragraphs,
     sections,
     topics: Array.isArray(result.topics) ? result.topics.map(value => String(value).slice(0, 50)).slice(0, 8) : [],
@@ -174,7 +222,9 @@ async function generateArticleWithOllama(options = {}) {
     commentSampleCount: comments.length,
     commentTotalCount: allComments.length,
     model,
-    provider: "Ollama"
+    provider: "Ollama",
+    usedImages,
+    compactRetry
   };
 }
 
