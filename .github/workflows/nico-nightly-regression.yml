@@ -68,7 +68,7 @@ jobs:
             "Nico Live Message Recorder の定期診断で問題を検出しました。"
             ""
             "- 対象ブランチ: beta"
-            "- 対象コミット: `$env:BETA_SHA`"
+            "- 対象コミット: $env:BETA_SHA"
             "- 検査内容: README/バージョン整合性、アプリ回帰テスト、Windowsビルド、α版更新ファイル"
             "- [失敗した実行ログ]($runUrl)"
             ""
