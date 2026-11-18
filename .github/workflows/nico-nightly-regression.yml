@@ -1,6 +1,11 @@
 name: Nightly Nico beta regression diagnosis
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/nico-nightly-regression.yml"
   schedule:
     # 02:25 JST (GitHub schedules may run later under load).
     - cron: "25 17 * * *"
