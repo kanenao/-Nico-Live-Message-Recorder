@@ -2392,11 +2392,25 @@ function renderBroadcastArticles() {
     if (Number(article.aiCommentTotalCount) > 0) {
       sourceDetails.push("AI参照コメント：" + Number(article.aiCommentSampleCount || 0).toLocaleString("ja-JP") + " / " + Number(article.aiCommentTotalCount).toLocaleString("ja-JP") + "件");
     }
+    if (article.aiSourceCoverage && article.aiProvider) {
+      const coverage = article.aiSourceCoverage;
+      sourceDetails.push("映像AI：" + (coverage.video === "analyzed" ? "解析あり" : "未解析"));
+      sourceDetails.push("音声AI：" + (coverage.audio === "transcribed" ? "文字起こしを参照" : "未解析"));
+    }
+    if (article.aiEvidence && Number(article.aiEvidence.timestampedCount) > 0) {
+      sourceDetails.push("時刻付きコメント：" + Number(article.aiEvidence.timestampedCount).toLocaleString("ja-JP") + "件");
+    }
     if (sourceDetails.length) {
       const sources = document.createElement("p");
       sources.className = "broadcast-article-sources";
       sources.textContent = sourceDetails.join("　｜　");
       body.appendChild(sources);
+    }
+    if (Array.isArray(article.aiQualityNotes) && article.aiQualityNotes.length) {
+      const quality = document.createElement("p");
+      quality.className = "broadcast-article-sources";
+      quality.textContent = "記事の取得状況：" + article.aiQualityNotes.slice(0, 4).join(" ／ ");
+      body.appendChild(quality);
     }
     body.appendChild(note);
 
