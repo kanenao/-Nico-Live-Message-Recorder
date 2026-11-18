@@ -45,7 +45,8 @@ function renderArticleHtml(article = {}) {
   };
   const sourceQuality = article.aiProvider ? [
     "<p>生成状態：" + e(article.aiGenerationStatus === "recovered" ? "短縮再生成" :
-      article.aiGenerationStatus === "fallback" ? "標準記事（AI生成失敗）" : "AI記事") + "</p>",
+      article.aiGenerationStatus === "fallback" ? "標準記事（AI生成失敗）" :
+      article.aiGenerationStatus === "stale" ? "前回の完成記事を保持（AI更新失敗）" : "AI記事") + "</p>",
     "<p>コメント：" + e((Number(aiEvidence.commentCount) || 0) + "件中" +
       (Number(aiEvidence.sampleCount) || 0) + "件を抜粋") +
       "／映像：" + e(labels[aiSourceCoverage.video] || "未取得") +
