@@ -18,6 +18,9 @@ test("AI evidence balances long broadcasts without changing original counts", ()
   assert.ok(evidence.segments.every(segment => segment.samples.length > 0));
   assert.ok(evidence.segments.at(0).samples.some(sample => sample.text === "展開-0"));
   assert.ok(evidence.segments.at(-1).samples.some(sample => sample.text.startsWith("展開-")));
+  assert.equal(evidence.segments.at(-1).samples.at(-1).text, "展開-359");
+  assert.ok(evidence.segments[2].samples.some(sample => sample.text === "展開-144"),
+    "middle of third phase should be included instead of only early messages");
   assert.equal(records.length, 360);
 });
 
@@ -44,6 +47,8 @@ test("AI evidence handles no timestamps and missing sources without invented eve
   assert.equal(evidence.timestampedCount, 0);
   assert.equal(evidence.sampleCount, 2);
   assert.equal(commentTime("bad"), null);
+  assert.equal(commentTime("99999999999999999999"), null);
+  assert.equal(commentTime(Number.POSITIVE_INFINITY), null);
   assert.deepEqual(summarizeEvidenceSources({ commentCount: 2, compactRetry: true }),
     ["音声認識結果がありません", "映像AI解析結果がありません", "AI出力不完全のため、短縮本文に切り替えました"]);
 });
@@ -105,6 +110,10 @@ test("failed periodic AI refresh keeps last good LIVE article while updating sta
   // Do not reuse a live present-tense narrative after the stream has ended.
   assert.equal(preserveLastGoodLiveArticle({ ...current, liveStatus: "ended" }, previous).aiGenerationStatus, "fallback");
   assert.equal(preserveLastGoodLiveArticle(current, { ...previous, aiProvider: "" }).aiGenerationStatus, "fallback");
+  assert.equal(preserveLastGoodLiveArticle(
+    { ...current, liveId: "lv100001" },
+    { ...previous, liveId: "lv999999" }
+  ).aiGenerationStatus, "fallback");
 });
 
 test("exported AI article explains unavailable sources and older live snapshots", () => {
