@@ -29,6 +29,8 @@ test("MediaRecorder stop, chunk IPC and cleanup all have bounded waits and error
   assert.match(renderer, /recorder\.onstop = async/);
   assert.match(renderer, /recorderStopEntered = true/);
   assert.match(renderer, /動画エンコーダーが停止通知を返しませんでした/);
+  assert.match(renderer, /pendingChunks > 32/);
+  assert.match(renderer, /保存待ちデータが増えすぎました/);
   assert.match(renderer, /chunkQueue = chunkQueue\.then/);
   assert.match(renderer, /Promise\.race\(\[/);
   assert.match(renderer, /動画データの保存が120秒以上応答しません/);
