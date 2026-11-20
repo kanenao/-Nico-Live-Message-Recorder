@@ -36,6 +36,12 @@ test("MediaRecorder stop, chunk IPC and cleanup all have bounded waits and error
   assert.match(renderer, /動画データの保存が120秒以上応答しません/);
   assert.match(renderer, /stopRecorder\(error\)/);
   assert.match(renderer, /await api\.cancelCompose\(\)\.catch/);
+  const completion = renderer.slice(renderer.indexOf("const stopResult = await stopResultPromise;"));
+  assert.ok(completion.indexOf("if (stopResult.error) throw stopResult.error;") >= 0);
+  assert.ok(completion.indexOf("if (stopResult.error) throw stopResult.error;") <
+    completion.indexOf("outputStarted = false;"),
+    "error handling must cancel the Electron writer before clearing outputStarted");
+
   assert.match(renderer, /await cleanup\(\)/);
 });
 
