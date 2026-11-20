@@ -49,8 +49,19 @@ test("AI evidence handles no timestamps and missing sources without invented eve
   assert.equal(commentTime("bad"), null);
   assert.equal(commentTime("99999999999999999999"), null);
   assert.equal(commentTime(Number.POSITIVE_INFINITY), null);
-  assert.deepEqual(summarizeEvidenceSources({ commentCount: 2, compactRetry: true }),
-    ["音声認識結果がありません", "映像AI解析結果がありません", "AI出力不完全のため、短縮本文に切り替えました"]);
+  const notes = summarizeEvidenceSources({ commentCount: 2, compactRetry: true });
+  assert.equal(notes.length, 3);
+  assert.match(notes[0], /音声認識結果がありません/);
+  assert.match(notes[1], /映像フレームをまだ取得できていません/);
+  assert.match(notes[2], /音声・コメント中心の記事を再生成/);
+  assert.ok(summarizeEvidenceSources({
+    commentCount: 2, framesAvailable: true, videoAvailable: false,
+    visionModelMissing: true
+  }).some(note => note.includes("qwen2.5vl:3b")));
+  assert.ok(summarizeEvidenceSources({
+    commentCount: 2, framesAvailable: true, videoAvailable: true,
+    compactRetry: true, retainedVisionOnRetry: true
+  }).some(note => note.includes("映像解析を維持")));
 });
 
 test("Ollama prompt keeps all-count, phase comments, and source-availability notes", async () => {
@@ -131,4 +142,10 @@ test("exported AI article explains unavailable sources and older live snapshots"
   assert.match(html, /音声：文字起こしあり/);
   assert.ok(!html.includes("<注意>"));
   assert.ok(html.includes("&lt;注意&gt;"));
+  const sampledHtml = renderArticleHtml({
+    title: "映像を取得した未解析記事", aiProvider: "Ollama",
+    aiSourceCoverage: { video: "sampled", audio: "unavailable" },
+    aiEvidence: { commentCount: 2, sampleCount: 2 }
+  });
+  assert.match(sampledHtml, /映像フレーム取得済み（AI未解析）/);
 });

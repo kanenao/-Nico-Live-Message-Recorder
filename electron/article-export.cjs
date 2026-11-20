@@ -41,7 +41,7 @@ function renderArticleHtml(article = {}) {
   const aiEvidence = article.aiEvidence && typeof article.aiEvidence === "object" ? article.aiEvidence : {};
   const aiSourceCoverage = article.aiSourceCoverage && typeof article.aiSourceCoverage === "object" ? article.aiSourceCoverage : {};
   const labels = {
-    analyzed: "解析対象", transcribed: "文字起こしあり", unavailable: "未取得"
+    analyzed: "画像AI解析済み", sampled: "映像フレーム取得済み（AI未解析）", transcribed: "文字起こしあり", unavailable: "未取得"
   };
   const sourceQuality = article.aiProvider ? [
     "<p>生成状態：" + e(article.aiGenerationStatus === "recovered" ? "短縮再生成" :
