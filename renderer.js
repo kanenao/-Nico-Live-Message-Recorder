@@ -116,46 +116,98 @@ function scheduleLibraryThumbnail(image, placeholder, item) {
   });
   pumpLibraryThumbnailQueue();
 }
-function makeLibraryVideoScenesPanel(item) {
-  const panel = document.createElement("div");
-  panel.className = "library-video-scenes";
+function makeVideoStoryboardPanel(loadStoryboard, titleText) {
+  const panel = document.createElement("section");
+  panel.className = "library-video-scenes video-storyboard-panel";
   panel.hidden = true;
   let loaded = false;
   let pending = false;
+  let video = null;
+  let selectedSeconds = 0;
+  const header = document.createElement("div");
+  header.className = "video-storyboard-heading";
   const heading = document.createElement("strong");
-  heading.textContent = "動画内の場面を確認";
+  heading.textContent = titleText || "録画した動画の場面";
   const status = document.createElement("p");
   status.className = "library-video-scenes-status";
-  status.textContent = "表示すると動画の複数箇所から画像を取得します。";
-  panel.append(heading, status);
+  status.textContent = "場面一覧を表示すると、録画映像から最大30枚を取得します。";
+  header.append(heading, status);
+  panel.append(header);
   const expand = async () => {
     panel.hidden = !panel.hidden;
     if (panel.hidden || loaded || pending) return;
     pending = true;
-    status.textContent = "FFmpegで動画内の場面を読み込み中…";
+    status.textContent = "FFmpegで録画の場面を取得中…初回は時間がかかることがあります。";
     try {
-      const result = await api.getLibraryVideoPreview(item.path);
+      const result = await loadStoryboard();
       if (!panel.isConnected) return;
       const frames = Array.isArray(result && result.frames) ? result.frames
         .filter(frame => frame && String(frame.imageUrl || "").startsWith("data:image/jpeg;base64,"))
         : [];
       if (!frames.length) {
-        status.textContent = result && result.message || "場面の取得に失敗しました。";
+        status.textContent = result && result.message || "動画の場面を取得できませんでした。";
         return;
       }
-      status.textContent = result.durationSeconds
-        ? "動画の長さ：" + formatDuration(result.durationSeconds * 1000) + "　場面を選ぶと画像が切り替わります。"
-        : "動画内の画像を表示しています。";
+      status.textContent = (result.durationSeconds
+        ? "動画時間 " + formatDuration(result.durationSeconds * 1000) + " ／ " : "") +
+        frames.length + "場面" + (result.fromCache ? "（キャッシュから表示）" : "") +
+        " ／ 時刻を選んで画像を確認・再生できます。";
+      const layout = document.createElement("div");
+      layout.className = "video-storyboard-layout";
       const selected = document.createElement("div");
-      selected.className = "library-video-selected";
+      selected.className = "library-video-selected video-storyboard-selected";
       const bigImage = document.createElement("img");
       bigImage.src = frames[0].imageUrl;
-      bigImage.alt = "録画動画内の " + frames[0].label + " の場面";
+      bigImage.alt = "動画の " + frames[0].label + " の場面";
+      const duration = document.createElement("span");
+      duration.className = "video-storyboard-duration";
+      duration.textContent = result.durationSeconds
+        ? formatDuration(result.durationSeconds * 1000) : "録画";
       const selectedLabel = document.createElement("span");
       selectedLabel.textContent = frames[0].label;
-      selected.append(bigImage, selectedLabel);
+      selectedSeconds = Number(frames[0].seconds) || 0;
+      selected.append(bigImage, duration, selectedLabel);
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "button button-primary button-small video-storyboard-play";
+      play.textContent = "この場面から再生";
+      const playbackUrl = String(result.videoUrl || "");
+      play.disabled = !/^file:\/\//i.test(playbackUrl);
+      play.title = play.disabled ? "録画動画がないため場面画像のみ表示します" : "";
+      play.addEventListener("click", async () => {
+        if (play.disabled) return;
+        if (!video) {
+          video = document.createElement("video");
+          video.controls = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+          video.className = "video-storyboard-player";
+          video.src = playbackUrl;
+          video.addEventListener("loadedmetadata", () => {
+            video.currentTime = Math.min(selectedSeconds, Math.max(0, video.duration - 0.15));
+            void video.play().catch(() => {});
+          }, { once: true });
+          video.addEventListener("error", () => {
+            status.textContent = "内蔵プレイヤーで再生できない形式です。録画ライブラリの「再生」から開いてください。";
+            video.hidden = true;
+            bigImage.hidden = false;
+          });
+          selected.appendChild(video);
+          bigImage.hidden = true;
+        } else {
+          bigImage.hidden = true;
+          video.hidden = false;
+          video.currentTime = Math.min(selectedSeconds, Math.max(0, video.duration - 0.15));
+          await video.play().catch(() => {
+            status.textContent = "再生できません。録画ライブラリの「再生」から開いてください。";
+          });
+        }
+      });
+      const left = document.createElement("div");
+      left.className = "video-storyboard-left";
+      left.append(selected, play);
       const filmstrip = document.createElement("div");
-      filmstrip.className = "library-video-filmstrip";
+      filmstrip.className = "library-video-filmstrip video-storyboard-grid";
       const buttons = [];
       frames.forEach((frame, index) => {
         const scene = document.createElement("button");
@@ -165,29 +217,43 @@ function makeLibraryVideoScenesPanel(item) {
         scene.setAttribute("aria-pressed", String(index === 0));
         const img = document.createElement("img");
         img.src = frame.imageUrl;
+        img.loading = "lazy";
         img.alt = "動画の " + frame.label + " の場面";
         const label = document.createElement("span");
         label.textContent = frame.label;
         scene.append(img, label);
         scene.addEventListener("click", () => {
           for (const button of buttons) button.setAttribute("aria-pressed", String(button === scene));
+          selectedSeconds = Number(frame.seconds) || 0;
           bigImage.src = frame.imageUrl;
           bigImage.alt = img.alt;
           selectedLabel.textContent = frame.label;
+          if (video && !video.hidden && Number.isFinite(video.duration)) {
+            video.currentTime = Math.min(selectedSeconds, Math.max(0, video.duration - 0.15));
+          }
         });
         buttons.push(scene);
         filmstrip.appendChild(scene);
       });
-      panel.append(selected, filmstrip);
+      layout.append(left, filmstrip);
+      panel.appendChild(layout);
       loaded = true;
     } catch (error) {
       if (panel.isConnected) status.textContent =
-        "動画内の画像を読み込めませんでした：" + (error.message || String(error));
+        "動画内の場面を読み込めませんでした：" + (error.message || String(error));
     } finally {
       pending = false;
     }
   };
   return { panel, expand };
+}
+function makeLibraryVideoScenesPanel(item) {
+  return makeVideoStoryboardPanel(() => api.getLibraryVideoPreview(item.path),
+    item.fileName + " ／ 動画の場面一覧");
+}
+function makeArticleVideoScenesPanel(article) {
+  return makeVideoStoryboardPanel(() => api.getArticleVideoPreview(article.articlePath),
+    (article.programTitle || article.title || "放送") + " ／ 場面一覧");
 }
 
 function requireCaptureApi(method) {
@@ -2490,7 +2556,25 @@ function renderBroadcastArticles() {
       updated.textContent = "最終更新：" + formatLibraryDate(article.generatedAt);
       body.appendChild(updated);
     }
+    const articleStoryboard = article.articlePath && !articleIsLive &&
+      typeof api.getArticleVideoPreview === "function"
+      ? makeArticleVideoScenesPanel(article) : null;
+    if (articleStoryboard) {
+      const scenesButton = document.createElement("button");
+      scenesButton.type = "button";
+      scenesButton.className = "button button-outline button-small broadcast-article-scenes-button";
+      scenesButton.textContent = "動画内の場面一覧を見る";
+      scenesButton.setAttribute("aria-expanded", "false");
+      scenesButton.addEventListener("click", () => {
+        void articleStoryboard.expand();
+        scenesButton.setAttribute("aria-expanded", String(!articleStoryboard.panel.hidden));
+        scenesButton.textContent = articleStoryboard.panel.hidden
+          ? "動画内の場面一覧を見る" : "動画内の場面一覧を閉じる";
+      });
+      media.appendChild(scenesButton);
+    }
     card.append(masthead, hero, stats);
+    if (articleStoryboard) card.appendChild(articleStoryboard.panel);
     if (article.audioTranscript || article.audioAnalysis) {
       const audio = document.createElement("section");
       audio.className = "broadcast-article-audio";
