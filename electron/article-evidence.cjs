@@ -111,8 +111,20 @@ function summarizeEvidenceSources(evidence = {}) {
   const notes = [];
   if (!evidence.commentCount) notes.push("コメント記録がありません");
   if (!evidence.audioAvailable) notes.push("音声認識結果がありません");
-  if (!evidence.videoAvailable) notes.push("映像AI解析結果がありません");
-  if (evidence.compactRetry) notes.push("AI出力不完全のため、短縮本文に切り替えました");
+  if (!evidence.videoAvailable) {
+    if (evidence.visionModelMissing) {
+      notes.push("映像フレームは取得済みですが、画像対応Ollamaモデルが見つかりません。qwen2.5vl:3b等をインストールすると映像解析できます");
+    } else if (evidence.framesAvailable) {
+      notes.push("映像フレームは取得済みですが、画像AI解析が完了しませんでした。音声・コメントをもとに記事を保存しました");
+    } else {
+      notes.push("映像フレームをまだ取得できていません。映像取得が進んだ後に再生成してください");
+    }
+  }
+  if (evidence.compactRetry) {
+    notes.push(evidence.retainedVisionOnRetry
+      ? "長いAI出力を軽量化して映像解析を維持した記事を再生成しました"
+      : "長いAI出力を軽量化して音声・コメント中心の記事を再生成しました");
+  }
   return notes;
 }
 
