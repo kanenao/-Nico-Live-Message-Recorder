@@ -3657,16 +3657,13 @@ function setCompositionProgress(value, label) {
 }
 
 function parseJsonlFile(text) {
-  const records = [];
-  const lines = String(text || "").split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].trim();
-    if (!line) continue;
-    try {
-      records.push(JSON.parse(line));
-    } catch (error) {
-      throw new Error("コメントログの" + (index + 1) + "行目を読み取れません: " + error.message);
-    }
+  const parser = window.nicoCommentComposition?.parseCommentJsonlText;
+  if (typeof parser !== "function") {
+    throw new Error("コメントログ読み込みモジュールを読み込めませんでした。");
+  }
+  const records = parser(text);
+  if (!records.length) {
+    throw new Error("コメントログから有効なJSONレコードを読み取れませんでした。JSONL形式のコメントファイルを選択してください。");
   }
   return records;
 }
