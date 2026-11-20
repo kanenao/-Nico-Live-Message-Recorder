@@ -3786,8 +3786,37 @@ async function composeCommentVideo() {
   let cancelRequested = false;
   let writeError = null;
   let chunkQueue = Promise.resolve();
+  let pendingChunks = 0;
+  let playbackWatchdog = null;
+  let recorderStopTimer = null;
+  let recorderStopEntered = false;
+  let resolveStopFailure = null;
+  let lastPlaybackAdvanceAt = Date.now();
+  let lastPlaybackTime = 0;
+  const PLAYBACK_STALL_MS = 90000;
+  const stopRecorder = (failure = null) => {
+    if (failure) {
+      writeError = writeError || failure;
+      cancelRequested = true;
+    }
+    if (videoElement && !videoElement.paused) videoElement.pause();
+    if (recorder && recorder.state !== "inactive") {
+      try { recorder.stop(); }
+      catch (error) { writeError = writeError || error; }
+    }
+    if (!recorderStopEntered && !recorderStopTimer && resolveStopFailure) {
+      recorderStopTimer = window.setTimeout(() => {
+        if (!recorderStopEntered && resolveStopFailure) {
+          resolveStopFailure({ error: writeError ||
+            new Error("動画エンコーダーが停止通知を返しませんでした。保存を中断しました。") });
+        }
+      }, 25000);
+    }
+  };
 
   const cleanup = async () => {
+    if (playbackWatchdog) window.clearInterval(playbackWatchdog);
+    if (recorderStopTimer) window.clearTimeout(recorderStopTimer);
     if (animationFrame) cancelAnimationFrame(animationFrame);
     if (videoElement) {
       videoElement.pause();
@@ -3813,8 +3842,7 @@ async function composeCommentVideo() {
       Number(byId("compose-progress").value),
       "キャンセル処理中…"
     );
-    if (videoElement) videoElement.pause();
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    stopRecorder();
   };
 
   try {
@@ -3932,11 +3960,17 @@ async function composeCommentVideo() {
     let lastProgressUpdate = 0;
 
     const drawFrame = () => {
-      if (!videoElement || videoElement.readyState < 2) {
+      if (cancelRequested || !videoElement) return;
+      if (videoElement.ended) { stopRecorder(); return; }
+      if (videoElement.readyState < 2) {
         animationFrame = requestAnimationFrame(drawFrame);
         return;
       }
       const currentMs = videoElement.currentTime * 1000;
+      if (Number.isFinite(currentMs) && currentMs > lastPlaybackTime * 1000 + 50) {
+        lastPlaybackTime = videoElement.currentTime;
+        lastPlaybackAdvanceAt = Date.now();
+      }
       context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
       while (nextCommentIndex < schedule.length && schedule[nextCommentIndex].startMs <= currentMs) {
@@ -3949,7 +3983,7 @@ async function composeCommentVideo() {
       const now = Date.now();
       if (now - lastProgressUpdate >= 250) {
         const percent = Math.min(100, (currentMs / durationMs) * 100);
-        setCompositionProgress(percent, "合成中 " + Math.floor(percent) + "%");
+        setCompositionProgress(percent, "合成中 " + Math.floor(percent) + "%（動画を実時間で処理）");
         lastProgressUpdate = now;
       }
       if (!videoElement.paused && !videoElement.ended && !cancelRequested) {
@@ -3961,21 +3995,49 @@ async function composeCommentVideo() {
     if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
     recorder = new MediaRecorder(finalStream, recorderOptions);
     recorder.ondataavailable = (event) => {
-      if (!event.data || !event.data.size) return;
+      if (!event.data || !event.data.size || writeError) return;
+      // MediaRecorder can generate chunks much faster than a slow/full drive
+      // can persist them. Stop before unbounded Blobs exhaust renderer memory.
+      pendingChunks += 1;
+      if (pendingChunks > 32) {
+        pendingChunks -= 1;
+        stopRecorder(new Error(
+          "動画の保存待ちデータが増えすぎました。保存先ディスクの速度・空き容量を確認してください。"
+        ));
+        return;
+      }
       const chunk = event.data;
       chunkQueue = chunkQueue.then(async () => {
-        await api.writeComposeChunk(await chunk.arrayBuffer());
+        if (writeError) return;
+        const buffer = await chunk.arrayBuffer();
+        let timer;
+        try {
+          await Promise.race([
+            api.writeComposeChunk(buffer),
+            new Promise((_, reject) => {
+              timer = window.setTimeout(() => reject(new Error(
+                "動画データの保存が120秒以上応答しません。ディスク容量や書き込み権限を確認してください。"
+              )), 120000);
+            })
+          ]);
+        } finally {
+          if (timer) window.clearTimeout(timer);
+        }
       }).catch((error) => {
-        writeError = error;
-        cancelRequested = true;
-        if (recorder && recorder.state !== "inactive") recorder.stop();
-      });
+        stopRecorder(error);
+      }).finally(() => { pendingChunks = Math.max(0, pendingChunks - 1); });
     };
 
     const stopResultPromise = new Promise((resolve) => {
+      resolveStopFailure = resolve;
       recorder.onstop = async () => {
+        recorderStopEntered = true;
+        if (recorderStopTimer) window.clearTimeout(recorderStopTimer);
+        if (playbackWatchdog) window.clearInterval(playbackWatchdog);
         if (animationFrame) cancelAnimationFrame(animationFrame);
         cancelButton.disabled = true;
+        setCompositionProgress(Number(byId("compose-progress").value),
+          cancelRequested ? "中断処理中…" : "動画データを保存・確定中…");
         try {
           await chunkQueue;
           if (writeError) throw writeError;
@@ -3994,25 +4056,55 @@ async function composeCommentVideo() {
     });
 
     recorder.onerror = (event) => {
-      writeError = event.error || new Error("動画のエンコード中にエラーが発生しました。");
-      cancelRequested = true;
-      if (recorder && recorder.state !== "inactive") recorder.stop();
+      stopRecorder(event.error || new Error("動画のエンコード中にエラーが発生しました。"));
     };
-
-    videoElement.addEventListener("ended", () => {
-      if (recorder && recorder.state !== "inactive") recorder.stop();
-    }, { once: true });
+    videoElement.addEventListener("ended", () => stopRecorder(), { once: true });
+    videoElement.addEventListener("error", () => stopRecorder(
+      new Error("動画の再生中にエラーが発生しました。動画形式を確認してください。")), { once: true });
+    // Some damaged videos and GPU decoders never emit 'ended' and leave the
+    // MediaRecorder recording forever. Independently check advancing time.
+    playbackWatchdog = window.setInterval(() => {
+      if (cancelRequested || !recorder || recorder.state === "inactive") return;
+      const current = Number(videoElement.currentTime) || 0;
+      if (current > lastPlaybackTime + 0.05) {
+        lastPlaybackTime = current;
+        lastPlaybackAdvanceAt = Date.now();
+      }
+      if (videoElement.ended || current * 1000 >= durationMs - 150) {
+        stopRecorder();
+      } else if (window.nicoCommentComposition.isCompositionStalled(
+        lastPlaybackAdvanceAt, Date.now(), PLAYBACK_STALL_MS)) {
+        stopRecorder(new Error(
+          "動画の再生位置が90秒以上進みませんでした。デコード停止・動画破損・省電力制限の可能性があります。"
+        ));
+      }
+    }, 4000);
 
     recorder.start(1000);
     cancelButton.disabled = false;
-    await videoElement.play();
+    lastPlaybackAdvanceAt = Date.now();
+    // Starting playback can itself hang on unsupported hardware decoders.
+    let playTimer;
+    try {
+      await Promise.race([
+        videoElement.play(),
+        new Promise((_, reject) => {
+          playTimer = window.setTimeout(() => reject(new Error(
+            "動画の再生開始が30秒以上応答しませんでした。動画形式を確認してください。"
+          )), 30000);
+        })
+      ]);
+    } finally {
+      if (playTimer) window.clearTimeout(playTimer);
+    }
     drawFrame();
 
-    setCompositionProgress(0, "合成を開始しました");
+    setCompositionProgress(0, "合成中（動画全編を実時間で処理します）");
     const stopResult = await stopResultPromise;
-    outputStarted = false;
-
+    // Keep outputStarted true on errors so the catch block can close any
+    // Electron writer left open by a missing MediaRecorder stop event.
     if (stopResult.error) throw stopResult.error;
+    outputStarted = false;
     if (stopResult.cancelled) {
       setCompositionProgress(0, "生成をキャンセルしました");
       showToast("コメント付き動画の生成をキャンセルしました。");
@@ -4025,8 +4117,7 @@ async function composeCommentVideo() {
     }
   } catch (error) {
     if (recorder && recorder.state !== "inactive") {
-      cancelRequested = true;
-      recorder.stop();
+      stopRecorder(error);
     }
     if (outputStarted) {
       await chunkQueue.catch(() => {});

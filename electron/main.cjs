@@ -19,6 +19,7 @@ const { preserveLastGoodLiveArticle } = require("./article-evidence.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { parseVideoDuration, videoPreviewTimes, formatVideoTime } = require("./library-video-preview.cjs");
+const { isCompositionStalled } = require("../composition.js");
 const { getOrCreateVideoStoryboard, storyboardFrameCount } = require("./video-storyboard.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
@@ -3682,34 +3683,62 @@ function transcodeCompositionToMp4(inputPath, outputPath, quality, durationMs) {
     let stderr = "";
     let progressBuffer = "";
     let lastProgress = -1;
+    let lastOutputTime = -1;
+    let lastAdvanceAt = Date.now();
+    let lastNotificationAt = 0;
+    let settled = false;
+    const finish = (error, output) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(stallWatchdog);
+      if (error) reject(error);
+      else resolve(output);
+    };
+    // A suspended/blocked FFmpeg process previously left compose:finish
+    // pending indefinitely. Stop only after 180s with no actual encoding
+    // progress; a slow but advancing multi-hour video remains allowed.
+    const stallWatchdog = setInterval(() => {
+      if (!isCompositionStalled(lastAdvanceAt, Date.now(), 180000)) return;
+      const error = new Error("FFmpegのMP4変換が3分間進みませんでした。WebMで保存します。ディスク残量とCPU使用率を確認してください。");
+      try { child.kill("SIGKILL"); } catch (_) {}
+      finish(error);
+    }, 5000);
+    if (typeof stallWatchdog.unref === "function") stallWatchdog.unref();
     if (child.stderr) {
       child.stderr.on("data", (chunk) => {
         const value = chunk.toString("utf8");
         stderr = (stderr + value).slice(-2400);
-        progressBuffer += value;
+        progressBuffer = (progressBuffer + value).slice(-8192);
         const lines = progressBuffer.split(/\r?\n/);
         progressBuffer = lines.pop() || "";
         for (const line of lines) {
           const match = line.match(/^out_time_(?:ms|us)=(\d+)$/);
           if (!match) continue;
-          const percent = calculateTranscodeProgressPercent(match[1], durationMs);
-          if (percent <= lastProgress + 0.25) continue;
+          const outputTime = Number(match[1]);
+          if (outputTime > lastOutputTime) {
+            lastOutputTime = outputTime;
+            lastAdvanceAt = Date.now();
+          }
+          const percent = calculateTranscodeProgressPercent(outputTime, durationMs);
+          if (percent <= lastProgress + 0.25 && Date.now() - lastNotificationAt < 20000) continue;
           lastProgress = percent;
+          lastNotificationAt = Date.now();
           send("compose:status", {
             state: "progress",
             percent,
-            message: "MP4変換中 " + Math.floor(percent) + "%"
+            message: "MP4変換中 " + Math.floor(percent) + "%（FFmpeg動作中）"
           });
         }
       });
     }
-    child.once("error", (error) => reject(new Error("MP4変換を開始できません: " + error.message)));
+    child.once("error", (error) => finish(new Error("MP4変換を開始できません: " + error.message)));
     child.once("close", (code) => {
+      if (settled) return;
       if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
         send("compose:status", { state: "progress", percent: 100, message: "MP4変換中 100%" });
-        resolve(outputPath);
+        finish(null, outputPath);
       } else {
-        reject(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
+        finish(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
       }
     });
   });
@@ -3722,6 +3751,40 @@ function makeWebmFallbackPath(mp4Path) {
   return fs.existsSync(candidate)
     ? path.join(directory, stem + "_WebM_" + stamp() + ".webm")
     : candidate;
+}
+
+// End the composed WebM stream with a bounded wait. An I/O error or a
+// disconnected drive must not leave compose:finish pending forever.
+function finishCompositionWriter(writer, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    let completed = false;
+    let timer;
+    const clean = () => {
+      clearTimeout(timer);
+      writer.off("finish", onFinish);
+      writer.off("close", onClose);
+      writer.off("error", onError);
+    };
+    const settle = error => {
+      if (completed) return;
+      completed = true;
+      clean();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onFinish = () => settle();
+    const onClose = () => settle(new Error("動画ファイルの書き込みが完了する前に終了しました。"));
+    const onError = error => settle(error);
+    writer.once("finish", onFinish);
+    writer.once("close", onClose);
+    writer.once("error", onError);
+    timer = setTimeout(() => {
+      const error = new Error("動画ファイルの保存が120秒以上応答しませんでした。空き容量と保存先を確認してください。");
+      writer.destroy(error);
+      settle(error);
+    }, timeoutMs);
+    try { writer.end(); } catch (error) { settle(error); }
+  });
 }
 
 ipcMain.handle("compose:start", async (_event, options = {}) => {
@@ -3772,18 +3835,45 @@ ipcMain.handle("compose:start", async (_event, options = {}) => {
   composeOutputFormat = format;
   composeOutputQuality = quality;
   composeWriter = fs.createWriteStream(composeFilePath, { flags: format === "mp4" ? "wx" : "w" });
-  await new Promise((resolve, reject) => {
-    composeWriter.once("open", resolve);
-    composeWriter.once("error", reject);
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      composeWriter.once("open", resolve);
+      composeWriter.once("error", reject);
+    });
+  } catch (error) {
+    composeWriter = null;
+    composeFilePath = "";
+    composeFinalFilePath = "";
+    composeOutputDurationMs = 0;
+    throw error;
+  }
   composeWriter.on("error", (error) => send("app:error", "合成動画の保存に失敗しました: " + error.message));
   return { path: composeFilePath, outputPath: finalPath, format, quality };
 });
 
 ipcMain.handle("compose:chunk", async (_event, arrayBuffer) => {
   if (!composeWriter || !arrayBuffer) throw new Error("合成動画ファイルが開かれていません。");
+  const writer = composeWriter;
   await new Promise((resolve, reject) => {
-    composeWriter.write(Buffer.from(arrayBuffer), (error) => error ? reject(error) : resolve());
+    let done = false;
+    let timer;
+    const onError = error => complete(error);
+    const complete = error => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      writer.off("error", onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    writer.once("error", onError);
+    timer = setTimeout(() => {
+      const error = new Error("合成動画の書き込みが120秒以上進みませんでした。保存先を確認してください。");
+      writer.destroy(error);
+      complete(error);
+    }, 120000);
+    try { writer.write(Buffer.from(arrayBuffer), complete); }
+    catch (error) { complete(error); }
   });
   return { written: true };
 });
@@ -3801,10 +3891,11 @@ ipcMain.handle("compose:finish", async () => {
   composeFilePath = "";
 
   composeFinalizePromise = (async () => {
-    await new Promise((resolve, reject) => {
-      writer.once("error", reject);
-      writer.end(resolve);
-    });
+    await finishCompositionWriter(writer);
+    const written = await fs.promises.stat(savedPath);
+    if (!written.isFile() || written.size <= 0) {
+      throw new Error("合成動画の保存結果が空です。ディスクの容量と動画エンコーダーを確認してください。");
+    }
     if (format !== "mp4") {
       composeFinalFilePath = "";
       composeOutputFormat = "webm";
@@ -3857,7 +3948,10 @@ ipcMain.handle("compose:cancel", async () => {
   composeOutputFormat = "webm";
   composeOutputQuality = "standard";
   composeOutputDurationMs = 0;
-  if (writer) await new Promise((resolve) => writer.end(resolve));
+  if (writer) await finishCompositionWriter(writer, 45000).catch(error => {
+    console.warn("合成動画のキャンセル中に書き込みを停止しました:", error.message);
+    writer.destroy();
+  });
   if (savedPath && fs.existsSync(savedPath)) await fs.promises.unlink(savedPath).catch(() => {});
   return { cancelled: true };
 });
