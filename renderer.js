@@ -3786,6 +3786,7 @@ async function composeCommentVideo() {
   let cancelRequested = false;
   let writeError = null;
   let chunkQueue = Promise.resolve();
+  let pendingChunks = 0;
   let playbackWatchdog = null;
   let recorderStopTimer = null;
   let recorderStopEntered = false;
@@ -3994,9 +3995,20 @@ async function composeCommentVideo() {
     if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
     recorder = new MediaRecorder(finalStream, recorderOptions);
     recorder.ondataavailable = (event) => {
-      if (!event.data || !event.data.size) return;
+      if (!event.data || !event.data.size || writeError) return;
+      // MediaRecorder can generate chunks much faster than a slow/full drive
+      // can persist them. Stop before unbounded Blobs exhaust renderer memory.
+      pendingChunks += 1;
+      if (pendingChunks > 32) {
+        pendingChunks -= 1;
+        stopRecorder(new Error(
+          "動画の保存待ちデータが増えすぎました。保存先ディスクの速度・空き容量を確認してください。"
+        ));
+        return;
+      }
       const chunk = event.data;
       chunkQueue = chunkQueue.then(async () => {
+        if (writeError) return;
         const buffer = await chunk.arrayBuffer();
         let timer;
         try {
@@ -4013,7 +4025,7 @@ async function composeCommentVideo() {
         }
       }).catch((error) => {
         stopRecorder(error);
-      });
+      }).finally(() => { pendingChunks = Math.max(0, pendingChunks - 1); });
     };
 
     const stopResultPromise = new Promise((resolve) => {
