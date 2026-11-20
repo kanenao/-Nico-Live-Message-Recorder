@@ -12,7 +12,7 @@ function videoPreviewTimes(durationSeconds, maxCount = 5) {
   const duration = Number(durationSeconds);
   if (!Number.isFinite(duration) || duration <= 0) return [0];
   // For a very short clip a large strip of almost identical frames is misleading.
-  const count = Math.max(1, Math.min(5, Math.floor(Number(maxCount) || 5),
+  const count = Math.max(1, Math.min(30, Math.floor(Number(maxCount) || 5),
     Math.floor(duration / 4) || 1));
   const times = [];
   for (let i = 0; i < count; i++) {
