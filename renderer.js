@@ -4101,9 +4101,10 @@ async function composeCommentVideo() {
 
     setCompositionProgress(0, "合成中（動画全編を実時間で処理します）");
     const stopResult = await stopResultPromise;
-    outputStarted = false;
-
+    // Keep outputStarted true on errors so the catch block can close any
+    // Electron writer left open by a missing MediaRecorder stop event.
     if (stopResult.error) throw stopResult.error;
+    outputStarted = false;
     if (stopResult.cancelled) {
       setCompositionProgress(0, "生成をキャンセルしました");
       showToast("コメント付き動画の生成をキャンセルしました。");
