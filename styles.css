@@ -1469,3 +1469,58 @@ button, .button {
   .video-storyboard-panel { padding:9px; }
   .video-storyboard-panel .video-storyboard-grid { grid-template-columns:repeat(3,minmax(0,1fr)); max-height:310px; }
 }
+
+/* Dedicated version page: larger hierarchy, guidance and compact change history. */
+.version-update-page { padding: 24px; gap: 16px; min-width: 0; }
+.version-update-page .panel-heading h2 { font-size: 20px; margin-bottom: 8px; }
+.version-update-page .panel-heading p { color: #b1bed8; font-size: 12px; line-height: 1.65; }
+.version-update-page .update-state-badge { font-size: 11px; font-weight: 750; padding: 7px 12px; }
+.version-update-summary { gap: 14px; }
+.version-update-summary .settings-version-row { min-height: 104px; min-width: 0; padding: 17px 19px; border-radius: 12px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; font-size: 12px; }
+.version-update-summary .settings-version-row strong { font-size: clamp(15px,1.7vw,22px); line-height: 1.4; }
+.version-update-summary .settings-version-row small { color: #8fa0bf; font-size: 11px; }
+.update-status-overview { display: flex; gap: 14px; align-items: flex-start; padding: 19px 20px; border: 1px solid rgba(155,175,220,.23); border-radius: 12px; background: rgba(130,142,190,.07); }
+.update-status-symbol { flex: 0 0 38px; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; font-size: 21px; font-weight: 800; color: #c6bbff; background: rgba(146,120,255,.18); }
+.update-status-overview strong { display: block; color: #f1f5ff; font-size: 16px; line-height: 1.45; }
+.update-status-overview p { margin: 7px 0 0; color: #bac7df; font-size: 12px; line-height: 1.7; }
+.update-status-overview[data-state="not-available"], .update-status-overview[data-state="downloaded"] { border-color: rgba(92,216,164,.28); background: rgba(53,160,116,.075); }
+.update-status-overview[data-state="not-available"] .update-status-symbol, .update-status-overview[data-state="downloaded"] .update-status-symbol { color: #81e9bb; background: rgba(53,160,116,.17); }
+.update-status-overview[data-state="error"], .update-status-overview[data-state="unsupported"] { border-color: rgba(240,154,165,.3); background: rgba(240,154,165,.065); }
+.update-status-overview[data-state="error"] .update-status-symbol, .update-status-overview[data-state="unsupported"] .update-status-symbol { color: #ffb0b7; background: rgba(240,154,165,.14); }
+.version-update-page .app-update-status { font-size: 12px; padding: 13px 15px; }
+.update-checked-at { color: #8fa0bf; font-size: 11px; }
+.update-progress-label { margin: 0; color: #c3d3ef; font-size: 12px; }
+.version-update-page .app-update-progress { height: 13px; }
+.version-update-page .app-update-actions { gap: 10px; margin: 3px 0; }
+.version-update-page .app-update-actions .button { white-space: normal; font-size: 12px; padding: 10px 15px; }
+.version-update-page > .settings-help { margin: 0; color: #9eacc9; font-size: 11px; line-height: 1.8; }
+.release-history-section { gap: 14px; padding-top: 22px; }
+.release-history-heading h3 { font-size: 16px; }
+.release-history-heading p { font-size: 12px; }
+.release-history-tools { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; }
+.release-history-tools label { flex: 1 1 360px; max-width: 540px; margin: 0; font-size: 11px; }
+.release-history-tools input { display: block; margin-top: 7px; font-size: 12px; }
+.release-history-count { flex: 0 0 auto; padding-bottom: 10px; color: #9eb0ce; font-size: 11px; }
+.release-history-item { padding: 0; overflow: hidden; border-radius: 11px; }
+.release-history-item-heading { display: flex; align-items: center; gap: 12px; padding: 16px 18px; cursor: pointer; list-style: none; }
+.release-history-item-heading::-webkit-details-marker { display: none; }
+.release-history-item-heading::before { content: "›"; color: #a899ff; font-size: 21px; transition: transform .18s ease; }
+.release-history-item[open] .release-history-item-heading::before { transform: rotate(90deg); }
+.release-history-item-heading:focus-visible { outline: 2px solid #a797ff; outline-offset: -2px; }
+.release-history-item-heading:hover { background: rgba(146,120,255,.08); }
+.release-history-item-heading strong { font-size: 13px; }
+.release-history-note-count { margin-left: auto; color: #8fa0bf; font-size: 11px; white-space: nowrap; }
+.release-history-item ul { margin: 0; padding: 4px 24px 17px 52px; border-top: 1px solid rgba(155,175,220,.09); }
+.release-history-item li { color: #c1cde2; font-size: 12px; line-height: 1.75; }
+.release-history-item li strong { color: #eaf0ff; }
+.release-history-item li code { padding: 1px 4px; border-radius: 4px; color: #c9bfff; background: rgba(146,120,255,.12); font-size: .95em; overflow-wrap: anywhere; }
+.release-history-more { width: 100%; padding: 13px; }
+.version-update-page [hidden] { display: none !important; }
+@media (max-width: 720px) {
+  .version-update-page { padding: 16px; }
+  .version-update-summary .settings-version-row strong { font-size: 16px; }
+  .release-history-tools { align-items: stretch; flex-direction: column; }
+  .release-history-tools label { flex: 1 1 auto; max-width: none; width: 100%; }
+  .release-history-count { padding-bottom: 0; }
+  .release-history-item-heading { flex-wrap: wrap; }
+}

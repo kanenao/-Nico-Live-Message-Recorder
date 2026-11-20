@@ -18,7 +18,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.8.1-alpha.130</span>
+        <span class="version" id="version">v0.8.2-alpha.131</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -674,38 +674,56 @@
           </div>
           <div class="version-update-summary">
             <div class="settings-version-row">
-              <span>現在のバージョン</span>
-              <strong id="app-current-version">v0.8.1-alpha.130</strong>
+              <span>インストール中のバージョン</span>
+              <strong id="app-current-version">v0.8.2-alpha.131</strong>
+              <small>このPCのアプリ</small>
             </div>
-            <div class="settings-version-row settings-latest-version" id="settings-latest-version-row" hidden>
-              <span>新しいバージョン</span>
-              <strong id="settings-latest-version">—</strong>
+            <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
+              <span>GitHubで確認した公開版</span>
+              <strong id="settings-latest-version">未確認</strong>
+              <small>更新確認後に表示</small>
             </div>
           </div>
-          <div class="app-update-status" id="settings-update-status" role="status">起動時にGitHub Releasesから新しいバージョンを確認します。</div>
+          <div class="update-status-overview" id="settings-update-overview" data-state="idle">
+            <span class="update-status-symbol" aria-hidden="true">↻</span>
+            <div>
+              <strong id="settings-update-headline">更新状況はまだ未確認です</strong>
+              <p id="settings-update-next-action">「今すぐ更新を確認」を押すと新しいバージョンを探します。</p>
+            </div>
+          </div>
+          <div class="app-update-status" id="settings-update-status" role="status" aria-live="polite">起動時にGitHub Releasesから新しいバージョンを確認します。</div>
+          <div class="update-checked-at" id="settings-update-checked-at">前回の更新確認：未確認</div>
+          <label class="update-progress-label" id="settings-update-progress-label" for="settings-update-progress" hidden>ダウンロードの進捗</label>
           <progress class="app-update-progress" id="settings-update-progress" max="100" value="0" hidden></progress>
           <div class="app-update-actions">
             <button class="button button-outline button-small" id="settings-check-update-button" type="button">今すぐ更新を確認</button>
             <button class="button button-secondary button-small" id="settings-retry-update-download-button" type="button" hidden>ダウンロードを再試行</button>
             <button class="button button-primary button-small" id="settings-install-update-button" type="button" hidden>再起動して更新</button>
-            <button class="button button-quiet button-small" id="open-github-releases-button" type="button">GitHub Releasesでダウンロード</button>
+            <button class="button button-quiet button-small" id="open-github-releases-button" type="button">GitHubで手動ダウンロード</button>
           </div>
           <p class="settings-help">起動時と6時間ごとに新しいバージョンを自動確認します。更新が見つかるとバックグラウンドでダウンロードし、通常終了時に適用します。「再起動して更新」からすぐに適用することもできます。</p>
           <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>
 
           <div class="release-history-section">
             <div class="release-history-heading">
-              <div><h3>バージョン更新履歴</h3><p>各バージョンで追加・変更した機能や修正内容を掲載しています。</p></div>
+              <div><h3>バージョン更新履歴</h3><p>最新5件を表示。項目を押して変更点を展開できます。</p></div>
               <span class="release-history-source">CHANGELOG</span>
+            </div>
+            <div class="release-history-tools">
+              <label for="release-history-search">バージョン・更新内容を検索
+                <input type="search" id="release-history-search" placeholder="例：alpha.130、録画、コメント" autocomplete="off">
+              </label>
+              <span class="release-history-count" id="release-history-count" aria-live="polite">履歴を読み込んでいます…</span>
             </div>
             <div class="release-history-list" id="release-history-list" aria-live="polite">
               <div class="release-history-empty">更新履歴を読み込んでいます…</div>
             </div>
+            <button class="button button-outline release-history-more" id="release-history-more-button" type="button" hidden>過去の更新履歴も表示</button>
           </div>
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.8.1-alpha.130</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v0.8.2-alpha.131</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

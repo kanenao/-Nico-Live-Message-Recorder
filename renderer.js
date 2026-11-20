@@ -2804,6 +2804,9 @@ function renderStreamlinkUpdateState(payload) {
   }
 }
 
+let releaseHistoryEntries = [];
+let releaseHistoryExpanded = false;
+
 function parseReleaseHistory(markdown) {
   const entries = [];
   let current = null;
@@ -2819,45 +2822,80 @@ function parseReleaseHistory(markdown) {
   }
   return entries;
 }
-function renderReleaseHistory(markdown) {
+
+function appendFormattedReleaseNote(parent, note) {
+  // Preserve changelog as safe text rather than injecting HTML.
+  for (const text of String(note).split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
+    if (!text) continue;
+    const bold = text.startsWith("**") && text.endsWith("**");
+    const code = text.startsWith("`") && text.endsWith("`");
+    if (bold || code) {
+      const el = document.createElement(bold ? "strong" : "code");
+      el.textContent = text.slice(bold ? 2 : 1, bold ? -2 : -1);
+      parent.appendChild(el);
+    } else parent.appendChild(document.createTextNode(text));
+  }
+}
+
+function renderVisibleReleaseHistory() {
   const list = byId("release-history-list");
-  if (!list) return;
+  const count = byId("release-history-count");
+  const more = byId("release-history-more-button");
+  if (!list || !count || !more) return;
+  const query = byId("release-history-search").value.trim().toLocaleLowerCase();
+  const matches = releaseHistoryEntries.filter(entry =>
+    (entry.title + " " + entry.notes.join(" ")).toLocaleLowerCase().includes(query)
+  );
+  const entries = query || releaseHistoryExpanded ? matches : matches.slice(0, 5);
+  const current = byId("app-current-version").textContent.replace(/^v/, "").trim();
   list.replaceChildren();
-  const entries = parseReleaseHistory(markdown);
+  for (const [index, entry] of entries.entries()) {
+    const details = document.createElement("details");
+    details.className = "release-history-item";
+    details.open = Boolean(query) || index === 0;
+    const summary = document.createElement("summary");
+    summary.className = "release-history-item-heading";
+    const title = document.createElement("strong");
+    title.textContent = entry.title;
+    summary.appendChild(title);
+    if (entry.title.replace(/^v/, "") === current) {
+      const currentBadge = document.createElement("span");
+      currentBadge.className = "release-history-current";
+      currentBadge.textContent = "使用中";
+      summary.appendChild(currentBadge);
+    }
+    const noteCount = document.createElement("span");
+    noteCount.className = "release-history-note-count";
+    noteCount.textContent = entry.notes.length + "件の変更";
+    summary.appendChild(noteCount);
+    details.appendChild(summary);
+    if (entry.notes.length) {
+      const ul = document.createElement("ul");
+      for (const note of entry.notes) {
+        const li = document.createElement("li");
+        appendFormattedReleaseNote(li, note);
+        ul.appendChild(li);
+      }
+      details.appendChild(ul);
+    }
+    list.appendChild(details);
+  }
   if (!entries.length) {
     const empty = document.createElement("div");
     empty.className = "release-history-empty";
-    empty.textContent = "更新履歴を読み込めませんでした。アプリを再起動して再度お試しください。";
+    empty.textContent = releaseHistoryEntries.length ? "一致する更新履歴がありません。検索語を変えてください。" : "更新履歴を読み込めませんでした。アプリを再起動して再度お試しください。";
     list.appendChild(empty);
-    return;
   }
-  const currentVersion = byId("app-current-version").textContent.replace(/^v/, "").trim();
-  for (const entry of entries) {
-    const article = document.createElement("article");
-    article.className = "release-history-item";
-    const heading = document.createElement("div");
-    heading.className = "release-history-item-heading";
-    const title = document.createElement("strong");
-    title.textContent = entry.title;
-    heading.appendChild(title);
-    if (entry.title === currentVersion || entry.title === "v" + currentVersion) {
-      const current = document.createElement("span");
-      current.className = "release-history-current";
-      current.textContent = "現在のバージョン";
-      heading.appendChild(current);
-    }
-    article.appendChild(heading);
-    if (entry.notes.length) {
-      const listItems = document.createElement("ul");
-      for (const note of entry.notes) {
-        const item = document.createElement("li");
-        item.textContent = note;
-        listItems.appendChild(item);
-      }
-      article.appendChild(listItems);
-    }
-    list.appendChild(article);
-  }
+  count.textContent = query ? matches.length + "件が見つかりました" : entries.length + " / " + releaseHistoryEntries.length + "件を表示";
+  more.hidden = Boolean(query) || releaseHistoryEntries.length <= 5;
+  more.textContent = releaseHistoryExpanded ? "最新5件だけ表示" :
+    "過去の更新履歴も表示（残り" + Math.max(0, releaseHistoryEntries.length - 5) + "件）";
+}
+
+function renderReleaseHistory(markdown) {
+  releaseHistoryEntries = parseReleaseHistory(markdown);
+  releaseHistoryExpanded = false;
+  renderVisibleReleaseHistory();
 }
 
 async function loadReleaseHistory() {
@@ -2871,6 +2909,20 @@ async function loadReleaseHistory() {
     empty.className = "release-history-empty";
     empty.textContent = "更新履歴の読み込みに失敗しました: " + (error.message || "不明なエラー");
     list.appendChild(empty);
+  }
+}
+
+function getUpdateStatusGuide(state) {
+  switch (state) {
+    case "checking": return { title: "最新版を確認中", action: "GitHub Releasesへの接続結果を確認しています。" };
+    case "available": return { title: "新しいバージョンがあります", action: "ダウンロード完了後に「再起動して更新」を選べます。" };
+    case "retrying": return { title: "ダウンロードを再試行中", action: "失敗が続く場合は手動ダウンロードも利用できます。" };
+    case "progress": return { title: "更新ファイルをダウンロード中", action: "下の進捗バーでダウンロード状況を確認できます。" };
+    case "downloaded": return { title: "更新の準備ができました", action: "「再起動して更新」を押すか、アプリを通常終了すると適用されます。" };
+    case "not-available": return { title: "現在のバージョンは最新です", action: "いま更新する必要はありません。次回も自動で確認します。" };
+    case "unsupported": return { title: "この配布形式では自動更新できません", action: "ZIP版はGitHub Releasesから新版をダウンロードしてください。" };
+    case "error": return { title: "更新確認またはダウンロードに失敗しました", action: "「今すぐ更新を確認」で再試行するか、手動でダウンロードしてください。" };
+    default: return { title: "更新状況はまだ未確認です", action: "「今すぐ更新を確認」を押すと新しいバージョンを探します。" };
   }
 }
 
@@ -2891,6 +2943,14 @@ function renderUpdateState(payload) {
   const settingsBadge = byId("settings-update-badge");
   const latestVersionRow = byId("settings-latest-version-row");
   const latestVersionLabel = byId("settings-latest-version");
+  const guide = getUpdateStatusGuide(payload.state);
+  byId("settings-update-overview").dataset.state = payload.state || "idle";
+  byId("settings-update-headline").textContent = guide.title;
+  byId("settings-update-next-action").textContent = guide.action;
+  if (["not-available", "available", "error"].includes(payload.state)) {
+    const checked = new Date().toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    byId("settings-update-checked-at").textContent = "前回の更新確認：" + checked + (payload.state === "error" ? "（失敗）" : "");
+  }
   panel.hidden = false;
   progress.hidden = true;
   installButton.hidden = true;
@@ -2947,6 +3007,9 @@ function renderUpdateState(payload) {
   settingsStatus.textContent = status.textContent;
   settingsProgress.hidden = progress.hidden;
   settingsProgress.value = progress.value;
+  const progressLabel = byId("settings-update-progress-label");
+  progressLabel.hidden = progress.hidden;
+  if (!progress.hidden) progressLabel.textContent = "ダウンロードの進捗：" + Number(progress.value).toFixed(1) + "%";
   settingsInstallButton.hidden = installButton.hidden;
   settingsInstallButton.disabled = installButton.disabled;
   settingsRetryButton.hidden = retryButton.hidden;
@@ -2966,10 +3029,13 @@ function renderUpdateState(payload) {
   settingsBadge.textContent = badgeLabels[payload.state] || "状態確認中";
   settingsBadge.dataset.state = payload.state || "idle";
 
-  const latestVersion = payload.version || latestVersionLabel.textContent.replace(/^v/, "");
-  const hasNewVersion = ["available", "progress", "downloaded"].includes(payload.state) && Boolean(latestVersion);
-  latestVersionRow.hidden = !hasNewVersion;
-  latestVersionLabel.textContent = hasNewVersion ? "v" + latestVersion : "—";
+  latestVersionRow.hidden = false;
+  if (payload.version) latestVersionLabel.dataset.version = String(payload.version).replace(/^v/, "");
+  const knownVersion = latestVersionLabel.dataset.version || "";
+  if (payload.state === "checking") latestVersionLabel.textContent = "確認中…";
+  else if (payload.state === "unsupported") latestVersionLabel.textContent = "自動確認できません";
+  else if (payload.state === "error") latestVersionLabel.textContent = knownVersion ? "v" + knownVersion + "（前回取得）" : "確認できません";
+  else latestVersionLabel.textContent = knownVersion ? "v" + knownVersion : "情報を取得中";
 }
 
 async function checkAppUpdates() {
@@ -3227,6 +3293,11 @@ byId("open-github-releases-button").addEventListener("click", async () => {
   }
 });
 byId("settings-install-update-button").addEventListener("click", installAppUpdate);
+byId("release-history-search").addEventListener("input", renderVisibleReleaseHistory);
+byId("release-history-more-button").addEventListener("click", () => {
+  releaseHistoryExpanded = !releaseHistoryExpanded;
+  renderVisibleReleaseHistory();
+});
 byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
@@ -3305,8 +3376,6 @@ byId("settings-open-updates-button").addEventListener("click", () => {
   closeSettings();
   setActivePage("updates");
 });
-byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
-byId("settings-install-update-button").addEventListener("click", installAppUpdate);
 setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
@@ -3453,6 +3522,7 @@ liveInput.addEventListener("keydown", (event) => {
     byId("build-version").textContent = version;
     byId("footer-version").textContent = text;
     byId("app-current-version").textContent = text;
+    if (releaseHistoryEntries.length) renderVisibleReleaseHistory();
   } catch (_) {}
   await loadReleaseHistory();
   await refreshAuthStatus();
