@@ -12,14 +12,14 @@ const composition = require("../composition.js");
 
 test("video composer monitors video currentTime and prevents endless loading or decoder stalls", () => {
   assert.equal(typeof composition.isCompositionStalled, "function");
-  assert.match(renderer, /const PLAYBACK_STALL_MS = 90000/);
+  assert.match(renderer, /const PLAYBACK_STALL_MS = 45000/);
   assert.match(renderer, /playbackWatchdog = window\.setInterval\(/);
   assert.match(renderer, /nicoCommentComposition\.isCompositionStalled\(/);
   assert.match(renderer, /videoElement\.currentTime/);
   assert.match(renderer, /lastPlaybackAdvanceAt = Date\.now\(\)/);
   assert.match(renderer, /videoElement\.ended \|\| current \* 1000 >= durationMs - 150/);
   assert.match(renderer, /videoElement\.addEventListener\("error"/);
-  assert.match(renderer, /動画の再生位置が90秒以上進みませんでした/);
+  assert.match(renderer, /動画の再生位置が45秒以上進みませんでした/);
   assert.match(renderer, /動画の再生開始が30秒以上応答しませんでした/);
   assert.match(renderer, /clearInterval\(playbackWatchdog\)/);
 });
@@ -33,9 +33,9 @@ test("MediaRecorder stop, chunk IPC and cleanup all have bounded waits and error
   assert.match(renderer, /保存待ちデータが増えすぎました/);
   assert.match(renderer, /chunkQueue = chunkQueue\.then/);
   assert.match(renderer, /Promise\.race\(\[/);
-  assert.match(renderer, /動画データの保存が120秒以上応答しません/);
+  assert.match(renderer, /withDeadline\(\(\) => api\.writeComposeChunk\(buffer\), SAVE_STALL_MS/);
   assert.match(renderer, /stopRecorder\(error\)/);
-  assert.match(renderer, /await api\.cancelCompose\(\)\.catch/);
+  assert.match(renderer, /withDeadline\(\(\) => api\.cancelCompose\(\), SAVE_STALL_MS/);
   const completion = renderer.slice(renderer.indexOf("const stopResult = await stopResultPromise;"));
   assert.ok(completion.indexOf("if (stopResult.error) throw stopResult.error;") >= 0);
   assert.ok(completion.indexOf("if (stopResult.error) throw stopResult.error;") <
