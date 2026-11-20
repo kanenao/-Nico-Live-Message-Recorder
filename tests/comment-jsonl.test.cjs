@@ -97,3 +97,49 @@ test("recovers comments containing braces, escaped quotes and line breaks in mix
   assert.equal(article.commentCount, 2);
   assert.equal(article.uniqueCommenters, 2);
 });
+
+
+test("composition preview and renderer use the same JSONL decoder as ASS and article generation", () => {
+  const composition = require("../composition.js");
+  assert.equal(composition.parseCommentJsonlText, parseCommentJsonlText);
+  const renderer = fs.readFileSync(path.join(__dirname, "../renderer.js"), "utf8");
+  assert.match(renderer, /window\.nicoCommentComposition\?\.parseCommentJsonlText/);
+  assert.doesNotMatch(renderer, /records\.push\(JSON\.parse\(line\)\)/);
+  assert.ok(renderer.includes("const records = parseJsonlFile(await commentsFile.text());"));
+  assert.ok(renderer.includes("const records = parseJsonlFile(jsonl);"));
+});
+
+test("recovers legacy records concatenated on the first physical line for comment-video generation", () => {
+  const composition = require("../composition.js");
+  const originalRecords = [
+    { type: "videoStart", videoStartedAt: "2026-11-20T12:00:00Z",
+      metadata: "x".repeat(250) },
+    { type: "comment", timestamp: "2026-11-20T12:00:01Z",
+      content: '最初 { の括弧と "引用符" があるコメント', mail: ["ue", "red"] },
+    { type: "comment", timestamp: "2026-11-20T12:00:02Z",
+      content: "2件目のコメント" }
+  ];
+  // Multiple JSON objects begin on the first line, rather than each
+  // record being followed by a newline. Older recording builds did this.
+  const legacyJsonl = "\uFEFF" + originalRecords.map(row => JSON.stringify(row)).join("") +
+    "\r\n{\"type\":\"comment\",\"content\":\"中断した書き込み\"";
+  const restored = composition.parseCommentJsonlText(legacyJsonl);
+  assert.deepEqual(restored, originalRecords);
+  assert.deepEqual(parseCommentJsonlText(legacyJsonl), originalRecords);
+  const timeline = composition.prepareCommentTimeline(restored, 5000);
+  assert.equal(timeline.comments.length, 2);
+  assert.equal(timeline.comments[0].timeMs, 1000);
+  assert.equal(timeline.comments[1].timeMs, 2000);
+  assert.equal(timeline.comments[0].text, originalRecords[1].content);
+  assert.equal(timeline.comments[0].mail, "ue red");
+});
+
+test("recovers complete objects after a malformed line without modifying the source log", () => {
+  const composition = require("../composition.js");
+  const valid = { type: "comment", content: '次のコメントに { } と "引用符"', timestamp: "2026-11-20T12:00:03Z" };
+  const raw = '{"type":"comment","content":"途中で切れた"\n' + JSON.stringify(valid) +
+    "\r\n{\"type\":\"comment\",\"content\":\"未完成\"";
+  const recovered = composition.parseCommentJsonlText(raw);
+  assert.deepEqual(recovered, [valid]);
+  assert.equal(raw.includes('途中で切れた'), true, "only parsing: original contents stay untouched");
+});
