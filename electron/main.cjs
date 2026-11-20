@@ -629,7 +629,12 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
     const selectedImages = visionModel ? (options.images || []) : [];
     const model = selectedImages.length ? visionModel.name : (configuredInstalled ? configuredInstalled.name : configuredModel);
     if (!status.models.some(item => item.name === model || item.name.startsWith(model + ":"))) throw new Error("指定モデルが未インストールです: " + model);
-    const result = await generateArticleWithOllama({ baseUrl: aiSettings.baseUrl, model, records, context: articleContext, images: selectedImages, audioTranscript: options.audioTranscript || "" });
+    const result = await generateArticleWithOllama({
+      baseUrl: aiSettings.baseUrl, model, records, context: articleContext,
+      images: selectedImages, audioTranscript: options.audioTranscript || "",
+      availableFrameCount: Array.isArray(options.images) ? options.images.length : 0,
+      visionModelMissing: Boolean(options.images && options.images.length && !visionModel)
+    });
     article.videoAiAnalyzed = result.usedImages === true;
     article.aiGenerationStatus = result.compactRetry ? "recovered" : "complete";
     article.title = result.title;
@@ -1234,6 +1239,15 @@ async function refreshLiveBroadcastArticle(options = {}) {
     if (commentWriter !== writer || commentFilePath !== filePath || currentLiveId !== liveId) return null;
     if (liveArticleSessionActive) {
       send("articles:live-state", { state: "generating", liveId, frameCount: liveArticleFrames.length });
+    }
+    // The first live frame may already exist but is normally withheld until
+    // the next JPEG is written. Try that one before the first article when
+    // no previous stable frames are available.
+    if (liveArticleVideoFrameDirectory && liveArticleFrames.length === 0) {
+      await collectLiveArticleStreamFrames(true).catch(error => {
+        send("articles:live-state", { state: "video-warning", liveId,
+          message: "初回の映像フレーム取得に失敗しました: " + (error.message || String(error)) });
+      });
     }
     const article = await createAndSaveBroadcastArticle(filePath, context, {
       force: liveArticleSessionActive || Boolean(options.finalize),
