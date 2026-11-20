@@ -481,7 +481,7 @@ test("MP4 comment video conversion reports progress and uses a unique intermedia
   assert.ok(main.includes("createMp4IntermediatePath(finalPath, randomUUID())"));
   assert.ok(main.includes('flags: format === "mp4" ? "wx" : "w"'));
   assert.ok(!main.includes("unlink(workingPath)"));
-  assert.ok(main.includes("calculateTranscodeProgressPercent(match[1], durationMs)"));
+  assert.ok(main.includes("calculateTranscodeProgressPercent(outputTime, durationMs)"));
   assert.ok(main.includes('state: "progress"'));
   assert.ok(renderer.includes("durationMs"));
   assert.ok(renderer.includes('payload.state === "progress" ? Number(payload.percent)'));
