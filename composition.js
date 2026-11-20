@@ -63,6 +63,15 @@
     return records;
   }
 
+  // Used by the renderer playback monitor and the FFmpeg conversion monitor.
+  // Use real elapsed time rather than a percentage: a slow, advancing video
+  // must never be mistaken for a hung conversion.
+  function isCompositionStalled(lastAdvanceAtMs, nowMs, timeoutMs = 90000) {
+    return Number.isFinite(lastAdvanceAtMs) && Number.isFinite(nowMs) &&
+      Number.isFinite(timeoutMs) && timeoutMs > 0 &&
+      nowMs - lastAdvanceAtMs >= timeoutMs;
+  }
+
   function timestampMs(value) {
     if (typeof value === "number" && Number.isFinite(value)) {
       return value < 1000000000000 ? value * 1000 : value;
@@ -212,5 +221,5 @@
       .trim();
   }
 
-  return { parseCommentJsonlText, timestampMs, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
+  return { parseCommentJsonlText, timestampMs, isCompositionStalled, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
 });
