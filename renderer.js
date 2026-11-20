@@ -3065,6 +3065,7 @@ try {
     }
   }
   if (channel === "compose:status" && payload) {
+    lastCompositionBackendStatusAt = Date.now();
     const progress = payload.state === "converting" ? 0 :
       payload.state === "progress" ? Number(payload.percent) || 0 :
       payload.state === "complete" ? 100 : Number(byId("compose-progress").value);
@@ -3733,6 +3734,7 @@ function scheduleComposePreviewRefresh() {
   scheduleComposePreviewRefresh.timer = window.setTimeout(() => { void refreshComposePreview(); }, 120);
 }
 
+let lastCompositionBackendStatusAt = 0;
 function setCompositionProgress(value, label) {
   const progress = byId("compose-progress");
   if (progress) progress.value = Math.max(0, Math.min(100, Number(value) || 0));
@@ -3808,6 +3810,24 @@ async function composeCommentVideo() {
         )), timeoutMs);
       })
     ]).finally(() => window.clearTimeout(timer));
+  };
+  // FFmpeg may legitimately take hours to encode a long stream. Check for
+  // missing *progress*, not the overall encode duration.
+  const withBackendProgressDeadline = (operation, stallMs = 240000) => {
+    lastCompositionBackendStatusAt = Date.now();
+    let watchdog;
+    return Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        watchdog = window.setInterval(() => {
+          if (Date.now() - lastCompositionBackendStatusAt > stallMs) {
+            reject(new Error(
+              "MP4変換・保存の進捗が4分間更新されませんでした。FFmpegや保存先ディスクを確認してください。"
+            ));
+          }
+        }, 5000);
+      })
+    ]).finally(() => window.clearInterval(watchdog));
   };
   let recordingStopRequestedAt = 0;
   const stopRecorder = (failure = null) => {
@@ -4059,8 +4079,7 @@ async function composeCommentVideo() {
               "動画生成のキャンセル");
             resolve({ cancelled: true });
           } else {
-            const saved = await withDeadline(() => api.finishCompose(),
-              15 * 60 * 1000, "動画の保存とMP4変換");
+            const saved = await withBackendProgressDeadline(() => api.finishCompose());
             resolve(saved);
           }
         } catch (error) {
