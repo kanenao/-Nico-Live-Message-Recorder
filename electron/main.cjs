@@ -1821,7 +1821,17 @@ async function collectLiveArticleStreamFrames(includeLatest = false) {
     try {
       const stat = await fs.promises.stat(filePath);
       if (stat.size < 1000 || stat.size > 400000) continue;
-      const data = (await fs.promises.readFile(filePath)).toString("base64");
+      if (includeLatest && name === names[names.length - 1] && liveArticleSessionActive) {
+        // The newest image may still be written by FFmpeg. Only consume it if
+        // its size is stable; otherwise leave it for the next capture cycle.
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const stableStat = await fs.promises.stat(filePath);
+        if (stableStat.size !== stat.size) continue;
+      }
+      const bytes = await fs.promises.readFile(filePath);
+      if (bytes[0] !== 0xff || bytes[1] !== 0xd8 ||
+          bytes[bytes.length - 2] !== 0xff || bytes[bytes.length - 1] !== 0xd9) continue;
+      const data = bytes.toString("base64");
       const checked = selectArticleCoverImage([{ image: data }]);
       if (!checked) continue;
       const sequence = Number((name.match(/(\d{6})/) || [])[1]) || 1;
