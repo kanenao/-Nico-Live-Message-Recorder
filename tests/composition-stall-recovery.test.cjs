@@ -22,6 +22,8 @@ test("silent MediaRecorder inactive state cannot leave comment-video generation 
 
 test("Blob conversion, IPC writes, final flush and cancellation have deadlines", () => {
   assert.match(compose, /withDeadline\(\(\) => chunk\.arrayBuffer\(\), 45000/);
+  assert.match(compose, /withDeadline\(\(\) => audioContext\.resume\(\), 15000/);
+  assert.match(compose, /withDeadline\(\(\) => audioContext\.close\(\), 15000/);
   assert.match(compose, /withDeadline\(\(\) => api\.writeComposeChunk\(buffer\), SAVE_STALL_MS/);
   assert.match(compose, /withDeadline\(\(\) => chunkQueue, SAVE_STALL_MS/);
   assert.match(compose, /withDeadline\(\(\) => api\.cancelCompose\(\), SAVE_STALL_MS/);
