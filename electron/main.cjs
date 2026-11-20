@@ -3079,6 +3079,27 @@ async function finalizeStreamlinkRecording(exit) {
   };
   send("video:state", { recording: false, ...result });
 
+  // Generate storyboard thumbnails after recording has been fully finalized.
+  // This is intentionally detached from the recording stop response: FFmpeg
+  // decoding must never delay closing the video or comment writer.
+  if (resultPath) {
+    const savedRoot = path.resolve(dataRoot(), "videos");
+    const relative = path.relative(savedRoot, path.resolve(resultPath));
+    if (relative && relative !== ".." && !relative.startsWith(".." + path.sep) &&
+        !path.isAbsolute(relative)) {
+      const timer = setTimeout(() => {
+        void getLibraryVideoPreview(resultPath, "timeline").then(gallery => {
+          if (gallery && gallery.frames && gallery.frames.length) {
+            send("library:storyboard-ready", { path: resultPath, count: gallery.frames.length });
+          }
+        }).catch(error => {
+          console.warn("録画後の場面サムネイル生成に失敗:", error.message || error);
+        });
+      }, 1500);
+      if (timer && typeof timer.unref === "function") timer.unref();
+    }
+  }
+
   if (!streamlinkStopRequested && exit.code !== 0) {
     send("app:error", "Streamlinkが終了コード " + exit.code + " で終了しました。\n" + formatStreamlinkFailure(finalStderr, { exitCode: exit.code }));
   } else if (!hasFinalOutput) {
