@@ -19,6 +19,7 @@ const { preserveLastGoodLiveArticle } = require("./article-evidence.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { parseVideoDuration, videoPreviewTimes, formatVideoTime } = require("./library-video-preview.cjs");
+const { getOrCreateVideoStoryboard, storyboardFrameCount } = require("./video-storyboard.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
 const { resolveSavedCommentFile, isActiveCommentFile } = require("./library-comment-file.cjs");
@@ -55,6 +56,7 @@ const {
 } = require("./streamlink-update.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const os = require("node:os");
 
 // This is a local desktop media-processing app; allow the selected local video to play for composition.
@@ -4221,6 +4223,25 @@ async function getArticleThumbnail(articlePath) {
   return promise;
 }
 ipcMain.handle("articles:thumbnail", (_event, articlePath) => getArticleThumbnail(articlePath));
+ipcMain.handle("articles:video-preview", async (_event, articlePath) => {
+  const filePath = resolveBroadcastArticlePath(articlePath);
+  const article = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
+  if (!article || article.status !== "generated") {
+    return { frames: [], message: "放送記事が見つかりません。" };
+  }
+  // Scene seeking is only permitted for a matching saved recording inside
+  // the app's videos/ directory, never an arbitrary path in an article JSON.
+  const videoItems = listCaptureLibrary().items.filter(item => item.type === "video");
+  const videoPath = findArticleVideoCandidate(article, videoItems,
+    value => fs.existsSync(value));
+  if (!videoPath) return { frames: [], message: "この記事に対応する保存動画は見つかりません。代表画像のみ表示します。" };
+  try {
+    safeLibraryVideoPath(videoPath);
+  } catch (_) {
+    return { frames: [], message: "保存フォルダー外の動画は場面一覧を表示できません。" };
+  }
+  return getLibraryVideoPreview(videoPath, "timeline");
+});
 
 // Decode only items inside the recorder's saved-video folder. A bounded pool
 // and cache keep large recording libraries responsive while scrolling.
@@ -4274,12 +4295,12 @@ async function getLibraryVideoPreview(value, mode = "poster") {
         await extractLibraryFrame(videoPath, ffmpegPath, 0);
     }
     const durationSeconds = await probeLibraryVideoDuration(ffmpegPath, videoPath);
-    const positions = videoPreviewTimes(durationSeconds);
-    const frames = [];
-    for (const seconds of positions) {
-      const imageUrl = await extractLibraryFrame(videoPath, ffmpegPath, seconds);
-      if (imageUrl) frames.push({ seconds, label: formatVideoTime(seconds), imageUrl });
-    }
+    const storyboard = await getOrCreateVideoStoryboard({
+      videoPath, stat, durationSeconds,
+      cacheRoot: path.join(app.getPath("userData"), "video-storyboards"),
+      extractFrame: seconds => extractLibraryFrame(videoPath, ffmpegPath, seconds)
+    });
+    const frames = storyboard.frames;
     if (!frames.length) {
       const imageUrl = await extractLibraryFrame(videoPath, ffmpegPath, 0);
       if (imageUrl) frames.push({ seconds: 0, label: "00:00", imageUrl });
@@ -4287,6 +4308,9 @@ async function getLibraryVideoPreview(value, mode = "poster") {
     return {
       durationSeconds,
       frames,
+      videoUrl: pathToFileURL(videoPath).href,
+      fromCache: storyboard.fromCache,
+      totalFrames: storyboardFrameCount(durationSeconds),
       message: frames.length ? "" : "動画の場面を抽出できませんでした。破損や形式を確認してください。"
     };
   })().catch(error => kind === "poster" ? "" : ({
