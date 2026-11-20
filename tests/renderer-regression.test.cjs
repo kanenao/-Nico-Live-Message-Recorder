@@ -826,7 +826,7 @@ test("AI article cards render a newspaper-style lead, highlights, timeline, and 
   assert.match(main, /aiCommentSampleCount/);
   assert.match(main, /aiCommentTotalCount/);
   assert.match(ollamaSource, /selectRepresentativeComments/);
-  assert.ok(ollamaSource.includes("prepareCommentEvidence(records, 96, 6)"));
+  assert.ok(ollamaSource.includes("prepareCommentEvidence(records, 24, 6)"));
   assert.match(ollamaSource, /evidenceTimeline/);
   assert.match(ollamaSource, /highlights/);
   assert.match(ollamaSource, /audienceReaction/);
@@ -946,8 +946,10 @@ test("live article capture uses a hidden window and does not open the visible wa
 
 test("AI broadcast article prompt follows the Kick editorial structure while preserving source checks", () => {
   const ollama = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
-  assert.match(ollama, /Kick-Live-Message-RecorderのAI記事のように/);
-  assert.match(ollama, /summaryは結論と重要点を含むリード文/);
+  assert.match(ollama, /日本語の配信記事をJSONだけで作成/);
+  assert.match(ollama, /summaryは短い要約/);
+  assert.match(ollama, /num_ctx: 8192/);
+  assert.match(ollama, /repeat_penalty: retryMode/);
   assert.match(ollama, /highlights/);
   assert.match(ollama, /audienceReaction/);
   assert.match(ollama, /映像・音声・コメントの情報源を混同しない/);

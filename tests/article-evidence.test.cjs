@@ -82,8 +82,8 @@ test("Ollama prompt keeps all-count, phase comments, and source-availability not
     const result = await generateArticleWithOllama({ records: rows,
       context: { programTitle: "記事品質テスト", liveUpdate: true } });
     assert.equal(result.commentTotalCount, 200);
-    assert.equal(result.commentSampleCount, 96);
-    assert.equal(result.evidence.sampleCount, 96);
+    assert.equal(result.commentSampleCount, 24);
+    assert.equal(result.evidence.sampleCount, 24);
     assert.equal(result.sourceCoverage.comments, "analyzed");
     assert.equal(result.sourceCoverage.video, "unavailable");
     assert.equal(result.sourceCoverage.audio, "unavailable");
