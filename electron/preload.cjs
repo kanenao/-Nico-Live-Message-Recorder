@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   getLiveArticlePreviews: (liveIds) => ipcRenderer.invoke("articles:live-previews", liveIds),
   reanalyzeBroadcastArticle: (articlePath) => ipcRenderer.invoke("articles:reanalyze", articlePath),
   getArticleThumbnail: (articlePath) => ipcRenderer.invoke("articles:thumbnail", articlePath),
+  getArticleVideoPreview: (articlePath) => ipcRenderer.invoke("articles:video-preview", articlePath),
   exportBroadcastArticleHtml: (article) => ipcRenderer.invoke("articles:export-html", article),
   deleteBroadcastArticle: (articlePath) => ipcRenderer.invoke("articles:delete", articlePath),
   generateBroadcastArticle: (filePath) => ipcRenderer.invoke("articles:generate-from-comment", filePath),
