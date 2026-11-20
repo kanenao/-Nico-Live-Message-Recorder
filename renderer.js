@@ -3864,7 +3864,7 @@ async function composeCommentVideo() {
     if (finalStream) finalStream.getTracks().forEach((track) => track.stop());
     if (canvasStream) canvasStream.getTracks().forEach((track) => track.stop());
     if (audioContext && audioContext.state !== "closed") {
-      await audioContext.close().catch(() => {});
+      await withDeadline(() => audioContext.close(), 15000, "音声トラックの解放").catch(() => {});
     }
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     cancelActiveComposition = null;
@@ -3953,12 +3953,12 @@ async function composeCommentVideo() {
         const source = audioContext.createMediaElementSource(videoElement);
         const destination = audioContext.createMediaStreamDestination();
         source.connect(destination);
-        await audioContext.resume();
+        await withDeadline(() => audioContext.resume(), 15000, "音声トラックの起動");
         audioTracks.push(...destination.stream.getAudioTracks());
       } catch (audioError) {
         console.warn("Audio track composition unavailable:", audioError);
         if (audioContext && audioContext.state !== "closed") {
-          await audioContext.close().catch(() => {});
+          await withDeadline(() => audioContext.close(), 15000, "音声トラックの停止").catch(() => {});
         }
         audioContext = null;
         showToast("音声合成を利用できないため、映像のみで生成します。");
