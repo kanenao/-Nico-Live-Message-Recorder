@@ -1,7 +1,7 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.8.0-alpha.129",
+  "version": "0.8.1-alpha.130",
   "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",

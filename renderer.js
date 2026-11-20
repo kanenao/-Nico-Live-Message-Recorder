@@ -3065,6 +3065,7 @@ try {
     }
   }
   if (channel === "compose:status" && payload) {
+    lastCompositionBackendStatusAt = Date.now();
     const progress = payload.state === "converting" ? 0 :
       payload.state === "progress" ? Number(payload.percent) || 0 :
       payload.state === "complete" ? 100 : Number(byId("compose-progress").value);
@@ -3733,6 +3734,7 @@ function scheduleComposePreviewRefresh() {
   scheduleComposePreviewRefresh.timer = window.setTimeout(() => { void refreshComposePreview(); }, 120);
 }
 
+let lastCompositionBackendStatusAt = 0;
 function setCompositionProgress(value, label) {
   const progress = byId("compose-progress");
   if (progress) progress.value = Math.max(0, Math.min(100, Number(value) || 0));
@@ -3793,12 +3795,47 @@ async function composeCommentVideo() {
   let resolveStopFailure = null;
   let lastPlaybackAdvanceAt = Date.now();
   let lastPlaybackTime = 0;
-  const PLAYBACK_STALL_MS = 90000;
+  const PLAYBACK_STALL_MS = 45000;
+  const SAVE_STALL_MS = 75000;
+  // Bound every asynchronous hand-off, not only the Electron stream write.
+  // MediaRecorder implementations can become inactive without firing 'stop',
+  // and Blob.arrayBuffer() can remain pending after a decoder failure.
+  const withDeadline = (operation, timeoutMs, description) => {
+    let timer;
+    return Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(
+          description + "が" + Math.ceil(timeoutMs / 1000) + "秒以上応答しません。生成を中断します。"
+        )), timeoutMs);
+      })
+    ]).finally(() => window.clearTimeout(timer));
+  };
+  // FFmpeg may legitimately take hours to encode a long stream. Check for
+  // missing *progress*, not the overall encode duration.
+  const withBackendProgressDeadline = (operation, stallMs = 240000) => {
+    lastCompositionBackendStatusAt = Date.now();
+    let watchdog;
+    return Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        watchdog = window.setInterval(() => {
+          if (Date.now() - lastCompositionBackendStatusAt > stallMs) {
+            reject(new Error(
+              "MP4変換・保存の進捗が4分間更新されませんでした。FFmpegや保存先ディスクを確認してください。"
+            ));
+          }
+        }, 5000);
+      })
+    ]).finally(() => window.clearInterval(watchdog));
+  };
+  let recordingStopRequestedAt = 0;
   const stopRecorder = (failure = null) => {
     if (failure) {
       writeError = writeError || failure;
       cancelRequested = true;
     }
+    if (!recordingStopRequestedAt) recordingStopRequestedAt = Date.now();
     if (videoElement && !videoElement.paused) videoElement.pause();
     if (recorder && recorder.state !== "inactive") {
       try { recorder.stop(); }
@@ -3827,7 +3864,7 @@ async function composeCommentVideo() {
     if (finalStream) finalStream.getTracks().forEach((track) => track.stop());
     if (canvasStream) canvasStream.getTracks().forEach((track) => track.stop());
     if (audioContext && audioContext.state !== "closed") {
-      await audioContext.close().catch(() => {});
+      await withDeadline(() => audioContext.close(), 15000, "音声トラックの解放").catch(() => {});
     }
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     cancelActiveComposition = null;
@@ -3916,12 +3953,12 @@ async function composeCommentVideo() {
         const source = audioContext.createMediaElementSource(videoElement);
         const destination = audioContext.createMediaStreamDestination();
         source.connect(destination);
-        await audioContext.resume();
+        await withDeadline(() => audioContext.resume(), 15000, "音声トラックの起動");
         audioTracks.push(...destination.stream.getAudioTracks());
       } catch (audioError) {
         console.warn("Audio track composition unavailable:", audioError);
         if (audioContext && audioContext.state !== "closed") {
-          await audioContext.close().catch(() => {});
+          await withDeadline(() => audioContext.close(), 15000, "音声トラックの停止").catch(() => {});
         }
         audioContext = null;
         showToast("音声合成を利用できないため、映像のみで生成します。");
@@ -3983,7 +4020,13 @@ async function composeCommentVideo() {
       const now = Date.now();
       if (now - lastProgressUpdate >= 250) {
         const percent = Math.min(100, (currentMs / durationMs) * 100);
-        setCompositionProgress(percent, "合成中 " + Math.floor(percent) + "%（動画を実時間で処理）");
+        const remainingSeconds = Math.max(0, Math.ceil((durationMs - currentMs) / 1000));
+        const remainingLabel = remainingSeconds >= 3600
+          ? Math.floor(remainingSeconds / 3600) + "時間" + Math.ceil(remainingSeconds % 3600 / 60) + "分"
+          : Math.ceil(remainingSeconds / 60) + "分";
+        setCompositionProgress(percent,
+          "映像とコメントを合成中 " + Math.floor(percent) + "%（実時間処理／残り約" +
+          remainingLabel + " ＋保存・MP4変換）");
         lastProgressUpdate = now;
       }
       if (!videoElement.paused && !videoElement.ended && !cancelRequested) {
@@ -4009,20 +4052,10 @@ async function composeCommentVideo() {
       const chunk = event.data;
       chunkQueue = chunkQueue.then(async () => {
         if (writeError) return;
-        const buffer = await chunk.arrayBuffer();
-        let timer;
-        try {
-          await Promise.race([
-            api.writeComposeChunk(buffer),
-            new Promise((_, reject) => {
-              timer = window.setTimeout(() => reject(new Error(
-                "動画データの保存が120秒以上応答しません。ディスク容量や書き込み権限を確認してください。"
-              )), 120000);
-            })
-          ]);
-        } finally {
-          if (timer) window.clearTimeout(timer);
-        }
+        const buffer = await withDeadline(() => chunk.arrayBuffer(), 45000,
+          "録画データのエンコード");
+        await withDeadline(() => api.writeComposeChunk(buffer), SAVE_STALL_MS,
+          "合成動画のディスク保存");
       }).catch((error) => {
         stopRecorder(error);
       }).finally(() => { pendingChunks = Math.max(0, pendingChunks - 1); });
@@ -4039,17 +4072,21 @@ async function composeCommentVideo() {
         setCompositionProgress(Number(byId("compose-progress").value),
           cancelRequested ? "中断処理中…" : "動画データを保存・確定中…");
         try {
-          await chunkQueue;
+          await withDeadline(() => chunkQueue, SAVE_STALL_MS, "残りの動画データ保存");
           if (writeError) throw writeError;
           if (cancelRequested) {
-            await api.cancelCompose();
+            await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
+              "動画生成のキャンセル");
             resolve({ cancelled: true });
           } else {
-            const saved = await api.finishCompose();
+            const saved = await withBackendProgressDeadline(() => api.finishCompose());
             resolve(saved);
           }
         } catch (error) {
-          try { await api.cancelCompose(); } catch (_) {}
+          // The main process has its own writer/FFmpeg timeouts; never block
+          // this renderer indefinitely while trying to clean up a failure.
+          await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
+            "動画生成のクリーンアップ").catch(() => {});
           resolve({ error });
         }
       };
@@ -4064,7 +4101,21 @@ async function composeCommentVideo() {
     // Some damaged videos and GPU decoders never emit 'ended' and leave the
     // MediaRecorder recording forever. Independently check advancing time.
     playbackWatchdog = window.setInterval(() => {
-      if (cancelRequested || !recorder || recorder.state === "inactive") return;
+      if (!recorder || recorderStopEntered) return;
+      // Some Chromium hardware encoders silently enter 'inactive' without
+      // firing MediaRecorder.onstop. Previously we returned here forever,
+      // leaving stopResultPromise pending and the UI stuck.
+      if (recorder.state === "inactive") {
+        stopRecorder(new Error("動画エンコーダーが停止通知なしで終了しました。別の画質・形式で再試行してください。"));
+        return;
+      }
+      if (recordingStopRequestedAt) {
+        if (Date.now() - recordingStopRequestedAt > 25000) {
+          stopRecorder(new Error("エンコーダー停止処理が完了しませんでした。"));
+        }
+        return;
+      }
+      if (cancelRequested) return;
       const current = Number(videoElement.currentTime) || 0;
       if (current > lastPlaybackTime + 0.05) {
         lastPlaybackTime = current;
@@ -4075,7 +4126,7 @@ async function composeCommentVideo() {
       } else if (window.nicoCommentComposition.isCompositionStalled(
         lastPlaybackAdvanceAt, Date.now(), PLAYBACK_STALL_MS)) {
         stopRecorder(new Error(
-          "動画の再生位置が90秒以上進みませんでした。デコード停止・動画破損・省電力制限の可能性があります。"
+          "動画の再生位置が45秒以上進みませんでした。デコード停止・動画破損・省電力制限の可能性があります。"
         ));
       }
     }, 4000);
@@ -4099,7 +4150,7 @@ async function composeCommentVideo() {
     }
     drawFrame();
 
-    setCompositionProgress(0, "合成中（動画全編を実時間で処理します）");
+    setCompositionProgress(0, "映像とコメントを合成中（動画全編を実時間で処理し、その後に保存・MP4変換します）");
     const stopResult = await stopResultPromise;
     // Keep outputStarted true on errors so the catch block can close any
     // Electron writer left open by a missing MediaRecorder stop event.
@@ -4120,8 +4171,10 @@ async function composeCommentVideo() {
       stopRecorder(error);
     }
     if (outputStarted) {
-      await chunkQueue.catch(() => {});
-      await api.cancelCompose().catch(() => {});
+      await withDeadline(() => chunkQueue, SAVE_STALL_MS,
+        "未処理の動画データ保存").catch(() => {});
+      await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
+        "動画生成のキャンセル").catch(() => {});
     }
     setCompositionProgress(0, "エラー");
     showToast(error.message || "コメント付き動画を生成できませんでした。", true);
