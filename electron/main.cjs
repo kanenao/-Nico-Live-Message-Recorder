@@ -19,6 +19,7 @@ const { preserveLastGoodLiveArticle } = require("./article-evidence.cjs");
 const { selectArticleCoverImage } = require("./article-cover.cjs");
 const { findArticleVideoCandidate } = require("./article-thumbnail.cjs");
 const { parseVideoDuration, videoPreviewTimes, formatVideoTime } = require("./library-video-preview.cjs");
+const { isCompositionStalled } = require("../composition.js");
 const { getOrCreateVideoStoryboard, storyboardFrameCount } = require("./video-storyboard.cjs");
 const { findMatchingCommentLog, selectLiveArticleFrameHistory, buildLiveArticleFfmpegArgs } = require("./article-media.cjs");
 const { recordingFileStem, chooseUniqueRecordingStem } = require("./recording-filenames.cjs");
@@ -3682,34 +3683,62 @@ function transcodeCompositionToMp4(inputPath, outputPath, quality, durationMs) {
     let stderr = "";
     let progressBuffer = "";
     let lastProgress = -1;
+    let lastOutputTime = -1;
+    let lastAdvanceAt = Date.now();
+    let lastNotificationAt = 0;
+    let settled = false;
+    const finish = (error, output) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(stallWatchdog);
+      if (error) reject(error);
+      else resolve(output);
+    };
+    // A suspended/blocked FFmpeg process previously left compose:finish
+    // pending indefinitely. Stop only after 180s with no actual encoding
+    // progress; a slow but advancing multi-hour video remains allowed.
+    const stallWatchdog = setInterval(() => {
+      if (!isCompositionStalled(lastAdvanceAt, Date.now(), 180000)) return;
+      const error = new Error("FFmpegのMP4変換が3分間進みませんでした。WebMで保存します。ディスク残量とCPU使用率を確認してください。");
+      try { child.kill("SIGKILL"); } catch (_) {}
+      finish(error);
+    }, 5000);
+    if (typeof stallWatchdog.unref === "function") stallWatchdog.unref();
     if (child.stderr) {
       child.stderr.on("data", (chunk) => {
         const value = chunk.toString("utf8");
         stderr = (stderr + value).slice(-2400);
-        progressBuffer += value;
+        progressBuffer = (progressBuffer + value).slice(-8192);
         const lines = progressBuffer.split(/\r?\n/);
         progressBuffer = lines.pop() || "";
         for (const line of lines) {
           const match = line.match(/^out_time_(?:ms|us)=(\d+)$/);
           if (!match) continue;
-          const percent = calculateTranscodeProgressPercent(match[1], durationMs);
-          if (percent <= lastProgress + 0.25) continue;
+          const outputTime = Number(match[1]);
+          if (outputTime > lastOutputTime) {
+            lastOutputTime = outputTime;
+            lastAdvanceAt = Date.now();
+          }
+          const percent = calculateTranscodeProgressPercent(outputTime, durationMs);
+          if (percent <= lastProgress + 0.25 && Date.now() - lastNotificationAt < 20000) continue;
           lastProgress = percent;
+          lastNotificationAt = Date.now();
           send("compose:status", {
             state: "progress",
             percent,
-            message: "MP4変換中 " + Math.floor(percent) + "%"
+            message: "MP4変換中 " + Math.floor(percent) + "%（FFmpeg動作中）"
           });
         }
       });
     }
-    child.once("error", (error) => reject(new Error("MP4変換を開始できません: " + error.message)));
+    child.once("error", (error) => finish(new Error("MP4変換を開始できません: " + error.message)));
     child.once("close", (code) => {
+      if (settled) return;
       if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
         send("compose:status", { state: "progress", percent: 100, message: "MP4変換中 100%" });
-        resolve(outputPath);
+        finish(null, outputPath);
       } else {
-        reject(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
+        finish(new Error(stderr.trim() || ("FFmpegによるMP4変換に失敗しました（終了コード " + code + "）。")));
       }
     });
   });
