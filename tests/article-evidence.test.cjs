@@ -142,4 +142,10 @@ test("exported AI article explains unavailable sources and older live snapshots"
   assert.match(html, /音声：文字起こしあり/);
   assert.ok(!html.includes("<注意>"));
   assert.ok(html.includes("&lt;注意&gt;"));
+  const sampledHtml = renderArticleHtml({
+    title: "映像を取得した未解析記事", aiProvider: "Ollama",
+    aiSourceCoverage: { video: "sampled", audio: "unavailable" },
+    aiEvidence: { commentCount: 2, sampleCount: 2 }
+  });
+  assert.match(sampledHtml, /映像フレーム取得済み（AI未解析）/);
 });
