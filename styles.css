@@ -1524,3 +1524,6 @@ button, .button {
   .release-history-count { padding-bottom: 0; }
   .release-history-item-heading { flex-wrap: wrap; }
 }
+
+/* alpha.132: show recovery guidance only when the app update failed. */
+.version-update-page .update-error-help { margin: 0; padding: 12px 15px; border-left: 3px solid #f09aa5; background: rgba(240,154,165,.07); border-radius: 5px; color: #e8b5c0; font-size: 12px; line-height: 1.65; }

@@ -2946,7 +2946,9 @@ function renderUpdateState(payload) {
   const guide = getUpdateStatusGuide(payload.state);
   byId("settings-update-overview").dataset.state = payload.state || "idle";
   byId("settings-update-headline").textContent = guide.title;
-  byId("settings-update-next-action").textContent = guide.action;
+  byId("settings-update-next-action").textContent = payload.state === "error" && payload.category === "integrity"
+    ? "安全確認に失敗したため再ダウンロードは停止しました。GitHub Releasesで正式な配布ファイルを確認してください。"
+    : guide.action;
   if (["not-available", "available", "error"].includes(payload.state)) {
     const checked = new Date().toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
     byId("settings-update-checked-at").textContent = "前回の更新確認：" + checked + (payload.state === "error" ? "（失敗）" : "");
@@ -2995,7 +2997,8 @@ function renderUpdateState(payload) {
       status.textContent = payload.message || "自動アップデートはWindowsのインストーラー版で利用できます。";
       break;
     case "error":
-      status.textContent = "自動更新エラー：" + (payload.message || "通信エラー");
+      status.textContent = "自動更新エラー" + (payload.code ? "（" + String(payload.code) + "）" : "") +
+        "：" + (payload.message || "通信エラー");
       retryButton.hidden = payload.category === "integrity";
       settingsRetryButton.hidden = payload.category === "integrity";
       manualButton.hidden = false;
@@ -3028,6 +3031,7 @@ function renderUpdateState(payload) {
   };
   settingsBadge.textContent = badgeLabels[payload.state] || "状態確認中";
   settingsBadge.dataset.state = payload.state || "idle";
+  byId("settings-update-error-help").hidden = payload.state !== "error";
 
   latestVersionRow.hidden = false;
   if (payload.version) latestVersionLabel.dataset.version = String(payload.version).replace(/^v/, "");

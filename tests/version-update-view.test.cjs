@@ -12,7 +12,7 @@ const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 test("version update page includes legible status, both versions, search and actions", () => {
   for (const id of ["app-current-version", "settings-latest-version", "settings-update-badge",
     "settings-update-overview", "settings-update-headline", "settings-update-next-action",
-    "settings-update-checked-at", "settings-update-progress-label",
+    "settings-update-checked-at", "settings-update-progress-label", "settings-update-error-help",
     "settings-check-update-button", "settings-install-update-button",
     "open-github-releases-button", "release-history-search", "release-history-count",
     "release-history-more-button"]) {
@@ -20,6 +20,9 @@ test("version update page includes legible status, both versions, search and act
   }
   assert.match(css, /\.version-update-page \[hidden\] \{ display: none !important; \}/);
   assert.match(renderer, /latestVersionRow\.hidden = false/);
+  assert.match(renderer, /settings-update-error-help"\)\.hidden = payload\.state !== "error"/);
+  assert.match(renderer, /payload\.code \? "（"/);
+  assert.match(renderer, /payload\.category === "integrity"/);
   assert.equal((renderer.match(/byId\("settings-check-update-button"\)\.addEventListener\("click"/g) || []).length, 1);
   assert.equal((renderer.match(/byId\("settings-install-update-button"\)\.addEventListener\("click"/g) || []).length, 1);
 });
@@ -38,6 +41,7 @@ test("all update states give a readable next action", () => {
   assert.match(guide("unsupported").title, /自動更新できません/);
   assert.match(guide("not-available").title, /最新/);
   assert.match(guide("downloaded").action, /再起動して更新/);
+  assert.match(renderer, /安全確認に失敗したため再ダウンロードは停止しました/);
 });
 
 test("changelog is expandable, searchable and safely rendered", () => {

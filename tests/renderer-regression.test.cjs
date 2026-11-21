@@ -671,7 +671,11 @@ test("app settings expose the current version and a synchronized automatic updat
   assert.match(renderer, /settingsStatus\.textContent = status\.textContent/);
   assert.match(renderer, /settingsProgress\.value = progress\.value/);
   assert.match(renderer, /settingsCheckButton\.disabled = checkButton\.disabled/);
-  assert.match(renderer, /const latestVersion = payload\.version \|\| latestVersionLabel\.textContent\.replace/);
+  // The version UI now stores a confirmed value and always renders its state.
+  assert.match(renderer, /latestVersionRow\.hidden = false/);
+  assert.match(renderer, /if \(payload\.version\) latestVersionLabel\.dataset\.version/);
+  assert.match(renderer, /if \(payload\.state === "checking"\) latestVersionLabel\.textContent = "確認中…"/);
+  assert.match(renderer, /else if \(payload\.state === "error"\)/);
   assert.match(renderer, /byId\("settings-check-update-button"\)\.addEventListener\("click", checkAppUpdates\)/);
   assert.match(renderer, /byId\("settings-install-update-button"\)\.addEventListener\("click", installAppUpdate\)/);
   assert.match(renderer, /byId\("app-current-version"\)\.textContent = text/);
