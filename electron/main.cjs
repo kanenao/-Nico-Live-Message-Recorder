@@ -66,6 +66,8 @@ app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 if (process.platform === "win32") app.setAppUserModelId("jp.kanenao.nicolive.recorder");
 
 app.setName("Nico Live Message Recorder");
+// The same approved blue TV motif is used in the executable, tray and application UI.
+const applicationIconPath = path.join(__dirname, "..", "assets", "app-icon.jpg");
 
 let mainWindow = null;
 let tray = null;
@@ -1367,6 +1369,7 @@ function makeWindow() {
     minHeight: 720,
     backgroundColor: "#0b1020",
     title: "Nico Live Message Recorder",
+    icon: applicationIconPath,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -1546,6 +1549,7 @@ ipcMain.handle("auth:open-login", async () => {
     width: 520,
     height: 760,
     title: "ニコニコにログイン",
+    icon: applicationIconPath,
     autoHideMenuBar: true,
     webPreferences: {
       partition: "persist:nico-auth",
@@ -1600,6 +1604,7 @@ async function openLivePreview(value) {
     minHeight: 480,
     backgroundColor: "#080d18",
     title: "ニコ生 映像プレビュー - " + liveId,
+    icon: applicationIconPath,
     autoHideMenuBar: true,
     parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
     webPreferences: {
