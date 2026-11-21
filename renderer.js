@@ -3869,6 +3869,11 @@ async function composeCommentVideo() {
   let resolveStopFailure = null;
   let lastPlaybackAdvanceAt = Date.now();
   let lastPlaybackTime = 0;
+  // Playback time may advance even when a GPU/canvas failure silently kills
+  // requestAnimationFrame. Track rendering independently of video decoding.
+  let lastRenderedFrameAt = Date.now();
+  let consecutiveFrameErrors = 0;
+  const FRAME_STALL_MS = 45000;
   const PLAYBACK_STALL_MS = 45000;
   const SAVE_STALL_MS = 75000;
   // Bound every asynchronous hand-off, not only the Electron stream write.
@@ -4082,14 +4087,28 @@ async function composeCommentVideo() {
         lastPlaybackTime = videoElement.currentTime;
         lastPlaybackAdvanceAt = Date.now();
       }
-      context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-
-      while (nextCommentIndex < schedule.length && schedule[nextCommentIndex].startMs <= currentMs) {
-        activeComments.push(schedule[nextCommentIndex]);
-        nextCommentIndex += 1;
+      try {
+        context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        while (nextCommentIndex < schedule.length && schedule[nextCommentIndex].startMs <= currentMs) {
+          activeComments.push(schedule[nextCommentIndex]);
+          nextCommentIndex += 1;
+        }
+        activeComments = activeComments.filter((comment) => comment.endMs >= currentMs);
+        drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height, composeOptions);
+        consecutiveFrameErrors = 0;
+        lastRenderedFrameAt = Date.now();
+      } catch (frameError) {
+        // A single transient decoder/GPU error can clear up on the next frame.
+        // Do not silently abandon requestAnimationFrame after it throws.
+        consecutiveFrameErrors += 1;
+        if (consecutiveFrameErrors >= 5) {
+          stopRecorder(new Error("映像フレームを5回連続で描画できませんでした。GPU・動画デコードを確認してください：" +
+            (frameError && frameError.message || String(frameError))));
+        } else if (!cancelRequested) {
+          animationFrame = requestAnimationFrame(drawFrame);
+        }
+        return;
       }
-      activeComments = activeComments.filter((comment) => comment.endMs >= currentMs);
-      drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height, composeOptions);
 
       const now = Date.now();
       if (now - lastProgressUpdate >= 250) {
@@ -4197,6 +4216,11 @@ async function composeCommentVideo() {
       }
       if (videoElement.ended || current * 1000 >= durationMs - 150) {
         stopRecorder();
+      } else if (!videoElement.paused && window.nicoCommentComposition.isCompositionStalled(
+        lastRenderedFrameAt, Date.now(), FRAME_STALL_MS)) {
+        stopRecorder(new Error(
+          "映像の描画が45秒以上更新されませんでした。再生時刻が進んでいても動画の合成を安全に中断します。GPU・省電力設定を確認してください。"
+        ));
       } else if (window.nicoCommentComposition.isCompositionStalled(
         lastPlaybackAdvanceAt, Date.now(), PLAYBACK_STALL_MS)) {
         stopRecorder(new Error(
@@ -4208,6 +4232,7 @@ async function composeCommentVideo() {
     recorder.start(1000);
     cancelButton.disabled = false;
     lastPlaybackAdvanceAt = Date.now();
+    lastRenderedFrameAt = Date.now();
     // Starting playback can itself hang on unsupported hardware decoders.
     let playTimer;
     try {

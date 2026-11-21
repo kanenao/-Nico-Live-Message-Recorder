@@ -47,3 +47,51 @@ test("composition UI distinguishes real-time rendering, remaining playback, and 
   assert.match(compose, /保存・MP4変換/);
   assert.match(renderer, /if \(channel === "compose:status" && payload\)/);
 });
+
+test("canvas draw exceptions are bounded instead of silently stopping the render loop", () => {
+  const vm = require("node:vm");
+  const start = compose.indexOf("const drawFrame = () => {");
+  const end = compose.indexOf("\n    const recorderOptions =", start);
+  assert.ok(start >= 0 && end > start, "drawFrame must be extractable");
+  let queued = 0;
+  const errors = [];
+  const sandbox = {
+    cancelRequested: false,
+    videoElement: { ended: false, readyState: 4, currentTime: 1, paused: false },
+    lastPlaybackTime: 0,
+    lastPlaybackAdvanceAt: Date.now(),
+    lastRenderedFrameAt: Date.now(),
+    consecutiveFrameErrors: 0,
+    context: { drawImage() { throw new Error("GPU unavailable"); } },
+    canvas: { width: 1280, height: 720 },
+    nextCommentIndex: 0,
+    activeComments: [],
+    schedule: [],
+    drawCommentOverlay() {},
+    composeOptions: {},
+    durationMs: 10000,
+    lastProgressUpdate: 0,
+    animationFrame: 0,
+    requestAnimationFrame() { queued += 1; return queued; },
+    stopRecorder(error) { errors.push(error); },
+    setCompositionProgress() {}
+  };
+  const drawFrame = vm.runInNewContext(compose.slice(start, end) + "\ndrawFrame", sandbox);
+  drawFrame();
+  assert.equal(queued, 1, "a transient canvas error should schedule a retry");
+  assert.equal(errors.length, 0);
+  for (let i = 0; i < 4; i++) drawFrame();
+  assert.equal(errors.length, 1, "five consecutive failures must stop the recorder");
+  assert.match(errors[0].message, /映像フレームを5回連続で描画できませんでした/);
+  assert.equal(queued, 4, "the failure threshold should not queue another frame");
+});
+
+test("frame rendering failure is monitored separately from playback progress", () => {
+  assert.match(compose, /let lastRenderedFrameAt = Date\.now\(\)/);
+  assert.match(compose, /const FRAME_STALL_MS = 45000/);
+  assert.match(compose, /lastRenderedFrameAt = Date\.now\(\)/);
+  assert.match(compose, /isCompositionStalled\(\s*lastRenderedFrameAt, Date\.now\(\), FRAME_STALL_MS\)/);
+  assert.match(compose, /映像の描画が45秒以上更新されませんでした/);
+  // Keep both checks so moving timestamps cannot mask an unresponsive canvas.
+  assert.match(compose, /isCompositionStalled\(\s*lastPlaybackAdvanceAt, Date\.now\(\), PLAYBACK_STALL_MS\)/);
+});
