@@ -17,11 +17,11 @@ try {
     throw "App icon must be a square image at least 128px: $($image.Width)x$($image.Height)"
   }
   $sizes = @(16, 24, 32, 48, 64, 128, 256)
-  $frames = New-Object "System.Collections.Generic.List[byte[]]"
+  $frames = [System.Collections.Generic.List[byte[]]]::new()
   foreach ($size in $sizes) {
-    $bmp = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $bmp = [System.Drawing.Bitmap]::new([int]$size, [int]$size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $graphics = [System.Drawing.Graphics]::FromImage($bmp)
-    $buffer = New-Object System.IO.MemoryStream
+    $buffer = [System.IO.MemoryStream]::new()
     try {
       $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
       $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
@@ -37,7 +37,7 @@ try {
   }
   [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($targetPath)) | Out-Null
   $stream = [System.IO.File]::Open($targetPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
-  $writer = New-Object System.IO.BinaryWriter($stream)
+  $writer = [System.IO.BinaryWriter]::new($stream)
   $writer.Write([uint16]0)
   $writer.Write([uint16]1)
   $writer.Write([uint16]$sizes.Count)

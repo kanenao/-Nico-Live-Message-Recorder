@@ -27,6 +27,7 @@ test("Windows build generates and packages the new icon for shortcuts, NSIS and 
   assert.match(generator, /Image\]::FromFile/);
   assert.match(generator, /System\.Drawing\.Imaging\.ImageFormat\]::Png/);
   assert.match(generator, /BinaryWriter/);
+  assert.match(generator, /Bitmap\]::new/);
 });
 test("main window and visible app branding use the same icon", () => {
   assert.match(main, /const applicationIconPath = path\.join\(__dirname, "\.\.", "assets", "app-icon\.jpg"\)/);
