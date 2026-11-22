@@ -692,7 +692,8 @@ test("dedicated version update page shows the current version, updater controls,
     "settings-install-update-button", "release-history-list", "settings-open-updates-button", "open-github-releases-button"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing version page field: " + id);
   }
-  assert.match(renderer, /"articles", "updates"/);
+  assert.match(renderer, /const APP_PAGES = new Set\([\s\S]*"updates"\]\)/);
+  assert.match(renderer, /if \(!PRODUCT_EDITION\) APP_PAGES.add\("articles"\)/);
   assert.match(renderer, /function parseReleaseHistory\(/);
   assert.match(renderer, /function renderReleaseHistory\(/);
   assert.match(renderer, /api\.getChangelog\(\)/);
@@ -868,7 +869,7 @@ test("Ollama setup downloads the official Windows installer and pulls the select
 
 
 test("article summaries are attached to capture library videos and article deletion preserves source recordings", () => {
-  assert.match(main, /const savedArticles = listBroadcastArticles\(\)\.items/);
+  assert.match(main, /const savedArticles = PRODUCT_EDITION \? \[\] : listBroadcastArticles\(\)\.items/);
   assert.match(main, /ipcMain\.handle\("articles:delete"/);
   assert.match(main, /録画動画・コメントログは削除されません/);
   assert.match(preload, /deleteBroadcastArticle/);
@@ -897,10 +898,8 @@ test("Streamlink finalization verifies the final media file before deleting the 
 
 test("changelog headings and entries use real Markdown line breaks", () => {
     assert.doesNotMatch(changelog, /\\n/);
-  assert.match(changelog.replace(/\r\n/g, "\n"), /## 0\.1\.0-beta\.66\n\n- 録画・コメント開始時/);
-  assert.match(changelog, /- Electronのイベント購読APIが初期化エラー/);
-  assert.match(changelog, /- preload bridgeのイベント接続失敗/);
-  assert.match(changelog.replace(/\r\n/g, "\n"), /## 0\.1\.0-beta\.55\n\n- Ollama公式Windowsインストーラー/);
+  assert.match(changelog.replace(/\r\n/g, "\n"), /## 1\.0\.0\n\n- \*\*Nico Live Message Recorder 製品版を開始/);
+  assert.match(changelog, /放送記事・無料AI記事生成は製品版から除外/);
 });
 
 test("duplicate library IDs are removed and package version is displayed in the UI", () => {
