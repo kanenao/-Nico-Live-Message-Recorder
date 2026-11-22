@@ -1,3 +1,4 @@
+const PRODUCT_EDITION = document.body.dataset.edition === "product";
 const api = window.nicoAPI;
 const byId = (id) => document.getElementById(id);
 
@@ -1045,6 +1046,7 @@ function getLiveBroadcastItems() {
 // Load only articles for LIVE IDs. The reply has no embedded JPEGs, transcripts,
 // or full article bodies, so a monitor heartbeat stays lightweight.
 async function refreshLiveArticlePreviews(force = false) {
+  if (PRODUCT_EDITION) return;
   if (!api || typeof api.getLiveArticlePreviews !== "function") return;
   const ids = [...new Set(getLiveBroadcastItems()
     .map(item => String(item.liveId || "").trim().toLowerCase())
@@ -1081,6 +1083,7 @@ async function refreshLiveArticlePreviews(force = false) {
 }
 
 function openLiveArticleFromDashboard(status, hasArticle) {
+  if (PRODUCT_EDITION) return;
   if (!hasArticle) {
     byId("manual-article-live-id").value = status.liveId || "";
     byId("manual-article-broadcaster").value = status.name || "";
@@ -1583,6 +1586,7 @@ function updateCompositionEditorLabels() {
 }
 
 async function checkOllamaStatus() {
+  if (PRODUCT_EDITION) return;
   const badge = byId("ollama-status-badge");
   const message = byId("ollama-status-message");
   const button = byId("ollama-check-button");
@@ -1621,9 +1625,11 @@ function openSettings() {
   byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("setting-notify-on-live").checked = monitorSettings.notifyOnLive !== false;
-  byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
-  byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
-  void checkOllamaStatus();
+  if (!PRODUCT_EDITION) {
+    byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
+    byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
+    void checkOllamaStatus();
+  }
   void refreshAuthStatus();
   byId("settings-modal").hidden = false;
 }
@@ -1644,10 +1650,12 @@ async function saveSettings() {
     closeToTray: byId("setting-close-to-tray").checked,
     keepAwake: byId("setting-keep-awake").checked,
     autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked,
-    notifyOnLive: byId("setting-notify-on-live").checked,
-    aiArticleEnabled: byId("setting-ai-article-enabled").checked,
-    aiArticleModel: byId("setting-ai-article-model").value.trim() || "qwen2.5:3b"
+    notifyOnLive: byId("setting-notify-on-live").checked
   };
+  if (!PRODUCT_EDITION) {
+    values.aiArticleEnabled = byId("setting-ai-article-enabled").checked;
+    values.aiArticleModel = byId("setting-ai-article-model").value.trim() || "qwen2.5:3b";
+  }
   Object.assign(values, readAssMotionInputs("setting-ass-"));
   const button = byId("save-settings-button");
   button.disabled = true;
@@ -1792,7 +1800,8 @@ async function processMonitorAutoQueue() {
 }
 
 
-const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "articles", "updates"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "updates"]);
+if (!PRODUCT_EDITION) APP_PAGES.add("articles");
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -1802,7 +1811,8 @@ function setActivePage(page) {
   content.querySelectorAll(":scope > [data-page]").forEach((view) => {
     const isActive = view.dataset.page === activePage;
     view.classList.toggle("page-hidden", !isActive);
-    if (view.id === "library-panel" || view.id === "articles-panel") view.hidden = !isActive;
+    if (view.id === "library-panel") view.hidden = !isActive;
+    if (view.id === "articles-panel") view.hidden = PRODUCT_EDITION || !isActive;
   });
 
   document.querySelectorAll("[data-page-target]").forEach((button) => {
@@ -2125,9 +2135,13 @@ async function loadCaptureLibrary() {
     list.textContent = "録画ファイルを検索しています…";
   }
   try {
-    const [result, articleResult] = await Promise.all([api.getCaptureLibrary(), api.getBroadcastArticles()]);
-    broadcastArticles = Array.isArray(articleResult.items) ? articleResult.items : [];
+    const result = await api.getCaptureLibrary();
     captureLibraryItems = Array.isArray(result.items) ? result.items : [];
+    broadcastArticles = [];
+    if (!PRODUCT_EDITION) {
+      const articleResult = await api.getBroadcastArticles();
+      broadcastArticles = Array.isArray(articleResult.items) ? articleResult.items : [];
+    }
     byId("library-total").textContent = String(result.total || 0);
     byId("library-video-count").textContent = String(result.videoCount || 0);
     byId("library-comment-count").textContent = String(result.commentCount || 0);
@@ -2182,6 +2196,7 @@ function pumpArticleThumbnailQueue() {
 }
 
 function renderBroadcastArticles() {
+  if (PRODUCT_EDITION) return;
   const list = byId("articles-list");
   if (!list) return;
   list.replaceChildren();
@@ -2742,6 +2757,7 @@ async function generateManualBroadcastArticle() {
 }
 
 async function loadBroadcastArticles() {
+  if (PRODUCT_EDITION) return;
   const button = byId("articles-refresh-button");
   if (button) button.disabled = true;
   const list = byId("articles-list");
