@@ -34,8 +34,8 @@ test("auto-update is enabled only for the registered NSIS install location", () 
   assert.equal(packageJson.build.nsis.include, "build/installer.nsh");
   assert.ok(mainProcess.includes("function isNsisInstalled()"));
   assert.ok(mainProcess.includes("return isNsisInstalled()"));
-  assert.match(mainProcess, /HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall/);
-  assert.match(mainProcess, /HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall/);
+  assert.ok(mainProcess.includes("HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall"));
+  assert.ok(mainProcess.includes("HKLM\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall"));
   assert.match(mainProcess, /UninstallString/);
   assert.match(mainProcess, /isExecutableInsideInstallDirectory/);
 });
