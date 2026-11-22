@@ -6,14 +6,18 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = path.join(root, "README.md");
 const changelogPath = path.join(root, "CHANGELOG.md");
 const packagePath = path.join(root, "package.json");
-const version = JSON.parse(fs.readFileSync(packagePath, "utf8")).version;
+const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+const version = packageJson.version;
+const edition = packageJson.nicoEdition || (version.includes("-beta.") ? "beta" : version.includes("-alpha.") ? "alpha" : "product");
+const channelLabel = edition === "product" ? "製品版" : edition === "alpha" ? "α版" : "β版";
+const branchName = edition === "product" ? "main" : "beta";
 const changelog = fs.readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n");
 let readme = fs.readFileSync(readmePath, "utf8").replace(/\r\n/g, "\n");
 
 const entries = [];
 let current = null;
 for (const line of changelog.split("\n")) {
-  const heading = line.match(/^## (\d+\.\d+\.\d+-(?:alpha|beta)\.\d+)\s*$/);
+  const heading = line.match(/^## (\d+\.\d+\.\d+(?:-(?:alpha|beta)\.\d+)?)\s*$/);
   if (heading) {
     if (current) entries.push(current);
     current = { version: heading[1], bullets: [] };
@@ -34,9 +38,9 @@ if (!entries.some((entry) => entry.version === version)) {
 const recent = entries.slice(0, 8);
 const generated = [
   "<!-- AUTO-GENERATED: RELEASE-INFO:START -->",
-  "## 現在の" + (version.includes("-alpha.") ? "α版" : "β版") + "と最近の更新",
+  "## 現在の" + channelLabel + "と最近の更新",
   "",
-  "**現在の" + (version.includes("-alpha.") ? "α版：" : "β版：") + version + "**",
+  "**現在の" + channelLabel + "：" + version + "**",
   "",
   "最新の更新内容を" + recent.length + "バージョン分掲載しています。過去の全履歴は [CHANGELOG.md](CHANGELOG.md) をご覧ください。",
   "",
@@ -51,16 +55,12 @@ const generated = [
 
 const tick = String.fromCharCode(96);
 const versionLinePattern = /\*\*現在の配布チャンネル：[^*]+\*\*/;
-const currentVersionLine = "**現在の配布チャンネル：" + (version.includes("-alpha.") ? "α版" : "β版") + "（開発ブランチ：" + tick + "beta" + tick + "、バージョン：" + version + "）**";
+const currentVersionLine = "**現在の配布チャンネル：" + channelLabel + "（開発ブランチ：" + tick + branchName + tick + "、バージョン：" + version + "）**";
+if (!versionLinePattern.test(readme)) throw new Error("Could not locate README release channel line.");
 readme = readme.replace(versionLinePattern, currentVersionLine);
 const marker = /<!-- AUTO-GENERATED: RELEASE-INFO:START -->[\s\S]*?<!-- AUTO-GENERATED: RELEASE-INFO:END -->/;
-if (marker.test(readme)) {
-  readme = readme.replace(marker, generated);
-} else {
-  if (!readme.includes(currentVersionLine)) throw new Error("Could not locate README release channel line.");
-  readme = readme.replace(currentVersionLine, currentVersionLine + "\n\n" + generated);
-}
-readme = readme.replace(/^## 更新履歴\s*$/m, "## 初期β版の更新履歴（β41以前）");
+if (marker.test(readme)) readme = readme.replace(marker, generated);
+else throw new Error("Could not locate README release-info markers.");
 
 if (process.argv.includes("--check")) {
   const existing = fs.readFileSync(readmePath, "utf8").replace(/\r\n/g, "\n");

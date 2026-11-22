@@ -8,14 +8,14 @@ test("production dependencies include electron-updater", () => {
   assert.equal(packageJson.dependencies["electron-updater"], "6.8.12");
 });
 
-test("GitHub alpha channel is configured for auto-update metadata", () => {
+test("GitHub beta channel is configured for auto-update metadata", () => {
   assert.equal(packageJson.build.generateUpdatesFilesForAllChannels, true);
   assert.deepEqual(packageJson.build.win.publish, [{
     provider: "github",
     owner: "kanenao",
     repo: "-Nico-Live-Message-Recorder",
     releaseType: "prerelease",
-    channel: "alpha"
+    channel: "beta"
   }]);
 });
 
@@ -49,7 +49,7 @@ test("main and renderer JavaScript files pass Node syntax checks", () => {
 test("release workflow is tag-triggered and can be run manually", () => {
   const workflowPath = path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-release.yml");
   const workflow = fs.readFileSync(workflowPath, "utf8");
-  assert.match(workflow, /tags:\s*\n\s*- "v\*-alpha\*"/);
+  assert.match(workflow, /tags:\s*\n\s*- "v\*-beta\*"/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /GH_TOKEN:\s*\$\{\{ secrets\.GITHUB_TOKEN \}\}/);
@@ -63,7 +63,7 @@ test("unsupported update mode is visible to the user", () => {
   assert.match(mainProcess, /sendUpdateState\("unsupported"/);
 });
 
-test("alpha update download is preserved and installs on safe app exit", () => {
+test("beta update download is preserved and installs on safe app exit", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
   assert.match(main, /autoUpdater\.autoInstallOnAppQuit = true/);
   assert.match(main, /if \(downloadedUpdateInfo\) \{[\s\S]*?downloaded: true/);
@@ -72,7 +72,7 @@ test("alpha update download is preserved and installs on safe app exit", () => {
   assert.match(main, /closeToTray && !isQuitting/);
 });
 
-test("alpha full-download fallback is wired through main, preload and renderer", () => {
+test("beta full-download fallback is wired through main, preload and renderer", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "electron", "preload.cjs"), "utf8");
   const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
@@ -89,26 +89,26 @@ test("alpha full-download fallback is wired through main, preload and renderer",
   }
 });
 
-test("Windows alpha release CI verifies update metadata and NSIS SHA-512 before publishing", () => {
+test("Windows beta release CI verifies update metadata and NSIS SHA-512 before publishing", () => {
   const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
   const validator = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-update-manifest.cjs"), "utf8");
-  const step = workflow.indexOf("- name: Verify alpha update manifest and installer checksum");
+  const step = workflow.indexOf("- name: Verify beta update manifest and installer checksum");
   assert.ok(step >= 0);
   assert.ok(step > workflow.indexOf("- name: Build installer and portable ZIP"));
   assert.ok(step < workflow.indexOf("- name: Upload Windows build"));
   assert.match(validator, /createHash\("sha512"\)/);
-  assert.match(validator, /alpha\.yml/);
+  assert.match(validator, /beta\.yml/);
   assert.match(validator, /blockmap/);
 });
 
-test("alpha manifest validator accepts URL-encoded installer names", () => {
+test("beta manifest validator accepts URL-encoded installer names", () => {
   const validator = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-update-manifest.cjs"), "utf8");
   assert.match(validator, /encodeURI\(installer\)/);
   assert.match(validator, /encodeURIComponent\(installer\)/);
   assert.match(validator, /manifest\.includes\(name\)/);
 });
 
-test("published alpha filenames contain no spaces and match generated update manifest targets", () => {
+test("published beta filenames contain no spaces and match generated update manifest targets", () => {
   assert.equal(packageJson.build.win.artifactName, "Nico.Live.Message.Recorder-${version}-win.${ext}");
   assert.equal(packageJson.build.nsis.artifactName, "Nico.Live.Message.Recorder.Setup.${version}.${ext}");
   for (const template of [packageJson.build.win.artifactName, packageJson.build.nsis.artifactName]) {
@@ -116,5 +116,5 @@ test("published alpha filenames contain no spaces and match generated update man
   }
   const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
   assert.match(workflow, /gh release create/);
-  assert.match(workflow, /Verify alpha update manifest and installer checksum/);
+  assert.match(workflow, /Verify beta update manifest and installer checksum/);
 });

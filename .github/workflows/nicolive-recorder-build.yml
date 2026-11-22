@@ -65,35 +65,13 @@ jobs:
             git commit -m "docs: sync README version and release history [skip ci]"
             git push
           }
-      - name: Mirror alpha README and changelog to repository home page
-        if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
-        shell: pwsh
-        run: |
-          git fetch origin main
-          $mainDir = Join-Path $env:RUNNER_TEMP "main-docs"
-          if (Test-Path $mainDir) { Remove-Item $mainDir -Recurse -Force }
-          git worktree add --detach $mainDir origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Could not prepare main branch worktree." }
-          Copy-Item README.md (Join-Path $mainDir "README.md") -Force
-          Copy-Item CHANGELOG.md (Join-Path $mainDir "CHANGELOG.md") -Force
-          git -C $mainDir config user.name "github-actions[bot]"
-          git -C $mainDir config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C $mainDir add README.md CHANGELOG.md
-          git -C $mainDir diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git -C $mainDir commit -m "docs: mirror latest alpha README and changelog [skip ci]"
-            if ($LASTEXITCODE -ne 0) { throw "Could not commit mirrored beta documentation." }
-            git -C $mainDir push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { throw "Could not push mirrored documentation to main." }
-          }
-          git worktree remove --force $mainDir
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Run application tests
         run: npm test
       - name: Build installer and portable ZIP
         run: npm run dist:win
-      - name: Verify alpha update manifest and installer checksum
+      - name: Verify beta update manifest and installer checksum
         run: node scripts/verify-update-manifest.cjs
       - name: Read app version
         id: app-version
@@ -108,21 +86,21 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
-      - name: Publish alpha prerelease
+      - name: Publish beta prerelease
         if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = node -p "require('./package.json').version"
-          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+-alpha\.\d+$') { throw 'Invalid alpha version' }
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') { throw 'Invalid beta version' }
           $tag = "v$version"
-          if (-not (Test-Path 'dist/alpha.yml')) { throw 'Missing alpha.yml update metadata' }
+          if (-not (Test-Path 'dist/beta.yml')) { throw 'Missing beta.yml update metadata' }
           $installer = @(Get-ChildItem dist -File -Filter '*Setup*.exe')
           $portable = @(Get-ChildItem dist -File -Filter '*-win.zip')
           if ($installer.Count -ne 1 -or $portable.Count -ne 1) { throw 'Missing Windows installer or portable ZIP' }
           $assets = @(Get-ChildItem dist -File | Where-Object {
-            $_.Extension -in '.exe','.zip','.blockmap' -or $_.Name -eq 'alpha.yml'
+            $_.Extension -in '.exe','.zip','.blockmap' -or $_.Name -eq 'beta.yml'
           } | ForEach-Object { $_.FullName })
           gh release view $tag --json url --jq .url
           if ($LASTEXITCODE -eq 0) { Write-Host 'Alpha release already exists; skipping duplicate publication'; exit 0 }

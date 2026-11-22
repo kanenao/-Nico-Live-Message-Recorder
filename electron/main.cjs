@@ -317,12 +317,12 @@ function sendUpdateState(state, details = {}) {
 function configureAutoUpdater() {
   if (!isAutoUpdateSupported()) return false;
 
-  // The GitHub publisher writes alpha.yml; only beta and newer stable releases are accepted.
-  autoUpdater.channel = "alpha";
+  // Keep the app on the beta update feed; stable product builds use the latest feed.
+  autoUpdater.channel = "beta";
   autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = true;
   // GitHub/CDN range requests and differential blockmaps can fail even when full EXEs are downloadable.
-  // Use the verified full NSIS installer on the alpha channel until differential downloads are proven reliable.
+  // Use the verified full NSIS installer on the beta channel until differential downloads are proven reliable.
   autoUpdater.disableDifferentialDownload = true;
   // Apply a downloaded update on normal exit after the graceful shutdown hook.
   autoUpdater.autoInstallOnAppQuit = true;
@@ -4698,7 +4698,7 @@ app.whenReady().then(async () => {
     if (typeof streamlinkUpdateTimer.unref === "function") streamlinkUpdateTimer.unref();
   }
   if (configureAutoUpdater()) {
-    // Check shortly after startup, then refresh the alpha channel every six hours.
+    // Check shortly after startup, then refresh the beta channel every six hours.
     setTimeout(() => checkForUpdatesNow().catch(() => {}), 8000);
     const updateTimer = setInterval(() => checkForUpdatesNow().catch(() => {}), 6 * 60 * 60 * 1000);
     if (typeof updateTimer.unref === "function") updateTimer.unref();
