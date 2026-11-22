@@ -16,6 +16,7 @@
 - **放送記事・無料AI記事生成は製品版から除外**：Ollama、映像AI解析、Whisper.cpp、生放送中の記事生成はβ版で強化を継続し、製品版ではUI・IPC・自動解析を無効化
 - **配布チャンネルを分離**：製品版はGitHub Releasesのlatestチャンネル、β版はbetaチャンネルを使用し、相互に自動更新されないように設定
 - **安定版のWindowsビルド検証を追加**：latest.yml、インストーラー名、blockmap、SHA-512を検証してから製品版を公開
+- **製品版専用の検証ブランチを用意**：公開前にテストとWindowsビルドを実行し、合格後にmainへ反映
 
 [すべてのバージョン更新履歴を見る](CHANGELOG.md)
 <!-- AUTO-GENERATED: RELEASE-INFO:END -->
