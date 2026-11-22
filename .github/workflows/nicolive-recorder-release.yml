@@ -1,23 +1,23 @@
-name: Release Nico Live Message Recorder
+name: Release Nico Live Message Recorder (Product)
 
 on:
   push:
     tags:
-      - "v*-beta*"
+      - "v*"
   workflow_dispatch:
   workflow_run:
     workflows:
-      - Build Nico Live Message Recorder
+      - Build Nico Live Message Recorder (Product)
     types:
       - completed
     branches:
-      - beta
+      - main
 
 permissions:
   contents: write
 
 concurrency:
-  group: nicolive-recorder-release-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: nicolive-recorder-product-release-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -35,15 +35,15 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Check whether this version is already published
+      - name: Check product version and duplicate release
         id: release-check
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = node -p "require('./package.json').version"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not read package.json version."
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "The product release workflow only accepts stable X.Y.Z versions. Current version: $version"
           }
           $tag = "v$version"
           $releaseUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
@@ -52,11 +52,10 @@ jobs:
             Authorization = "Bearer $env:GH_TOKEN"
             "X-GitHub-Api-Version" = "2022-11-28"
           }
-
           try {
             $null = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -Method Get
             "already_published=true" >> $env:GITHUB_OUTPUT
-            Write-Host "$tag is already published; skip duplicate release."
+            Write-Host "$tag is already published; skip duplicate product release."
           } catch {
             $statusCode = 0
             if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
@@ -64,37 +63,35 @@ jobs:
             }
             if ($statusCode -eq 404) {
               "already_published=false" >> $env:GITHUB_OUTPUT
-              if ($version -notmatch "-beta") { throw "The beta release workflow only accepts beta versions. Current version: $version" }
-              Write-Host "$tag is not published; create beta release."
+              Write-Host "$tag is not published; create stable product release."
             } else {
               throw "Unable to check GitHub Release for $tag (HTTP $statusCode): $($_.Exception.Message)"
             }
           }
-      - name: Verify release tag matches package version
+      - name: Verify release tag matches stable product version
         if: github.ref_type == 'tag' && steps.release-check.outputs.already_published != 'true'
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $version = node -p "require('./package.json').version"
-          if ($version -notmatch "-beta") { throw "Alpha tags must point to an beta package version." }
           $expected = "v$version"
-          if ($env:RELEASE_TAG -ne $expected) {
-            throw "Tag $env:RELEASE_TAG does not match package version $expected"
+          if ($version -notmatch '^\d+\.\d+\.\d+$' -or $env:RELEASE_TAG -ne $expected) {
+            throw "Product release tag must match stable package version $expected"
           }
-      - name: Run application tests
+      - name: Run product application tests
         if: steps.release-check.outputs.already_published != 'true'
         run: npm test
-      - name: Build and publish Windows release to GitHub Releases
+      - name: Build and publish stable Windows product release
         if: steps.release-check.outputs.already_published != 'true'
         run: npm run dist:win:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Verify beta update metadata
+      - name: Verify latest product update metadata
         if: steps.release-check.outputs.already_published != 'true'
         shell: pwsh
         run: |
-          $metadata = Join-Path "dist" "beta.yml"
+          $metadata = Join-Path "dist" "latest.yml"
           if (-not (Test-Path $metadata)) {
-            throw "dist/beta.yml was not generated. The beta auto-update feed cannot work."
+            throw "dist/latest.yml was not generated. The stable product auto-update feed cannot work."
           }
