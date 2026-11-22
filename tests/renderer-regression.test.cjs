@@ -415,7 +415,7 @@ test("package, UI and CI artifact versions are kept in sync", () => {
   assert.equal(packageConfig.nicoEdition, "product");
   assert.ok(html.includes("v" + packageConfig.version));
   assert.equal(packageConfig.build.win.publish[0].channel, "latest");
-  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows"));
+  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-Product-${{ steps.app-version.outputs.version }}-Windows"));
   assert.match(buildWorkflow, /Get-Content package\\.json -Raw \\| ConvertFrom-Json/);
 });
 
