@@ -5,6 +5,19 @@
 **現在の配布チャンネル：製品版（開発ブランチ：`main`、バージョン：1.0.0）**
 
 <!-- AUTO-GENERATED: RELEASE-INFO:START -->
+## 現在の製品版と最近の更新
+
+**現在の製品版：1.0.0**
+
+最新の更新内容を1バージョン分掲載しています。過去の全履歴は [CHANGELOG.md](CHANGELOG.md) をご覧ください。
+
+### 1.0.0
+- **Nico Live Message Recorder 製品版を開始**：β版から中核の録画・コメント取得・録画ライブラリ・ASS変換・コメント付き動画生成を取り込み、安定版として分離
+- **放送記事・無料AI記事生成は製品版から除外**：Ollama、映像AI解析、Whisper.cpp、生放送中の記事生成はβ版で強化を継続し、製品版ではUI・IPC・自動解析を無効化
+- **配布チャンネルを分離**：製品版はGitHub Releasesのlatestチャンネル、β版はbetaチャンネルを使用し、相互に自動更新されないように設定
+- **安定版のWindowsビルド検証を追加**：latest.yml、インストーラー名、blockmap、SHA-512を検証してから製品版を公開
+
+[すべてのバージョン更新履歴を見る](CHANGELOG.md)
 <!-- AUTO-GENERATED: RELEASE-INFO:END -->
 
 ## 製品版の機能
