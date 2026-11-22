@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker, Notification } = require("electron");
+const PRODUCT_EDITION = require("../package.json").nicoEdition === "product";
 const { spawn, execFile, execFileSync } = require("node:child_process");
 const { randomUUID, createHash } = require("node:crypto");
 const {
@@ -318,8 +319,8 @@ function configureAutoUpdater() {
   if (!isAutoUpdateSupported()) return false;
 
   // Keep the app on the beta update feed; stable product builds use the latest feed.
-  autoUpdater.channel = "beta";
-  autoUpdater.allowPrerelease = true;
+  autoUpdater.channel = PRODUCT_EDITION ? "latest" : "beta";
+  autoUpdater.allowPrerelease = !PRODUCT_EDITION;
   autoUpdater.autoDownload = true;
   // GitHub/CDN range requests and differential blockmaps can fail even when full EXEs are downloadable.
   // Use the verified full NSIS installer on the beta channel until differential downloads are proven reliable.
@@ -668,6 +669,7 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
 }
 
 async function createAndSaveBroadcastArticle(commentPath, context = {}, options = {}) {
+  if (PRODUCT_EDITION) return { status: "skipped", reason: "製品版では放送記事・無料AI記事生成を提供していません。" };
   if (!commentPath || !fs.existsSync(commentPath)) {
     return { status: "skipped", reason: "コメントログが見つかりません。" };
   }
@@ -876,6 +878,7 @@ async function generateStandaloneBroadcastArticle(input = {}) {
 const recordedArticleAnalysisInFlight = new Map();
 let recordedArticleAnalysisQueue = Promise.resolve();
 function queueRecordedArticleAnalysis(articlePath, options = {}) {
+  if (PRODUCT_EDITION) return Promise.resolve({ status: "skipped", reason: "製品版では放送記事・無料AI記事生成を提供していません。" });
   const key = path.resolve(String(articlePath || ""));
   if (recordedArticleAnalysisInFlight.has(key)) return recordedArticleAnalysisInFlight.get(key);
   const job = recordedArticleAnalysisQueue.catch(() => {}).then(() => analyzeSavedRecordedArticle(key, options));
@@ -1125,13 +1128,15 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
     ...currentProgramInfo
   });
   send("comments:file", { path: commentFilePath });
-  if (articleUpdateTimer) clearInterval(articleUpdateTimer);
-  articleUpdateTimer = setInterval(() => {
-    void refreshLiveBroadcastArticle();
-  }, 60 * 1000);
-  if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
-  if (currentProgramInfo.programTitle || currentProgramInfo.description) {
-    void refreshLiveBroadcastArticle();
+  if (!PRODUCT_EDITION) {
+    if (articleUpdateTimer) clearInterval(articleUpdateTimer);
+    articleUpdateTimer = setInterval(() => {
+      void refreshLiveBroadcastArticle();
+    }, 60 * 1000);
+    if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
+    if (currentProgramInfo.programTitle || currentProgramInfo.description) {
+      void refreshLiveBroadcastArticle();
+    }
   }
 }
 
@@ -1220,6 +1225,7 @@ function appendMarker(type, fields = {}) {
 }
 
 async function refreshLiveBroadcastArticle(options = {}) {
+  if (PRODUCT_EDITION) return null;
   if (!commentWriter || !commentFilePath) return null;
   if (articleUpdateInProgress) {
     // Keep one refresh queued while Ollama is busy; metadata or comment bursts
@@ -2109,6 +2115,7 @@ async function stopLiveArticleAudioCapture(liveId) {
   }
 }
 async function startLiveArticleSession(input = {}) {
+  if (PRODUCT_EDITION) throw new Error("製品版では放送記事・無料AI記事生成は利用できません。β版をご利用ください。");
   if (timeshiftCommentFetchActive) throw new Error("過去配信のコメント取得中は生放送記事を開始できません。");
   if (provider || commentWriter || liveArticleSessionActive) throw new Error("別のコメント取得セッションが実行中です。先に切断してください。");
   if (streamlinkProcess || streamlinkFinalizePromise) throw new Error("録画中は生放送記事セッションを開始できません。録画停止後に再試行してください。");
@@ -2185,8 +2192,10 @@ async function stopLiveArticleSession() {
   return { stopped: true, liveId };
 }
 
-ipcMain.handle("articles:live-start", (_event, input) => startLiveArticleSession(input));
-ipcMain.handle("articles:live-stop", () => stopLiveArticleSession());
+if (!PRODUCT_EDITION) {
+  ipcMain.handle("articles:live-start", (_event, input) => startLiveArticleSession(input));
+  ipcMain.handle("articles:live-stop", () => stopLiveArticleSession());
+}
 
 ipcMain.handle("live:connect", async (_event, value, options = {}) => {
   if (captureStopPromise) throw new Error("録画とコメントの停止完了後に再接続してください。");
@@ -2821,6 +2830,7 @@ function stopMonitor() {
 }
 
 ipcMain.handle("monitor:get-state", () => getMonitorState());
+if (!PRODUCT_EDITION) {
 ipcMain.handle("ollama:get-status", () => getOllamaStatus());
 ipcMain.handle("ollama:download-installer", async () => {
   const installerPath = await downloadOllamaInstaller({
@@ -2840,6 +2850,8 @@ ipcMain.handle("ollama:pull-model", async (_event, input) => {
   });
   return result;
 });
+
+}
 
 ipcMain.handle("monitor:save-settings", (_event, values) => saveMonitorSettings(values));
 
@@ -4087,7 +4099,7 @@ function listCaptureLibrary() {
     item.liveId = indexed && /^lv\d{5,}$/i.test(String(indexed.liveId || ""))
       ? indexed.liveId : (matchedLogs.get(key) || "");
   }
-  const savedArticles = listBroadcastArticles().items;
+  const savedArticles = PRODUCT_EDITION ? [] : listBroadcastArticles().items;
   for (const item of items) {
     if (item.type !== "video") continue;
     const article = savedArticles.find(candidate =>
@@ -4203,7 +4215,7 @@ async function listCaptureLibraryWithProfiles() {
     else if (byName.get(label) !== normalizedId) byName.set(label, ""); // 同名アカウントは紐付けない
   }
   for (const target of getMonitorSettings().targets) addKnownName(target.name, target.userId);
-  for (const article of listBroadcastArticles().items) {
+  if (!PRODUCT_EDITION) for (const article of listBroadcastArticles().items) {
     addKnownName(article.broadcasterName, article.broadcasterId);
   }
   const stored = readAppSettings().libraryProfileIds;
@@ -4443,6 +4455,7 @@ async function getLibraryVideoPreview(value, mode = "poster") {
   return task;
 }
 
+if (!PRODUCT_EDITION) {
 function resolveBroadcastArticlePath(value) {
   const root = path.resolve(dataRoot(), "articles"), target = path.resolve(String(value || ""));
   const relative = path.relative(root, target);
@@ -4510,6 +4523,8 @@ ipcMain.handle("articles:select-whisper-model", async () => {
   writeAppSettings({ articleWhisperModelPath: selectedPath });
   return { canceled: false, path: selectedPath, name: path.basename(selectedPath) };
 });
+}
+
 ipcMain.handle("library:open-item", async (_event, value) => {
   const target = resolveLibraryItemPath(value);
   const error = await shell.openPath(target);
