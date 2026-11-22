@@ -1529,3 +1529,13 @@ button, .button {
 
 /* alpha.132: show recovery guidance only when the app update failed. */
 .version-update-page .update-error-help { margin: 0; padding: 12px 15px; border-left: 3px solid #f09aa5; background: rgba(240,154,165,.07); border-radius: 5px; color: #e8b5c0; font-size: 12px; line-height: 1.65; }
+
+
+/* Product edition: broadcast journal and local AI article generation are beta-only. */
+body[data-edition="product"] #articles-nav-button,
+body[data-edition="product"] #articles-panel,
+body[data-edition="product"] #ollama-settings-section,
+body[data-edition="product"] .live-broadcast-ai-article,
+body[data-edition="product"] .library-article-summary {
+  display: none !important;
+}
