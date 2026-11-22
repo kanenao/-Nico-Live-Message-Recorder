@@ -97,7 +97,7 @@ test("Windows beta release CI verifies update metadata and NSIS SHA-512 before p
   assert.ok(step > workflow.indexOf("- name: Build installer and portable ZIP"));
   assert.ok(step < workflow.indexOf("- name: Upload Windows build"));
   assert.match(validator, /createHash\("sha512"\)/);
-  assert.match(validator, /beta\.yml/);
+  assert.match(validator, /manifestName = channel \+ "\.yml"/);
   assert.match(validator, /blockmap/);
 });
 
