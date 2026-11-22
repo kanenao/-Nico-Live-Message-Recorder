@@ -1,5 +1,11 @@
 "use strict";
 
+const { compileAssNgRegex, isAssNgComment } = require("./ass-ng-regex.cjs");
+const {
+  normalizeAssMotion, calculateAssHeadwayMs,
+  AUTO_ASS_LANE_ORDER, calculateAutomaticAssMotion, reserveAutomaticAssLane
+} = require("./ass-motion.cjs");
+
 function parseTimestamp(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value < 1000000000000 ? value * 1000 : value;
@@ -50,6 +56,8 @@ function takeLane(lanes, requestedStart) {
 
 function generateAssFromRecords(records, options = {}) {
   if (!Array.isArray(records)) throw new TypeError("コメントログの形式が正しくありません。");
+  const ngRules = compileAssNgRegex(options.ngRegex || "");
+  const motion = normalizeAssMotion(options);
 
   const comments = records
     .filter((record) => record && record.type === "comment" && String(record.content || "").trim())
@@ -80,10 +88,18 @@ function generateAssFromRecords(records, options = {}) {
   const baseFontSize = Math.max(18, Math.min(72, Number(options.fontSize) || 40));
   const playResX = 1920;
   const playResY = 1080;
-  const scrollLanes = Array(18).fill(0);
+  const scrollLanes = Array(motion.assAutoMotion ? 18 : motion.assScrollLanes).fill(0);
+  const automaticLanes = Array(18).fill(null);
+  const recentScrollTimes = [];
+  let firstRecentScroll = 0;
+  let automaticLaneSequence = 0;
+  let automaticallyAdjustedCount = 0;
+  let automaticallyDeferredCount = 0;
+  let unconstrainedLaneIndex = 0;
   const topLanes = Array(5).fill(0);
   const bottomLanes = Array(5).fill(0);
   const dialogue = [];
+  let filteredCount = 0;
 
   const colorTags = {
     red: "\\c&H000000FF&",
@@ -101,6 +117,10 @@ function generateAssFromRecords(records, options = {}) {
     if (stopAt !== null && item.timestamp > stopAt + 250) continue;
 
     const record = item.record;
+    if (isAssNgComment(record.content, ngRules)) {
+      filteredCount += 1;
+      continue;
+    }
     const text = escapeAssText(record.content);
     if (!text) continue;
 
@@ -118,7 +138,7 @@ function generateAssFromRecords(records, options = {}) {
     if (isTop || isBottom) {
       const lanes = isTop ? topLanes : bottomLanes;
       const lane = takeLane(lanes, requestedStart);
-      const duration = 5;
+      const duration = motion.assFixedDuration;
       lanes[lane.index] = lane.start + duration + 0.15;
       const y = isTop ? 48 + lane.index * 42 : playResY - 48 - lane.index * 42;
       const align = isTop ? 8 : 2;
@@ -132,11 +152,46 @@ function generateAssFromRecords(records, options = {}) {
     }
 
     const width = estimateTextWidth(record.content, fontSize);
-    const duration = Math.max(4, Math.min(18, (playResX + width) / 360));
-    const lane = takeLane(scrollLanes, requestedStart);
+    // Keep the original comment timestamp and choose a speed and physical row
+    // from a rolling five-second count of visible comments.
+    let automatic = null;
+    if (motion.assAutoMotion) {
+      while (firstRecentScroll < recentScrollTimes.length &&
+             recentScrollTimes[firstRecentScroll] < requestedStart - 5) {
+        firstRecentScroll += 1;
+      }
+      automatic = calculateAutomaticAssMotion(
+        width, recentScrollTimes.length - firstRecentScroll + 1, playResX
+      );
+      recentScrollTimes.push(requestedStart);
+      if (firstRecentScroll > 2048) {
+        recentScrollTimes.splice(0, firstRecentScroll);
+        firstRecentScroll = 0;
+      }
+      automaticallyAdjustedCount += 1;
+    }
+    const enteringX = automatic ? automatic.entryX : playResX + motion.assEntryOffset;
+    const speed = automatic ? automatic.speed : motion.assScrollSpeed;
+    const duration = (enteringX + width) / speed;
+    let lane;
+    if (automatic) {
+      const permittedLanes = AUTO_ASS_LANE_ORDER.slice(0, automatic.laneCount);
+      lane = reserveAutomaticAssLane(
+        automaticLanes, permittedLanes, requestedStart,
+        width, speed, enteringX, automaticLaneSequence
+      );
+      automaticLaneSequence += 1;
+      if (lane.start > requestedStart + 0.01) automaticallyDeferredCount += 1;
+    } else {
+      lane = motion.assPreventOverlap
+        ? takeLane(scrollLanes, requestedStart)
+        : { index: unconstrainedLaneIndex++ % scrollLanes.length, start: requestedStart };
+      scrollLanes[lane.index] = motion.assPreventOverlap
+        ? lane.start + calculateAssHeadwayMs(width, speed) / 1000
+        : requestedStart;
+    }
     const y = 52 + lane.index * 48;
-    scrollLanes[lane.index] = lane.start + duration + 0.25;
-    const movement = "{\\move(" + playResX + "," + y + "," + (-width) + "," + y + ")" + styleTags + "}";
+    const movement = "{\\move(" + enteringX + "," + y + "," + (-width) + "," + y + ")" + styleTags + "}";
 
     dialogue.push(
       "Dialogue: 0," + assTime(lane.start * 1000) + "," +
@@ -146,7 +201,7 @@ function generateAssFromRecords(records, options = {}) {
   }
 
   if (dialogue.length === 0) {
-    throw new Error("録画開始後のコメントがありません。録画開始時刻とコメント時刻を確認してください。");
+    throw new Error(filteredCount > 0 ? "NGワード設定によりASSへ出力できるコメントがありません。正規表現を確認してください。" : "録画開始後のコメントがありません。録画開始時刻とコメント時刻を確認してください。");
   }
 
   const header = [
@@ -170,7 +225,10 @@ function generateAssFromRecords(records, options = {}) {
 
   return {
     content: header.join("\r\n") + "\r\n",
-    commentCount: dialogue.length
+    commentCount: dialogue.length,
+    filteredCount,
+    automaticallyAdjustedCount,
+    automaticallyDeferredCount
   };
 }
 

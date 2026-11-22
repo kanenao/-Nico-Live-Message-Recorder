@@ -4,7 +4,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { patchNicoLivePluginSource } = require("../scripts/patch-nicolive.cjs");
+const slSource = fs.readFileSync(path.join(__dirname, "..", "electron", "streamlink.cjs"), "utf8");
 const preparationScript = fs.readFileSync(path.join(__dirname, "..", "scripts", "prepare-streamlink.ps1"), "utf8");
+const { verifyStreamlinkPlugin } = require("../electron/streamlink-probe.cjs");
 const {
   normalizeLiveId,
   normalizeQuality,
@@ -13,13 +15,63 @@ const {
   findBundledStreamlinkExecutable,
   findBundledFfmpegExecutable,
   createStreamlinkRuntime,
-  buildStreamlinkArgs
+  buildStreamlinkArgs,
+  formatStreamlinkFailure
 } = require("../electron/streamlink.cjs");
+
+test("Streamlink preflight confirms the nicolive plugin before starting a recording", async () => {
+  const { EventEmitter } = require("node:events");
+  const { PassThrough } = require("node:stream");
+  let captured;
+  const fakeSpawn = (executable, args, options) => {
+    captured = { executable, args, options };
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    process.nextTick(() => child.emit("close", 0, null));
+    return child;
+  };
+  const result = await verifyStreamlinkPlugin("streamlink.exe", "lv123456789", "runtime/config", {
+    spawnProcess: fakeSpawn,
+    env: { CUSTOM_STREAMLINK_RUNTIME: "isolated" }
+  });
+  assert.equal(result.checked, true);
+  assert.equal(captured.executable, "streamlink.exe");
+  assert.deepEqual(captured.args, [
+    "--config", "runtime/config",
+    "--can-handle-url-no-redirect", "https://live.nicovideo.jp/watch/lv123456789"
+  ]);
+  assert.equal(captured.options.env.CUSTOM_STREAMLINK_RUNTIME, "isolated");
+  assert.equal(captured.args.includes("--can-handle-url"), false, "preflight must not follow a login redirect");
+});
+
+test("Streamlink preflight returns actionable plugin diagnostics", async () => {
+  const { EventEmitter } = require("node:events");
+  const { PassThrough } = require("node:stream");
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    process.nextTick(() => {
+      child.stderr.write("No plugin can handle this URL");
+      child.emit("close", 1, null);
+    });
+    return child;
+  };
+  await assert.rejects(
+    verifyStreamlinkPlugin("streamlink.exe", "lv123456789", "runtime/config", { spawnProcess: fakeSpawn }),
+    /ニコ生URLを処理できません[\s\S]*No plugin can handle this URL/
+  );
+});
 
 test("normalizeLiveId accepts IDs and watch URLs", () => {
   assert.equal(normalizeLiveId("lv123456789"), "lv123456789");
   assert.equal(normalizeLiveId("https://live.nicovideo.jp/watch/lv123456789"), "lv123456789");
   assert.throws(() => normalizeLiveId("not-a-live-id"));
+});
+
+test("Streamlink keeps plugin cache enabled for Niconico authentication and cookie persistence", () => {
+  const args = buildStreamlinkArgs({ configPath: "config", liveId: "lv123456789", quality: "best", outputPath: "capture.ts" });
+  assert.equal(args.includes("--no-plugin-cache"), false);
+  assert.match(slSource, /plugin cache enabled/);
 });
 
 test("timeshift mode requests the beginning of the Nico Live archive", () => {
@@ -160,4 +212,37 @@ test("Windows portable preparation pins the latest verified Streamlink 8.6.3-1 a
   assert.match(preparationScript, /3b1f1470d4b135080a8107ca2917379ca3ff5acadbcdc215568b79eea1450497/);
   assert.match(preparationScript, /patch-nicolive\.cjs/);
   assert.match(preparationScript, /nicolive\.py/);
+});
+
+
+test("Niconico cookie filtering accepts root and subdomain cookies without leaking unrelated domains", () => {
+  const { normalizeNicoCookies, getNicoUserSession } = require("../electron/nico-cookies.cjs");
+  const cookies = [
+    { name: "user_session", value: "session-root", domain: ".nicovideo.jp" },
+    { name: "other", value: "subdomain-value", domain: "live.nicovideo.jp" },
+    { name: "user_session", value: "wrong-domain", domain: ".example.com" },
+    { name: "empty", value: "", domain: ".nicovideo.jp" }
+  ];
+  const normalized = normalizeNicoCookies(cookies);
+  assert.equal(normalized.length, 2);
+  assert.equal(getNicoUserSession(normalized), "session-root");
+});
+
+test("Niconico cookie normalization safely handles empty and invalid cookie collections", () => {
+  const { normalizeNicoCookies, getNicoUserSession } = require("../electron/nico-cookies.cjs");
+  assert.deepEqual(normalizeNicoCookies(null), []);
+  assert.equal(getNicoUserSession([]), "");
+});
+
+
+test("Streamlink failures explain Niconico access, authentication, and network diagnostics", () => {
+  const noSession = formatStreamlinkFailure("Failed to get wss_api_url", { hasUserSession: false });
+  assert.match(noSession, /視聴接続情報を取得できません/);
+  assert.match(noSession, /user_session: 未検出/);
+  const forbidden = formatStreamlinkFailure("HTTP Error 403 Forbidden", { hasUserSession: true });
+  assert.match(forbidden, /再ログイン/);
+  assert.match(forbidden, /有効性は未確認/);
+  const network = formatStreamlinkFailure("WebSocket connection timed out");
+  assert.match(network, /通信状態を確認/);
+  assert.match(network, /Streamlink詳細: WebSocket connection timed out/);
 });

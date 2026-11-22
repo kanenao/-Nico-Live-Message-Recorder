@@ -6,7 +6,11 @@ function writeCommentLine(writer, line) {
   }
   return new Promise((resolve, reject) => {
     try {
-      writer.write(String(line), (error) => error ? reject(error) : resolve());
+      // Each JSONL event must end on its own line. An empty write is used
+      // by callers as a flush barrier before a live article refresh.
+      const value = String(line);
+      writer.write(value && /\r?\n$/.test(value) ? value : value + "\n",
+        (error) => error ? reject(error) : resolve());
     } catch (error) {
       reject(error);
     }

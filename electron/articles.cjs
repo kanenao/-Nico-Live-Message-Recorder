@@ -1,5 +1,7 @@
 "use strict";
 
+const { parseCommentJsonlText } = require("./comment-jsonl.cjs");
+
 const OPT_OUT_TERMS = [
   "無断転載禁止", "転載禁止", "転載不可", "切り抜き禁止", "切り抜き不可",
   "生成AI禁止", "AI生成禁止", "AI利用禁止", "AI学習禁止", "AI禁止",
@@ -28,18 +30,7 @@ function cleanText(value, maxLength = 2000) {
 }
 
 function parseCommentLog(input) {
-  const records = [];
-  for (const line of String(input || "").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const value = JSON.parse(trimmed);
-      if (value && typeof value === "object" && !Array.isArray(value)) records.push(value);
-    } catch (_) {
-      // Ignore an incomplete last line in a log that is still being written.
-    }
-  }
-  return records;
+  return parseCommentJsonlText(input);
 }
 
 function firstValue(values) {
@@ -148,8 +139,9 @@ function generateBroadcastArticle(input, context = {}) {
   const topics = extractTopics(comments);
   const featuredComments = selectFeaturedComments(comments);
   const visitorCountValue = firstValue([
-    context.visitorCount, programMetadata.visitorCount, programMetadata.totalVisitors,
-    programMetadata.viewCount, programMetadata.totalViewCount
+    context.visitorCount, context.watchCount, context.viewers, context.totalVisitors,
+    programMetadata.visitorCount, programMetadata.watchCount, programMetadata.viewers,
+    programMetadata.totalVisitors, programMetadata.viewCount, programMetadata.totalViewCount
   ]);
   const visitorCount = Number.isFinite(Number(visitorCountValue)) && visitorCountValue !== ""
     ? Math.max(0, Math.floor(Number(visitorCountValue))) : null;
@@ -184,6 +176,10 @@ function generateBroadcastArticle(input, context = {}) {
       : (programTitle ? "「" + programTitle + "」と題した生配信を実施した。" : "生配信を実施した。");
     if (description) opening += " 番組説明には「" + description.slice(0, 420) + (description.length > 420 ? "…" : "") + "」と記載されている。";
     paragraphs.push(opening);
+  }
+
+  if (visitorCount !== null) {
+    paragraphs.push("来場者数は" + visitorCount.toLocaleString("ja-JP") + "人。");
   }
 
   if (comments.length) {

@@ -1,18 +1,20 @@
 {
   "name": "nicolive-recorder",
   "productName": "Nico Live Message Recorder",
-  "version": "0.1.0-beta.67",
+  "version": "1.0.0",
   "description": "ニコニコ生放送の配信ストリーム・コメント保存ツール",
   "main": "electron/main.cjs",
   "author": "kanenao",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist:win": "npm run prepare:streamlink && electron-builder --win nsis zip --publish never",
-    "pack": "npm run prepare:streamlink && electron-builder --dir",
+    "dist:win": "npm run prepare:icon && npm run prepare:streamlink && electron-builder --win nsis zip --publish never",
+    "pack": "npm run prepare:icon && npm run prepare:streamlink && electron-builder --dir",
     "test": "node --test",
     "prepare:streamlink": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-streamlink.ps1",
-    "dist:win:release": "npm run prepare:streamlink && electron-builder --win nsis zip --publish always"
+    "dist:win:release": "npm run prepare:icon && npm run prepare:streamlink && electron-builder --win nsis zip --publish always",
+    "docs:update": "node scripts/update-readme.mjs",
+    "prepare:icon": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-app-icon.ps1"
   },
   "dependencies": {
     "@n-air-app/nicolive-comment-protobuf": "github:Segu-g/nicolive-comment-protobuf#v2025.602.163750-segument",
@@ -40,7 +42,8 @@
       "composition.js",
       "THIRD-PARTY-NOTICES.md",
       "scripts/patch-nicolive.cjs",
-      "CHANGELOG.md"
+      "CHANGELOG.md",
+      "assets/**/*"
     ],
     "win": {
       "target": [
@@ -62,10 +65,12 @@
           "provider": "github",
           "owner": "kanenao",
           "repo": "-Nico-Live-Message-Recorder",
-          "releaseType": "prerelease",
-          "channel": "beta"
+          "releaseType": "release",
+          "channel": "latest"
         }
-      ]
+      ],
+      "artifactName": "Nico.Live.Message.Recorder-${version}-win.${ext}",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -73,7 +78,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Nico Live Message Recorder",
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "artifactName": "Nico.Live.Message.Recorder.Setup.${version}.${ext}",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "extraResources": [
       {
@@ -89,5 +97,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/kanenao/-Nico-Live-Message-Recorder.git"
-  }
+  },
+  "nicoEdition": "product"
 }

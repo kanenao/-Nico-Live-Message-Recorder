@@ -1,9 +1,10 @@
-name: Build Nico Live Message Recorder
+name: Build Nico Live Message Recorder (Product)
 
 on:
   push:
     branches:
       - main
+      - product
       - "feature/**"
     paths:
       - "electron/**"
@@ -34,11 +35,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: nicolive-recorder-build-${{ github.ref }}
+  group: nicolive-recorder-product-build-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -50,22 +51,38 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Synchronize product README and release history
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/product')
+        shell: pwsh
+        run: |
+          npm run docs:update
+          if ($LASTEXITCODE -ne 0) { throw "Product README synchronization failed." }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "docs: sync product README and release history [skip ci]"
+            git push
+          }
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Run application tests
+      - name: Run product application tests
         run: npm test
-      - name: Build installer and portable ZIP
+      - name: Build Windows product installer and portable ZIP
         run: npm run dist:win
+      - name: Verify product update manifest and installer checksum
+        run: node scripts/verify-update-manifest.cjs
       - name: Read app version
         id: app-version
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           "version=$version" >> $env:GITHUB_OUTPUT
-      - name: Upload Windows build
+      - name: Upload Windows product build
         uses: actions/upload-artifact@v4
         with:
-          name: Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows
+          name: Nico-Live-Message-Recorder-Product-${{ steps.app-version.outputs.version }}-Windows
           path: dist/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30

@@ -30,7 +30,7 @@ test("provides increasing H.264 quality profiles", () => {
 
 test("builds shell-free FFmpeg arguments with optional audio mapping and H.264/AAC", () => {
   const args = buildMp4TranscodeArgs("C:\\Videos\\input.webm", "C:\\Videos\\output.mp4", "standard");
-  for (const value of ["-i", "C:\\Videos\\input.webm", "C:\\Videos\\output.mp4", "libx264", "aac", "yuv420p", "medium", "21", "0:a:0?", "-progress", "pipe:2", "-nostats"]) {
+  for (const value of ["-i", "C:\\Videos\\input.webm", "C:\\Videos\\output.mp4", "libx264", "aac", "yuv420p", "-fps_mode:v", "passthrough", "medium", "21", "0:a:0?", "-progress", "pipe:2", "-nostats"]) {
     assert.ok(args.includes(value), "missing FFmpeg argument: " + value);
   }
   assert.ok(!args.some((value) => value.includes("&&") || value.includes(";")));

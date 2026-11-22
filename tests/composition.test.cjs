@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { prepareCommentTimeline, timestampMs, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText } = require("../composition.js");
+const { prepareCommentTimeline, timestampMs, isCompositionStalled, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText } = require("../composition.js");
 
 test("aligns comments to videoStart rather than sessionStart", () => {
   const result = prepareCommentTimeline([
@@ -156,4 +156,15 @@ test("normalizes multiline and control-character comments for one-line display",
 
 test("normalizes escaped newline and tab sequences in serialized comment text", () => {
   assert.equal(normalizeCommentDisplayText("一行目\\r\\n二行目\\t"), "一行目 二行目");
+});
+
+test("composition watchdog times out only when the video timestamp has stopped advancing", () => {
+  assert.equal(isCompositionStalled(1000, 90000, 90000), false);
+  assert.equal(isCompositionStalled(1000, 91000, 90000), true);
+  assert.equal(isCompositionStalled(119999, 120000, 90000), false);
+  assert.equal(isCompositionStalled(0, 180000, 180000), true);
+  assert.equal(isCompositionStalled(5000, 4000, 90000), false);
+  assert.equal(isCompositionStalled(NaN, 180000, 90000), false);
+  assert.equal(isCompositionStalled(100, Infinity, 90000), false);
+  assert.equal(isCompositionStalled(100, 200, 0), false);
 });

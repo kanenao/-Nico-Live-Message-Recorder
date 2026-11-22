@@ -1,3 +1,4 @@
+const PRODUCT_EDITION = document.body.dataset.edition === "product";
 const api = window.nicoAPI;
 const byId = (id) => document.getElementById(id);
 
@@ -8,6 +9,35 @@ const recordButton = byId("record-button");
 const stopRecordButton = byId("stop-record-button");
 const commentList = byId("comment-list");
 
+// Register the three primary capture controls before any optional UI startup work.
+// A failure in later renderer initialization must never leave these buttons inert.
+function reportCaptureButtonError(action, error) {
+  const detail = action + "に失敗しました：" + (error && error.message ? error.message : String(error));
+  try { setCaptureDetail(detail); } catch (_) {}
+  try { showToast(detail, true); } catch (_) {}
+  console.error("[capture-ui]", detail, error);
+}
+if (connectButton) {
+  connectButton.addEventListener("click", () => {
+    Promise.resolve().then(connectLive).catch((error) => reportCaptureButtonError("放送接続", error));
+  });
+}
+if (recordButton) {
+  recordButton.addEventListener("click", () => {
+    Promise.resolve().then(() => startVideoRecording()).catch((error) => reportCaptureButtonError("映像・音声録画", error));
+  });
+}
+if (disconnectButton) {
+  disconnectButton.addEventListener("click", () => {
+    Promise.resolve().then(disconnectLive).catch((error) => reportCaptureButtonError("コメント切断", error));
+  });
+}
+if (stopRecordButton) {
+  stopRecordButton.addEventListener("click", () => {
+    Promise.resolve().then(stopVideoRecording).catch((error) => reportCaptureButtonError("録画・コメント停止", error));
+  });
+}
+
 let connected = false;
 let recordStartedAt = 0;
 let recordClock = null;
@@ -16,6 +46,8 @@ let currentProgramMetadata = {};
 let currentCaptureTarget = null;
 let commentCaptureState = "disconnected";
 let videoCaptureState = "idle";
+let captureStopInProgress = false;
+let currentRecordingIsTimeshift = false;
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
@@ -35,6 +67,10 @@ let monitorSettings = {
   targets: []
 };
 const monitorStatuses = new Map();
+const liveArticlePreviews = new Map();
+let liveArticlePreviewSignature = "";
+let liveArticlePreviewFetchedAt = 0;
+let liveArticlePreviewRequestId = 0;
 const monitorHandledDetections = new Set();
 let monitorIsRunning = false;
 const monitorAutoQueue = [];
@@ -42,6 +78,184 @@ let monitorAutoProcessing = false;
 let recordStartInProgress = false;
 let captureLibraryItems = [];
 const expandedLibraryBroadcasters = new Set();
+const libraryThumbnailQueue = [];
+let libraryThumbnailRequests = 0;
+function pumpLibraryThumbnailQueue() {
+  while (libraryThumbnailRequests < 2 && libraryThumbnailQueue.length) {
+    const job = libraryThumbnailQueue.shift();
+    libraryThumbnailRequests += 1;
+    Promise.resolve().then(job).catch(error => {
+      console.warn("録画動画のサムネイル取得エラー:", error);
+    }).finally(() => {
+      libraryThumbnailRequests -= 1;
+      pumpLibraryThumbnailQueue();
+    });
+  }
+}
+function scheduleLibraryThumbnail(image, placeholder, item) {
+  libraryThumbnailQueue.push(async () => {
+    if (!image.isConnected) return;
+    try {
+      const imageUrl = await api.getLibraryThumbnail(item.path);
+      if (!image.isConnected || !placeholder.isConnected) return;
+      if (!String(imageUrl || "").startsWith("data:image/jpeg;base64,")) {
+        placeholder.textContent = "サムネイルなし";
+        return;
+      }
+      image.addEventListener("error", () => {
+        if (!image.isConnected) return;
+        image.hidden = true;
+        placeholder.hidden = false;
+        placeholder.textContent = "画像を表示できません";
+      }, { once: true });
+      image.src = imageUrl;
+      image.hidden = false;
+      placeholder.hidden = true;
+    } catch (_) {
+      if (placeholder.isConnected) placeholder.textContent = "サムネイル取得失敗";
+    }
+  });
+  pumpLibraryThumbnailQueue();
+}
+function makeVideoStoryboardPanel(loadStoryboard, titleText) {
+  const panel = document.createElement("section");
+  panel.className = "library-video-scenes video-storyboard-panel";
+  panel.hidden = true;
+  let loaded = false;
+  let pending = false;
+  let video = null;
+  let selectedSeconds = 0;
+  const header = document.createElement("div");
+  header.className = "video-storyboard-heading";
+  const heading = document.createElement("strong");
+  heading.textContent = titleText || "録画した動画の場面";
+  const status = document.createElement("p");
+  status.className = "library-video-scenes-status";
+  status.textContent = "場面一覧を表示すると、録画映像から最大30枚を取得します。";
+  header.append(heading, status);
+  panel.append(header);
+  const expand = async () => {
+    panel.hidden = !panel.hidden;
+    if (panel.hidden || loaded || pending) return;
+    pending = true;
+    status.textContent = "FFmpegで録画の場面を取得中…初回は時間がかかることがあります。";
+    try {
+      const result = await loadStoryboard();
+      if (!panel.isConnected) return;
+      const frames = Array.isArray(result && result.frames) ? result.frames
+        .filter(frame => frame && String(frame.imageUrl || "").startsWith("data:image/jpeg;base64,"))
+        : [];
+      if (!frames.length) {
+        status.textContent = result && result.message || "動画の場面を取得できませんでした。";
+        return;
+      }
+      status.textContent = (result.durationSeconds
+        ? "動画時間 " + formatDuration(result.durationSeconds * 1000) + " ／ " : "") +
+        frames.length + "場面" + (result.fromCache ? "（キャッシュから表示）" : "") +
+        " ／ 時刻を選んで画像を確認・再生できます。";
+      const layout = document.createElement("div");
+      layout.className = "video-storyboard-layout";
+      const selected = document.createElement("div");
+      selected.className = "library-video-selected video-storyboard-selected";
+      const bigImage = document.createElement("img");
+      bigImage.src = frames[0].imageUrl;
+      bigImage.alt = "動画の " + frames[0].label + " の場面";
+      const duration = document.createElement("span");
+      duration.className = "video-storyboard-duration";
+      duration.textContent = result.durationSeconds
+        ? formatDuration(result.durationSeconds * 1000) : "録画";
+      const selectedLabel = document.createElement("span");
+      selectedLabel.textContent = frames[0].label;
+      selectedSeconds = Number(frames[0].seconds) || 0;
+      selected.append(bigImage, duration, selectedLabel);
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "button button-primary button-small video-storyboard-play";
+      play.textContent = "この場面から再生";
+      const playbackUrl = String(result.videoUrl || "");
+      play.disabled = !/^file:\/\//i.test(playbackUrl);
+      play.title = play.disabled ? "録画動画がないため場面画像のみ表示します" : "";
+      play.addEventListener("click", async () => {
+        if (play.disabled) return;
+        if (!video) {
+          video = document.createElement("video");
+          video.controls = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+          video.className = "video-storyboard-player";
+          video.src = playbackUrl;
+          video.addEventListener("loadedmetadata", () => {
+            video.currentTime = Math.min(selectedSeconds, Math.max(0, video.duration - 0.15));
+            void video.play().catch(() => {});
+          }, { once: true });
+          video.addEventListener("error", () => {
+            status.textContent = "内蔵プレイヤーで再生できない形式です。録画ライブラリの「再生」から開いてください。";
+            video.hidden = true;
+            bigImage.hidden = false;
+          });
+          selected.appendChild(video);
+          bigImage.hidden = true;
+        } else {
+          bigImage.hidden = true;
+          video.hidden = false;
+          video.currentTime = Math.min(selectedSeconds, Math.max(0, video.duration - 0.15));
+          await video.play().catch(() => {
+            status.textContent = "再生できません。録画ライブラリの「再生」から開いてください。";
+          });
+        }
+      });
+      const left = document.createElement("div");
+      left.className = "video-storyboard-left";
+      left.append(selected, play);
+      const filmstrip = document.createElement("div");
+      filmstrip.className = "library-video-filmstrip video-storyboard-grid";
+      const buttons = [];
+      frames.forEach((frame, index) => {
+        const scene = document.createElement("button");
+        scene.type = "button";
+        scene.className = "library-video-scene";
+        scene.title = frame.label + " の場面を表示";
+        scene.setAttribute("aria-pressed", String(index === 0));
+        const img = document.createElement("img");
+        img.src = frame.imageUrl;
+        img.loading = "lazy";
+        img.alt = "動画の " + frame.label + " の場面";
+        const label = document.createElement("span");
+        label.textContent = frame.label;
+        scene.append(img, label);
+        scene.addEventListener("click", () => {
+          for (const button of buttons) button.setAttribute("aria-pressed", String(button === scene));
+          selectedSeconds = Number(frame.seconds) || 0;
+          bigImage.src = frame.imageUrl;
+          bigImage.alt = img.alt;
+          selectedLabel.textContent = frame.label;
+          if (video && !video.hidden && Number.isFinite(video.duration)) {
+            video.currentTime = Math.min(selectedSeconds, Math.max(0, video.duration - 0.15));
+          }
+        });
+        buttons.push(scene);
+        filmstrip.appendChild(scene);
+      });
+      layout.append(left, filmstrip);
+      panel.appendChild(layout);
+      loaded = true;
+    } catch (error) {
+      if (panel.isConnected) status.textContent =
+        "動画内の場面を読み込めませんでした：" + (error.message || String(error));
+    } finally {
+      pending = false;
+    }
+  };
+  return { panel, expand };
+}
+function makeLibraryVideoScenesPanel(item) {
+  return makeVideoStoryboardPanel(() => api.getLibraryVideoPreview(item.path),
+    item.fileName + " ／ 動画の場面一覧");
+}
+function makeArticleVideoScenesPanel(article) {
+  return makeVideoStoryboardPanel(() => api.getArticleVideoPreview(article.articlePath),
+    (article.programTitle || article.title || "放送") + " ／ 場面一覧");
+}
 
 function requireCaptureApi(method) {
   if (!api || typeof api[method] !== "function") {
@@ -54,8 +268,18 @@ function setCaptureDetail(message) {
   if (detail) detail.textContent = String(message || "");
 }
 
+// A missing or temporarily replaced view must not abort an ongoing recording.
+function setCaptureText(id, value) {
+  const element = byId(id);
+  if (element) element.textContent = value;
+}
+
 function showToast(message, isError) {
   const toast = byId("toast");
+  if (!toast) {
+    console.warn("[capture-ui] 通知先がありません:", message);
+    return;
+  }
   toast.textContent = message;
   toast.className = "toast visible" + (isError ? " error" : "");
   window.clearTimeout(showToast.timer);
@@ -127,26 +351,26 @@ function updateCaptureIndicators() {
 function setConnection(state, label) {
   const badge = byId("connection-badge");
   const text = byId("connection-label");
-  badge.classList.remove("online", "busy", "failed");
+  if (badge) badge.classList.remove("online", "busy", "failed");
   commentCaptureState = ["connected", "connecting", "error"].includes(state) ? state : "disconnected";
   if (state === "connected") {
-    badge.classList.add("online");
-    text.textContent = "コメント受信中";
+    if (badge) badge.classList.add("online");
+    if (text) text.textContent = "コメント受信中";
     connected = true;
   } else if (state === "connecting") {
-    badge.classList.add("busy");
-    text.textContent = "接続中";
+    if (badge) badge.classList.add("busy");
+    if (text) text.textContent = "接続中";
     connected = false;
   } else if (state === "error") {
-    badge.classList.add("failed");
-    text.textContent = "接続エラー";
+    if (badge) badge.classList.add("failed");
+    if (text) text.textContent = "接続エラー";
     connected = false;
   } else {
-    text.textContent = label || "未接続";
+    if (text) text.textContent = label || "未接続";
     connected = false;
   }
-  connectButton.disabled = state === "connecting" || state === "connected";
-  disconnectButton.disabled = state !== "connected" && state !== "connecting";
+  if (connectButton) connectButton.disabled = captureStopInProgress || state === "connecting" || state === "connected";
+  if (disconnectButton) disconnectButton.disabled = captureStopInProgress || (state !== "connected" && state !== "connecting");
   updateCaptureIndicators();
 }
 
@@ -156,12 +380,12 @@ function normalizeId(value) {
 }
 
 function clearComments() {
-  commentList.replaceChildren();
+  if (commentList) commentList.replaceChildren();
   commentCount = 0;
   eventCount = 0;
   displayedComments = 0;
-  byId("comment-count").textContent = "0";
-  byId("event-count").textContent = "0";
+  setCaptureText("comment-count", "0");
+  setCaptureText("event-count", "0");
 }
 
 function eventText(record) {
@@ -187,10 +411,10 @@ function eventLabel(type) {
 function renderEvent(record) {
   if (!record) return;
   eventCount += 1;
-  byId("event-count").textContent = eventCount.toLocaleString("ja-JP");
+  setCaptureText("event-count", eventCount.toLocaleString("ja-JP"));
   if (record.type === "comment") {
     commentCount += 1;
-    byId("comment-count").textContent = commentCount.toLocaleString("ja-JP");
+    setCaptureText("comment-count", commentCount.toLocaleString("ja-JP"));
   }
 
   const empty = byId("empty-state");
@@ -220,14 +444,14 @@ function renderEvent(record) {
   type.textContent = eventLabel(record.type);
 
   row.append(time, user, body, type);
-  commentList.appendChild(row);
+  if (commentList) commentList.appendChild(row);
   displayedComments += 1;
 
-  if (displayedComments > 1500) {
+  if (commentList && displayedComments > 1500 && commentList.firstElementChild) {
     commentList.firstElementChild.remove();
     displayedComments -= 1;
   }
-  commentList.scrollTop = commentList.scrollHeight;
+  if (commentList) commentList.scrollTop = commentList.scrollHeight;
 }
 
 function renderSessionProgramInfo() {
@@ -244,16 +468,22 @@ function renderSessionProgramInfo() {
       ? "録画停止中"
       : (connected ? "コメント取得中" : (currentCaptureTarget ? "録画準備中" : "待機中"));
 
-  byId("session-current-title").textContent = title || (liveId
-    ? "番組情報を取得しています…"
-    : "放送IDを入力すると番組情報が表示されます");
-  byId("session-current-broadcaster").textContent = "配信者：" + (broadcaster || "未取得");
-  byId("session-current-live-id").textContent = "放送ID：" + (liveId || "未入力");
-  byId("session-current-started-at").textContent = "開始：" + (startedAt ? formatBroadcastStart(startedAt) : "未取得");
-  byId("session-current-viewers").textContent = "来場者：" +
-    (viewerCount == null || !Number.isFinite(Number(viewerCount)) ? "未取得" : Number(viewerCount).toLocaleString("ja-JP"));
-  byId("session-current-status").textContent = captureState;
-  byId("session-current-status").dataset.state = videoCaptureState;
+  // Program metadata is optional; a missing summary node must not block capture.
+  const labels = {
+    "session-current-title": title || (liveId ? "番組情報を取得しています…" : "放送IDを入力すると番組情報が表示されます"),
+    "session-current-broadcaster": "配信者：" + (broadcaster || "未取得"),
+    "session-current-live-id": "放送ID：" + (liveId || "未入力"),
+    "session-current-started-at": "開始：" + (startedAt ? formatBroadcastStart(startedAt) : "未取得"),
+    "session-current-viewers": "来場者：" +
+      (viewerCount == null || !Number.isFinite(Number(viewerCount)) ? "未取得" : Number(viewerCount).toLocaleString("ja-JP")),
+    "session-current-status": captureState
+  };
+  for (const [id, value] of Object.entries(labels)) {
+    const element = byId(id);
+    if (element) element.textContent = value;
+  }
+  const statusLabel = byId("session-current-status");
+  if (statusLabel) statusLabel.dataset.state = videoCaptureState;
 }
 
 function updateMetadata(metadata) {
@@ -271,7 +501,7 @@ function updateMetadata(metadata) {
   const broadcasterName = String(readValue(["broadcasterName", "providerName"]) || provider.name || "").trim();
   const broadcasterId = String(readValue(["broadcasterId", "providerId"]) || provider.id || "").trim();
   const startedAt = readValue(["startedAt", "beginTime", "startTime"]);
-  const viewerCount = readValue(["viewerCount", "viewers", "watchCount", "currentViewers", "totalViewers"]);
+  const viewerCount = readValue(["visitorCount", "viewerCount", "viewers", "watchCount", "currentViewers", "totalViewers", "totalVisitors", "viewCount"]);
   currentProgramMetadata = {
     ...currentProgramMetadata,
     liveId: currentLiveId,
@@ -293,25 +523,100 @@ function updateMetadata(metadata) {
       viewerCount: currentProgramMetadata.viewerCount ?? currentCaptureTarget.viewerCount
     };
   }
-  byId("live-title").textContent = currentProgramMetadata.title || "番組タイトルを取得できませんでした";
+  setCaptureText("live-title", currentProgramMetadata.title || "番組タイトルを取得できませんでした");
   const status = String(readValue(["status"]) || "").trim();
-  byId("live-meta").textContent = (currentProgramMetadata.broadcasterName || "放送者情報なし") +
-    (status ? " ・ " + status : "");
+  setCaptureText("live-meta", (currentProgramMetadata.broadcasterName || "放送者情報なし") +
+    (status ? " ・ " + status : ""));
   renderSessionProgramInfo();
   renderLiveBroadcasts();
 }
 
+function renderAuthStatus(result) {
+  const status = result || {};
+  const state = ["valid", "expired", "missing", "unknown"].includes(status.state) ? status.state : "unknown";
+  const name = String(status.nickname || "").slice(0, 80);
+  const userLabel = name ? name + (status.userId ? "（ID: " + status.userId + "）" : "")
+    : (status.userId ? "ID: " + status.userId : "ニコニコアカウント");
+  const labels = { valid: "ログイン済み", expired: "セッション切れ", missing: "未ログイン", unknown: "認証確認不可" };
+  const header = byId("login-state");
+  header.textContent = labels[state];
+  header.className = "login-state" + (state === "valid" ? " is-logged-in" : "")
+    + (state === "expired" ? " is-session-expired" : "");
+  header.title = state === "valid" ? "ニコニコ認証成功：" + userLabel : labels[state];
+  const sessionStatus = byId("user-session-status");
+  const details = {
+    valid: "認証成功：" + userLabel + "。ニコニコのサーバーでログイン状態を確認しました。",
+    expired: "セッションが無効または期限切れです。ニコニコにログインし直すか、新しいuser_sessionを登録してください。",
+    missing: "user_sessionは未設定です。",
+    unknown: "認証状態を確認できません。通信状態を確認し「認証状態を確認」を押してください。セッション切れとは断定できません。"
+  };
+  if (sessionStatus) {
+    sessionStatus.textContent = details[state];
+    sessionStatus.dataset.state = state;
+  }
+  const warning = byId("auth-session-warning");
+  if (warning) {
+    warning.hidden = state !== "expired";
+    if (state === "expired") warning.textContent = details.expired;
+  }
+}
+
 async function refreshAuthStatus() {
+  const sessionStatus = byId("user-session-status");
+  if (sessionStatus) sessionStatus.textContent = "ニコニコに認証状態を問い合わせています…";
   try {
     const status = await api.getAuthStatus();
-    byId("login-state").textContent = status.loggedIn ? "ログイン済み" : "未ログイン";
-    byId("login-state").className = "login-state " + (status.loggedIn ? "is-logged-in" : "");
+    renderAuthStatus(status);
+    return status;
   } catch (_) {
-    byId("login-state").textContent = "状態を確認できません";
+    const unknown = { state: "unknown" };
+    renderAuthStatus(unknown);
+    return unknown;
+  }
+}
+
+async function saveUserSession() {
+  const input = byId("setting-user-session");
+  const button = byId("save-user-session-button");
+  const value = input.value.trim();
+  if (!value) {
+    showToast("user_sessionの値を入力してください。", true);
+    input.focus();
+    return;
+  }
+  button.disabled = true;
+  try {
+    const result = await api.setUserSession(value);
+    input.value = "";
+    renderAuthStatus(result);
+    showToast(result.state === "valid" ? "ニコニコのログイン確認に成功しました。" :
+      result.state === "expired" ? "保存しましたが、セッションは無効または期限切れです。" :
+      "user_sessionを保存しました。認証結果は確認できませんでした。", result.state !== "valid");
+  } catch (error) {
+    showToast(error.message || "user_sessionを保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function clearUserSession() {
+  if (!window.confirm("保存済みのuser_sessionを削除しますか？")) return;
+  const button = byId("clear-user-session-button");
+  button.disabled = true;
+  try {
+    const result = await api.setUserSession("");
+    byId("setting-user-session").value = "";
+    renderAuthStatus(result);
+    showToast("user_sessionを削除しました。");
+  } catch (error) {
+    showToast(error.message || "user_sessionを削除できませんでした。", true);
+  } finally {
+    button.disabled = false;
   }
 }
 
 async function connectLive() {
+  if (captureStopInProgress) return showToast("録画・コメントの停止完了後に接続してください。", true);
   const liveId = normalizeId(liveInput.value);
   if (!liveId) {
     showToast("放送IDまたは視聴URLを入力してください。", true);
@@ -327,14 +632,14 @@ async function connectLive() {
   renderSessionProgramInfo();
   clearComments();
   setConnection("connecting");
-  byId("live-title").textContent = "番組情報を取得中…";
-  byId("live-meta").textContent = "コメントサーバーに接続しています";
+  setCaptureText("live-title", "番組情報を取得中…");
+  setCaptureText("live-meta", "コメントサーバーに接続しています");
   try {
     requireCaptureApi("connectLive");
     setCaptureDetail("コメント接続要求を送信しました。ニコニコ側の応答を待っています…");
     const result = await api.connectLive(liveId);
     updateMetadata(result.metadata);
-    byId("comment-file").textContent = "コメント：" + result.commentFile;
+    setCaptureText("comment-file", "コメント：" + result.commentFile);
     setConnection("connected");
     setCaptureDetail("コメント保存先：" + result.commentFile);
     showToast("コメント取得を開始しました。");
@@ -346,6 +651,7 @@ async function connectLive() {
 }
 
 async function disconnectLive() {
+  if (captureStopInProgress) return;
   try {
     requireCaptureApi("disconnectLive");
     await api.disconnectLive();
@@ -368,7 +674,7 @@ function formatDuration(milliseconds) {
 
 async function startVideoRecording(target = null) {
   const selectedTarget = target && typeof target === "object" && target.liveId ? target : null;
-  if (recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
+  if (captureStopInProgress || recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
     showToast("別の配信を録画中、または録画準備中です。終了後に開始してください。", true);
     return;
   }
@@ -379,6 +685,8 @@ async function startVideoRecording(target = null) {
   }
 
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
+  currentRecordingIsTimeshift = timeshift;
+  if (stopRecordButton) stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
   if (currentLiveId !== liveId) currentProgramMetadata = {};
   currentLiveId = liveId;
   liveInput.value = liveId;
@@ -403,13 +711,13 @@ async function startVideoRecording(target = null) {
     title: currentProgramMetadata.title || ""
   };
   if (selectedTarget) {
-    byId("live-title").textContent = selectedTarget.title || "番組情報を取得中…";
-    byId("live-meta").textContent = (selectedTarget.name || "登録配信者") +
-      " · " + liveId + " · LIVE一覧から録画開始";
+    setCaptureText("live-title", selectedTarget.title || "番組情報を取得中…");
+    setCaptureText("live-meta", (selectedTarget.name || "登録配信者") +
+      " · " + liveId + " · LIVE一覧から録画開始");
   }
   renderSessionProgramInfo();
   recordStartInProgress = true;
-  recordButton.disabled = true;
+  if (recordButton) recordButton.disabled = true;
   renderLiveBroadcasts();
   if (!(connected && currentLiveId === liveId)) setConnection("connecting");
   setCaptureDetail(timeshift ? "タイムシフト録画要求を送信しました。映像・音声と過去コメントの応答を待っています…" : "映像・音声＋コメント録画要求を送信しました。Streamlinkとコメントサーバーの起動を待っています…");
@@ -438,17 +746,21 @@ async function startVideoRecording(target = null) {
     }
     if (result.comment && result.comment.metadata) updateMetadata(result.comment.metadata);
     if (result.comment && result.comment.commentFile) {
-      byId("comment-file").textContent = "コメント：" + result.comment.commentFile;
+      setCaptureText("comment-file", "コメント：" + result.comment.commentFile);
     }
     if (result.commentsConnected) {
       setConnection("connected");
+    } else if (result.commentPending && !timeshift) {
+      setConnection("connecting");
     } else if (!timeshift) {
       setConnection("error");
     }
 
     const video = result.video || {};
-    byId("video-file").textContent = "保存先：" + (video.path || "");
-    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") + (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : ""));
+    setCaptureText("video-file", "保存先：" + (video.path || ""));
+    setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") +
+      (result.comment && result.comment.commentFile ? " ／ コメント保存先：" + result.comment.commentFile : "") +
+      (result.commentPending ? " ／ コメント接続を継続中…" : ""));
     // A long archive-comment fetch may outlive the timeshift video itself.
     // Do not overwrite a completed video:state event when the IPC finally returns.
     if (!timeshift || videoCaptureState === "recording") {
@@ -466,6 +778,8 @@ async function startVideoRecording(target = null) {
       showToast("映像録画は開始しましたが、過去コメントを取得できませんでした: " + result.commentError, true);
     } else if (timeshift) {
       showToast("タイムシフトの映像・音声録画を開始しました。過去コメントは見つかりませんでした。", true);
+    } else if (result.commentPending) {
+      showToast("映像・音声録画を開始しました。コメント接続を継続しています。");
     } else if (result.commentError) {
       showToast("映像録画は開始しましたが、コメント取得に失敗しました: " + result.commentError, true);
     } else {
@@ -473,6 +787,7 @@ async function startVideoRecording(target = null) {
     }
   } catch (error) {
     currentCaptureTarget = null;
+    currentRecordingIsTimeshift = false;
     renderSessionProgramInfo();
     setVideoState(false);
     if (!connected) setConnection("error");
@@ -480,7 +795,7 @@ async function startVideoRecording(target = null) {
     showToast(error.message || "録画・コメントの同時開始に失敗しました。", true);
   } finally {
     recordStartInProgress = false;
-    recordButton.disabled = videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
+    if (recordButton) recordButton.disabled = captureStopInProgress || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
     renderLiveBroadcasts();
   }
   processMonitorAutoQueue();
@@ -490,7 +805,7 @@ function startRecordClock() {
   if (recordClock) return;
   if (!recordStartedAt) recordStartedAt = Date.now();
   recordClock = window.setInterval(() => {
-    byId("record-timer").textContent = formatDuration(Date.now() - recordStartedAt);
+    setCaptureText("record-timer", formatDuration(Date.now() - recordStartedAt));
   }, 500);
 }
 
@@ -498,35 +813,53 @@ function clearRecordClock() {
   if (recordClock) window.clearInterval(recordClock);
   recordClock = null;
   recordStartedAt = 0;
-  byId("record-timer").textContent = "00:00:00";
+  setCaptureText("record-timer", "00:00:00");
 }
 
 function setVideoState(recording, stopping = false) {
   videoCaptureState = stopping ? "stopping" : (recording ? "recording" : "idle");
   renderSessionProgramInfo();
-  byId("record-indicator").classList.toggle("recording", recording);
-  byId("record-status").textContent = stopping
+  const recordIndicator = byId("record-indicator");
+  if (recordIndicator) recordIndicator.classList.toggle("recording", recording);
+  setCaptureText("record-status", stopping
     ? "録画停止中…"
-    : recording ? "録画中（直接取得）" : "録画していません";
-  recordButton.disabled = recording || stopping;
-  stopRecordButton.disabled = !recording || stopping;
+    : recording ? "録画中（直接取得）" : "録画していません");
+  if (recordButton) recordButton.disabled = captureStopInProgress || recording || stopping;
+  if (stopRecordButton) stopRecordButton.disabled = captureStopInProgress || !recording || stopping;
   updateCaptureIndicators();
   renderDashboardStats();
   renderLiveBroadcasts();
 }
 
 async function stopVideoRecording() {
-  if (!stopRecordButton.disabled) {
-    setVideoState(true, true);
-    try {
-      const result = await api.stopVideo();
-      if (result.path) {
-        byId("video-file").textContent = "映像：" + result.path;
+  if (captureStopInProgress || (stopRecordButton && stopRecordButton.disabled)) return;
+  const timeshift = currentRecordingIsTimeshift;
+  captureStopInProgress = true;
+  setVideoState(true, true);
+  setCaptureDetail(timeshift
+    ? "タイムシフト映像を停止・保存中です…"
+    : "録画ファイルを確定してからコメント接続と保存処理を停止します…");
+  try {
+    requireCaptureApi(timeshift ? "stopVideo" : "stopCapture");
+    const result = timeshift ? await api.stopVideo() : await api.stopCapture();
+    const video = timeshift ? result : (result.video || {});
+    if (video.path) setCaptureText("video-file", "映像：" + video.path);
+    if (!timeshift) {
+      if (result.comment && result.comment.commentFile) {
+        setCaptureText("comment-file", "コメント：" + result.comment.commentFile);
       }
-    } catch (error) {
-      setVideoState(true);
-      showToast(error.message || "録画を停止できませんでした。", true);
+      setConnection("disconnected");
+      setCaptureDetail("映像・音声録画とコメントを停止・保存しました。");
+      showToast("映像・音声録画とコメント取得を同時に停止しました。");
     }
+  } catch (error) {
+    setCaptureDetail("録画・コメント停止エラー：" + (error.message || String(error)));
+    showToast(error.message || "録画・コメントを停止できませんでした。", true);
+  } finally {
+    captureStopInProgress = false;
+    setVideoState(Boolean(recordStartedAt));
+    setConnection(commentCaptureState);
+    if (!recordStartedAt) processMonitorAutoQueue();
   }
 }
 
@@ -594,7 +927,7 @@ async function closeLivePreview() {
 function handleVideoState(payload) {
   if (!payload) return;
   if (payload.recording) {
-    if (payload.path) byId("video-file").textContent = "映像：" + payload.path;
+    if (payload.path) setCaptureText("video-file", "映像：" + payload.path);
     recordStartedAt = payload.startedAt ? new Date(payload.startedAt).getTime() : (recordStartedAt || Date.now());
     setVideoState(true);
     startRecordClock();
@@ -602,7 +935,7 @@ function handleVideoState(payload) {
   }
 
   if (payload.path) {
-    byId("video-file").textContent = "映像：" + payload.path;
+    setCaptureText("video-file", "映像：" + payload.path);
     showToast(payload.converted
       ? "録画を保存しました（MP4変換済み）: " + payload.path
       : "録画を保存しました（TS形式）: " + payload.path);
@@ -611,9 +944,10 @@ function handleVideoState(payload) {
   }
   clearRecordClock();
   currentCaptureTarget = null;
+  currentRecordingIsTimeshift = false;
   renderSessionProgramInfo();
   setVideoState(false);
-  processMonitorAutoQueue();
+  if (!captureStopInProgress) processMonitorAutoQueue();
 }
 
 async function refreshVideoTools() {
@@ -707,6 +1041,63 @@ function getLiveBroadcastItems() {
   }
   return Array.from(byLiveId.values())
     .sort((a, b) => parseBroadcastTimestamp(b.startedAt) - parseBroadcastTimestamp(a.startedAt));
+}
+
+// Load only articles for LIVE IDs. The reply has no embedded JPEGs, transcripts,
+// or full article bodies, so a monitor heartbeat stays lightweight.
+async function refreshLiveArticlePreviews(force = false) {
+  if (PRODUCT_EDITION) return;
+  if (!api || typeof api.getLiveArticlePreviews !== "function") return;
+  const ids = [...new Set(getLiveBroadcastItems()
+    .map(item => String(item.liveId || "").trim().toLowerCase())
+    .filter(id => /^lv\d{5,}$/.test(id)))].slice(0, 100);
+  const signature = ids.slice().sort().join(",");
+  if (!ids.length) {
+    liveArticlePreviewRequestId += 1;
+    liveArticlePreviewSignature = "";
+    liveArticlePreviewFetchedAt = 0;
+    if (liveArticlePreviews.size) {
+      liveArticlePreviews.clear();
+      renderLiveBroadcasts();
+    }
+    return;
+  }
+  if (!force && signature === liveArticlePreviewSignature &&
+      Date.now() - liveArticlePreviewFetchedAt < 45 * 1000) return;
+  liveArticlePreviewSignature = signature;
+  liveArticlePreviewFetchedAt = Date.now();
+  const requestId = ++liveArticlePreviewRequestId;
+  try {
+    const result = await api.getLiveArticlePreviews(ids);
+    if (requestId !== liveArticlePreviewRequestId) return;
+    liveArticlePreviews.clear();
+    for (const preview of Array.isArray(result && result.items) ? result.items : []) {
+      if (preview && ids.includes(preview.liveId)) liveArticlePreviews.set(preview.liveId, preview);
+    }
+    renderLiveBroadcasts();
+  } catch (error) {
+    if (requestId !== liveArticlePreviewRequestId) return;
+    liveArticlePreviewFetchedAt = 0;
+    console.warn("LIVE AI article previews unavailable:", error);
+  }
+}
+
+function openLiveArticleFromDashboard(status, hasArticle) {
+  if (PRODUCT_EDITION) return;
+  if (!hasArticle) {
+    byId("manual-article-live-id").value = status.liveId || "";
+    byId("manual-article-broadcaster").value = status.name || "";
+    byId("manual-article-title").value = status.title || "";
+    byId("manual-article-description").value = status.description || "";
+  }
+  byId("articles-search").value = hasArticle ? status.liveId : "";
+  setActivePage("articles");
+  if (hasArticle) {
+    // Skip the large article-generation form and show the selected article.
+    window.requestAnimationFrame(() => {
+      byId("articles-list")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+  }
 }
 
 function renderDashboardStats() {
@@ -818,7 +1209,55 @@ function renderLiveBroadcasts() {
     actions.append(record, watch);
     footer.append(source, actions);
 
-    card.append(top, broadcaster, title, meta, footer);
+    const articlePreview = document.createElement("section");
+    articlePreview.className = "live-broadcast-ai-article";
+    const articleHeader = document.createElement("div");
+    articleHeader.className = "live-broadcast-article-header";
+    const articleLabel = document.createElement("strong");
+    articleLabel.textContent = "AI放送記事";
+    const preview = liveArticlePreviews.get(String(status.liveId || "").toLowerCase());
+    const articleType = document.createElement("span");
+    articleType.textContent = preview
+      ? (preview.aiProvider ? "Ollama記事" : "記事保存済み・AI未生成")
+      : (status.isRecording ? "記事を作成中" : "記事未作成");
+    articleHeader.append(articleLabel, articleType);
+    articlePreview.appendChild(articleHeader);
+
+    const articleTitle = document.createElement("strong");
+    articleTitle.className = "live-broadcast-article-title";
+    articleTitle.textContent = preview
+      ? (preview.title || "放送記事")
+      : (status.isRecording
+        ? "コメントの受信・記事生成を準備しています…"
+        : "この放送のAI記事はまだありません");
+    articlePreview.appendChild(articleTitle);
+    const articleSummary = document.createElement("p");
+    articleSummary.className = "live-broadcast-article-summary";
+    articleSummary.textContent = preview
+      ? (preview.summary || "記事本文は記事一覧から確認できます。")
+      : (status.isRecording
+        ? "記事が保存されると、見出し・要約が自動的に表示されます。"
+        : "記事生成画面から生放送の映像・音声・コメントを分析できます。");
+    articlePreview.appendChild(articleSummary);
+    const articleFooter = document.createElement("div");
+    articleFooter.className = "live-broadcast-article-footer";
+    const articleMeta = document.createElement("span");
+    articleMeta.className = "live-broadcast-article-meta";
+    articleMeta.textContent = preview
+      ? "コメント " + (Number(preview.commentCount) || 0).toLocaleString("ja-JP") + "件" +
+        (preview.videoFrameCount ? " · 映像 " + preview.videoFrameCount + "枚" : "") +
+        (preview.hasAudio ? " · 音声解析あり" : "") +
+        (preview.generatedAt ? " · 更新 " + new Date(preview.generatedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "")
+      : "配信ID：" + (status.liveId || "未取得");
+    const articleButton = document.createElement("button");
+    articleButton.type = "button";
+    articleButton.className = "button button-outline button-small live-broadcast-article-button";
+    articleButton.textContent = preview ? "記事を読む" : "記事を作成";
+    articleButton.addEventListener("click", () => openLiveArticleFromDashboard(status, Boolean(preview)));
+    articleFooter.append(articleMeta, articleButton);
+    articlePreview.appendChild(articleFooter);
+
+    card.append(top, broadcaster, title, meta, articlePreview, footer);
     list.appendChild(card);
   }
   renderDashboardStats();
@@ -929,9 +1368,64 @@ function renderMonitorTargets() {
   renderDashboardStats();
 }
 
+const ASS_MOTION_FIELDS = [
+  ["assScrollSpeed", "scroll-speed", " px/秒"],
+  ["assEntryOffset", "entry-offset", " px"],
+  ["assScrollLanes", "scroll-lanes", " 行"],
+  ["assFixedDuration", "fixed-duration", " 秒"]
+];
+
+function refreshAssMotionLabels(prefix) {
+  const autoEnabled = byId(prefix + "auto-motion").checked;
+  for (const [, id, unit] of ASS_MOTION_FIELDS) {
+    const input = byId(prefix + id);
+    const output = byId(prefix + id + "-value");
+    if (input) input.disabled = autoEnabled;
+    if (input && output) output.textContent = input.value + unit;
+  }
+  byId(prefix + "prevent-overlap").disabled = autoEnabled;
+}
+
+function readAssMotionInputs(prefix) {
+  const settings = {};
+  for (const [property, id] of ASS_MOTION_FIELDS) {
+    settings[property] = Number(byId(prefix + id).value);
+  }
+  settings.assAutoMotion = byId(prefix + "auto-motion").checked;
+  settings.assPreventOverlap = byId(prefix + "prevent-overlap").checked;
+  return settings;
+}
+
+function applyAssMotionInputs(prefix, values, skipFocused = false) {
+  const defaults = {
+    assScrollSpeed: 360, assEntryOffset: 0,
+    assScrollLanes: 18, assFixedDuration: 5
+  };
+  for (const [property, id] of ASS_MOTION_FIELDS) {
+    const input = byId(prefix + id);
+    if (input && (!skipFocused || document.activeElement !== input)) {
+      input.value = String(values[property] ?? defaults[property]);
+    }
+  }
+  const auto = byId(prefix + "auto-motion");
+  if (auto && (!skipFocused || document.activeElement !== auto)) {
+    auto.checked = values.assAutoMotion !== false;
+  }
+  const overlap = byId(prefix + "prevent-overlap");
+  if (overlap && (!skipFocused || document.activeElement !== overlap)) {
+    overlap.checked = values.assPreventOverlap !== false;
+  }
+  refreshAssMotionLabels(prefix);
+}
+
 function applyMonitorState(result) {
   if (!result) return;
-  if (result.settings) monitorSettings = result.settings;
+  if (result.settings) {
+    monitorSettings = result.settings;
+    const ngEditor = byId("ass-ng-regex");
+    if (ngEditor && document.activeElement !== ngEditor) ngEditor.value = monitorSettings.assNgRegex || "";
+    applyAssMotionInputs("ass-", monitorSettings, true);
+  }
   if (result.statuses && typeof result.statuses === "object") {
     for (const [userId, status] of Object.entries(result.statuses)) {
       monitorStatuses.set(userId, status);
@@ -942,6 +1436,7 @@ function applyMonitorState(result) {
   if (Array.isArray(result.pendingDetections)) {
     result.pendingDetections.forEach(handleMonitorLiveDetected);
   }
+  void refreshLiveArticlePreviews();
 }
 
 function addMonitorActivity(message, kind = "") {
@@ -1091,6 +1586,7 @@ function updateCompositionEditorLabels() {
 }
 
 async function checkOllamaStatus() {
+  if (PRODUCT_EDITION) return;
   const badge = byId("ollama-status-badge");
   const message = byId("ollama-status-message");
   const button = byId("ollama-check-button");
@@ -1120,6 +1616,8 @@ function openSettings() {
   byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 10);
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
   byId("setting-comment-format").value = ["jsonl", "csv", "ass", "all"].includes(monitorSettings.commentFormat) ? monitorSettings.commentFormat : "jsonl";
+  byId("setting-ass-ng-regex").value = monitorSettings.assNgRegex || "";
+  applyAssMotionInputs("setting-ass-", monitorSettings);
   byId("setting-auto-record").checked = monitorSettings.autoRecord !== false;
   byId("setting-auto-start").checked = monitorSettings.autoStart !== false;
   byId("setting-run-at-startup").checked = monitorSettings.runAtStartup !== false;
@@ -1127,9 +1625,12 @@ function openSettings() {
   byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("setting-notify-on-live").checked = monitorSettings.notifyOnLive !== false;
-  byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
-  byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
-  void checkOllamaStatus();
+  if (!PRODUCT_EDITION) {
+    byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
+    byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
+    void checkOllamaStatus();
+  }
+  void refreshAuthStatus();
   byId("settings-modal").hidden = false;
 }
 
@@ -1142,20 +1643,26 @@ async function saveSettings() {
     intervalSeconds: Number(byId("setting-monitor-interval").value),
     quality: byId("setting-monitor-quality").value,
     commentFormat: byId("setting-comment-format").value,
+    assNgRegex: byId("setting-ass-ng-regex").value,
     autoRecord: byId("setting-auto-record").checked,
     autoStart: byId("setting-auto-start").checked,
     runAtStartup: byId("setting-run-at-startup").checked,
     closeToTray: byId("setting-close-to-tray").checked,
     keepAwake: byId("setting-keep-awake").checked,
     autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked,
-    notifyOnLive: byId("setting-notify-on-live").checked,
-    aiArticleEnabled: byId("setting-ai-article-enabled").checked,
-    aiArticleModel: byId("setting-ai-article-model").value.trim() || "qwen2.5:3b"
+    notifyOnLive: byId("setting-notify-on-live").checked
   };
+  if (!PRODUCT_EDITION) {
+    values.aiArticleEnabled = byId("setting-ai-article-enabled").checked;
+    values.aiArticleModel = byId("setting-ai-article-model").value.trim() || "qwen2.5:3b";
+  }
+  Object.assign(values, readAssMotionInputs("setting-ass-"));
   const button = byId("save-settings-button");
   button.disabled = true;
   try {
     applyMonitorState(await api.saveMonitorSettings(values));
+    byId("ass-ng-regex").value = values.assNgRegex;
+    applyAssMotionInputs("ass-", monitorSettings);
     closeSettings();
     showToast("設定を保存しました。");
   } catch (error) {
@@ -1194,12 +1701,12 @@ function handleMonitorLiveDetected(payload) {
 async function processMonitorAutoQueue() {
   if (monitorAutoProcessing || monitorAutoQueue.length === 0) return;
   // Never interrupt an existing manual or automatic recording.
-  if (recordButton.disabled || recordStartedAt) return;
+  if (captureStopInProgress || recordButton.disabled || recordStartedAt) return;
 
   const target = monitorAutoQueue.shift();
   if (!target || !target.liveId) return;
   monitorAutoProcessing = true;
-  recordButton.disabled = true;
+  if (recordButton) recordButton.disabled = true;
   renderLiveBroadcasts();
 
   try {
@@ -1218,12 +1725,13 @@ async function processMonitorAutoQueue() {
       startedAt: target.startedAt || ""
     };
     currentCaptureTarget = { ...target, liveId, isAutomaticRecording: true, isManualRecording: false };
+    currentRecordingIsTimeshift = false;
     liveInput.value = liveId;
     renderSessionProgramInfo();
     clearComments();
     setConnection("connecting");
-    byId("live-title").textContent = target.title || "番組情報を取得中…";
-    byId("live-meta").textContent = "配信監視から自動録画を開始しています";
+    setCaptureText("live-title", target.title || "番組情報を取得中…");
+    setCaptureText("live-meta", "配信監視から自動録画を開始しています");
 
     setConnection("connecting");
     const capture = await api.startCapture(liveId, monitorSettings.quality || "best", {
@@ -1234,12 +1742,12 @@ async function processMonitorAutoQueue() {
     });
     if (capture.comment && capture.comment.metadata) updateMetadata(capture.comment.metadata);
     if (capture.comment && capture.comment.commentFile) {
-      byId("comment-file").textContent = "コメント：" + capture.comment.commentFile;
+      setCaptureText("comment-file", "コメント：" + capture.comment.commentFile);
     }
     setConnection(capture.commentsConnected ? "connected" : "error");
 
     const result = capture.video || {};
-    byId("video-file").textContent = "保存先：" + (result.path || "");
+    setCaptureText("video-file", "保存先：" + (result.path || ""));
     recordStartedAt = result.startedAt ? new Date(result.startedAt).getTime() : Date.now();
     setVideoState(true);
     startRecordClock();
@@ -1282,7 +1790,7 @@ async function processMonitorAutoQueue() {
     if (!recordStartedAt && videoCaptureState !== "recording") {
       currentCaptureTarget = null;
       renderSessionProgramInfo();
-      recordButton.disabled = recordStartInProgress || videoCaptureState === "stopping";
+      if (recordButton) recordButton.disabled = recordStartInProgress || videoCaptureState === "stopping";
     }
     renderLiveBroadcasts();
     if (monitorAutoQueue.length > 0 && !recordButton.disabled) {
@@ -1292,7 +1800,8 @@ async function processMonitorAutoQueue() {
 }
 
 
-const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "articles", "updates"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "updates"]);
+if (!PRODUCT_EDITION) APP_PAGES.add("articles");
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -1302,7 +1811,8 @@ function setActivePage(page) {
   content.querySelectorAll(":scope > [data-page]").forEach((view) => {
     const isActive = view.dataset.page === activePage;
     view.classList.toggle("page-hidden", !isActive);
-    if (view.id === "library-panel" || view.id === "articles-panel") view.hidden = !isActive;
+    if (view.id === "library-panel") view.hidden = !isActive;
+    if (view.id === "articles-panel") view.hidden = PRODUCT_EDITION || !isActive;
   });
 
   document.querySelectorAll("[data-page-target]").forEach((button) => {
@@ -1314,6 +1824,7 @@ function setActivePage(page) {
 
   if (activePage === "library") loadCaptureLibrary();
   if (activePage === "articles") loadBroadcastArticles();
+  if (activePage === "dashboard") void refreshLiveArticlePreviews();
 }
 
 function formatLibraryBytes(value) {
@@ -1346,7 +1857,7 @@ function renderCaptureLibrary() {
   const filter = byId("library-filter").value;
   const items = captureLibraryItems.filter((item) => {
     if (filter !== "all" && item.type !== filter) return false;
-    const searchable = [item.fileName, item.broadcaster, item.liveId, item.extension].join(" ").toLowerCase();
+    const searchable = [item.fileName, item.broadcaster, item.broadcasterUserId, item.liveId, item.extension].join(" ").toLowerCase();
     return !query || searchable.includes(query);
   });
   if (!items.length) {
@@ -1371,31 +1882,92 @@ function renderCaptureLibrary() {
     card.className = "library-broadcaster-card";
     const heading = document.createElement("div");
     heading.className = "library-broadcaster-heading";
-    const thumb = document.createElement("div");
+    const profileUserId = broadcasterItems.find(item => item.broadcasterUserId)?.broadcasterUserId || "";
+    const openProfile = async () => {
+      try { await api.openNicoUserProfile(profileUserId); }
+      catch (error) { showToast(error.message || "ユーザーページを開けませんでした。", true); }
+    };
+    const thumb = document.createElement(profileUserId ? "button" : "div");
     thumb.className = "library-broadcaster-thumb";
     thumb.textContent = "N";
-    const thumbnailItem = broadcasterItems.find(item => item.type === "video") ||
-      captureLibraryItems.find(item => item.broadcaster === broadcaster && item.type === "video");
-    if (thumbnailItem && api.getLibraryThumbnail) {
-      api.getLibraryThumbnail(thumbnailItem.path).then(dataUrl => {
-        if (dataUrl && thumb.isConnected) {
-          const image = document.createElement("img");
-          image.alt = broadcaster + " の録画サムネイル";
-          image.src = dataUrl;
-          thumb.replaceChildren(image);
-        }
-      }).catch(() => {});
+    if (profileUserId) {
+      thumb.type = "button";
+      thumb.classList.add("library-profile-link");
+      thumb.title = broadcaster + " のニコニコユーザーページを開く";
+      thumb.setAttribute("aria-label", thumb.title);
+      thumb.addEventListener("click", () => void openProfile());
+    }
+    const profileIconUrl = broadcasterItems.find(item => item.profileIconUrl)?.profileIconUrl || "";
+    if (profileIconUrl) {
+      const image = document.createElement("img");
+      image.alt = broadcaster + " のプロフィール画像";
+      image.referrerPolicy = "no-referrer";
+      image.src = profileIconUrl;
+      image.addEventListener("error", () => { image.remove(); thumb.textContent = "N"; }, { once: true });
+      thumb.replaceChildren(image);
     }
     const identity = document.createElement("div");
     identity.className = "library-broadcaster-identity";
-    const name = document.createElement("strong");
+    const name = document.createElement(profileUserId ? "button" : "strong");
     name.textContent = broadcaster;
+    if (profileUserId) {
+      name.type = "button";
+      name.className = "library-profile-name-link";
+      name.title = "ニコニコのユーザーページを開く";
+      name.addEventListener("click", () => void openProfile());
+    }
     const videoCount = broadcasterItems.filter(item => item.type === "video").length;
     const commentCount = broadcasterItems.filter(item => item.type === "comment").length;
     const meta = document.createElement("span");
     meta.textContent = "動画 " + videoCount + " 件 · コメント " + commentCount + " 件 · " +
       formatLibraryDate(broadcasterItems[0]?.modifiedAt);
     identity.append(name, meta);
+    if (!profileUserId) {
+      // 自動照合できない古い録画にのみ、安全な手動入力を残す。
+      const setId = document.createElement("button");
+      setId.type = "button";
+      setId.className = "library-profile-map-button";
+      setId.textContent = "ユーザーIDを手動設定";
+      setId.title = "コメントログや放送情報から自動取得できなかった場合のみ設定してください。";
+      const form = document.createElement("form");
+      form.className = "library-profile-id-form";
+      form.hidden = true;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.placeholder = "ニコニコのユーザーIDまたはURL";
+      input.setAttribute("aria-label", broadcaster + " のユーザーID");
+      input.required = true;
+      const save = document.createElement("button");
+      save.type = "submit";
+      save.className = "button button-primary button-small";
+      save.textContent = "保存";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "button button-quiet button-small";
+      cancel.textContent = "取消";
+      cancel.addEventListener("click", () => { form.hidden = true; setId.hidden = false; });
+      setId.addEventListener("click", () => {
+        form.hidden = false;
+        setId.hidden = true;
+        input.focus();
+      });
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        save.disabled = true;
+        try {
+          await api.setLibraryProfileUserId(broadcaster, input.value.trim());
+          showToast(broadcaster + " のユーザーIDを保存しました。");
+          await loadCaptureLibrary();
+        } catch (error) {
+          showToast(error.message || "ユーザーIDを保存できませんでした。", true);
+        } finally {
+          save.disabled = false;
+        }
+      });
+      form.append(input, save, cancel);
+      identity.append(setId, form);
+    }
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "button button-secondary button-small library-broadcaster-toggle";
@@ -1421,6 +1993,26 @@ function renderCaptureLibrary() {
     file.className = "library-file-cell";
     file.appendChild(createLibraryText("library-file-name", item.fileName));
     file.appendChild(createLibraryText("library-file-meta", item.liveId || item.extension));
+    let scenes = null;
+    if (item.type === "video") {
+      scenes = makeLibraryVideoScenesPanel(item);
+      const thumbnail = document.createElement("button");
+      thumbnail.type = "button";
+      thumbnail.className = "library-video-thumbnail";
+      thumbnail.title = "動画内の別の場面も見る";
+      thumbnail.setAttribute("aria-label", item.fileName + " の動画内の場面を見る");
+      const image = document.createElement("img");
+      image.alt = item.fileName + " の録画映像から取得したサムネイル";
+      image.loading = "lazy";
+      image.hidden = true;
+      const placeholder = document.createElement("span");
+      placeholder.className = "library-video-thumbnail-placeholder";
+      placeholder.textContent = "サムネイル取得中…";
+      thumbnail.append(image, placeholder);
+      thumbnail.addEventListener("click", () => void scenes.expand());
+      file.appendChild(thumbnail);
+      if (expanded) scheduleLibraryThumbnail(image, placeholder, item);
+    }
     row.appendChild(file);
     if (item.type === "video" && item.article) {
       const articleSummary = document.createElement("div"); articleSummary.className = "library-article-summary";
@@ -1456,7 +2048,7 @@ function renderCaptureLibrary() {
       catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
     });
     actions.append(openButton, showButton);
-    if (item.type === "comment" && item.extension === "JSONL") {
+    if (!PRODUCT_EDITION && item.type === "comment" && item.extension === "JSONL") {
       const articleButton = document.createElement("button");
       articleButton.type = "button";
       articleButton.className = "button button-outline button-small";
@@ -1480,6 +2072,12 @@ function renderCaptureLibrary() {
       actions.appendChild(articleButton);
     }
     if (item.type === "video") {
+      const scenesButton = document.createElement("button");
+      scenesButton.type = "button";
+      scenesButton.className = "button button-outline button-small library-video-scenes-button";
+      scenesButton.textContent = "動画内を見る";
+      scenesButton.addEventListener("click", () => void scenes.expand());
+      actions.appendChild(scenesButton);
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.className = "button button-danger button-small";
@@ -1500,7 +2098,29 @@ function renderCaptureLibrary() {
       });
       actions.appendChild(deleteButton);
     }
+    if (item.type === "comment") {
+      const deleteCommentButton = document.createElement("button");
+      deleteCommentButton.type = "button";
+      deleteCommentButton.className = "button button-danger button-small";
+      deleteCommentButton.textContent = "削除";
+      deleteCommentButton.title = "確認後、このコメントファイルだけを削除します。録画動画とAI記事は残ります。";
+      deleteCommentButton.addEventListener("click", async () => {
+        deleteCommentButton.disabled = true;
+        try {
+          const result = await api.deleteLibraryComment(item.path);
+          if (result && result.cancelled) return;
+          showToast("コメントファイルを削除しました: " + (result.fileName || item.fileName));
+          await loadCaptureLibrary();
+        } catch (error) {
+          showToast(error.message || "コメントファイルを削除できませんでした。", true);
+        } finally {
+          deleteCommentButton.disabled = false;
+        }
+      });
+      actions.appendChild(deleteCommentButton);
+    }
     row.appendChild(actions);
+    if (scenes) row.appendChild(scenes.panel);
     contents.appendChild(row);
     }
     list.appendChild(card);
@@ -1515,9 +2135,13 @@ async function loadCaptureLibrary() {
     list.textContent = "録画ファイルを検索しています…";
   }
   try {
-    const [result, articleResult] = await Promise.all([api.getCaptureLibrary(), api.getBroadcastArticles()]);
-    broadcastArticles = Array.isArray(articleResult.items) ? articleResult.items : [];
+    const result = await api.getCaptureLibrary();
     captureLibraryItems = Array.isArray(result.items) ? result.items : [];
+    broadcastArticles = [];
+    if (!PRODUCT_EDITION) {
+      const articleResult = await api.getBroadcastArticles();
+      broadcastArticles = Array.isArray(articleResult.items) ? articleResult.items : [];
+    }
     byId("library-total").textContent = String(result.total || 0);
     byId("library-video-count").textContent = String(result.videoCount || 0);
     byId("library-comment-count").textContent = String(result.commentCount || 0);
@@ -1529,7 +2153,50 @@ async function loadCaptureLibrary() {
   }
 }
 
+const articleThumbnailQueue = [];
+let articleThumbnailRequests = 0;
+function scheduleArticleThumbnail(thumbnail, placeholder, article) {
+  articleThumbnailQueue.push(async () => {
+    if (!thumbnail.isConnected) return;
+    try {
+      const imageUrl = await api.getArticleThumbnail(article.articlePath);
+      if (!thumbnail.isConnected || !placeholder.isConnected) return;
+      if (typeof imageUrl === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(imageUrl)) {
+        thumbnail.addEventListener("error", () => {
+          thumbnail.remove();
+          placeholder.hidden = false;
+          placeholder.textContent = "画像を表示できません";
+        }, { once: true });
+        thumbnail.src = imageUrl;
+        article.coverImage = imageUrl;
+        thumbnail.hidden = false;
+        placeholder.hidden = true;
+      } else {
+        thumbnail.remove();
+        placeholder.textContent = "放送映像が保存されていません";
+      }
+    } catch (_) {
+      if (!thumbnail.isConnected) return;
+      thumbnail.remove();
+      placeholder.textContent = "サムネイルを取得できません";
+    }
+  });
+  pumpArticleThumbnailQueue();
+}
+function pumpArticleThumbnailQueue() {
+  while (articleThumbnailRequests < 2 && articleThumbnailQueue.length) {
+    const job = articleThumbnailQueue.shift();
+    articleThumbnailRequests++;
+    // Delay until the new card has been added to the document.
+    Promise.resolve().then(job).catch(() => {}).finally(() => {
+      articleThumbnailRequests--;
+      pumpArticleThumbnailQueue();
+    });
+  }
+}
+
 function renderBroadcastArticles() {
+  if (PRODUCT_EDITION) return;
   const list = byId("articles-list");
   if (!list) return;
   list.replaceChildren();
@@ -1571,20 +2238,80 @@ function renderBroadcastArticles() {
     return;
   }
 
-  for (const article of items) {
+  const dayGroups = new Map();
+  const dayFormatter = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric", weekday: "short" });
+  for (const item of items) {
+    const parsed = new Date(item.startedAt || item.generatedAt || "");
+    const day = Number.isNaN(parsed.getTime()) ? "日時未取得" : dayFormatter.format(parsed);
+    if (!dayGroups.has(day)) dayGroups.set(day, []);
+    dayGroups.get(day).push(item);
+  }
+  for (const [day, dayItems] of dayGroups) {
+    const dayHeading = document.createElement("div");
+    dayHeading.className = "broadcast-article-day-heading";
+    const dateLabel = document.createElement("strong"); dateLabel.textContent = day;
+    const countLabel = document.createElement("span"); countLabel.textContent = dayItems.length.toLocaleString("ja-JP") + "本";
+    dayHeading.append(dateLabel, countLabel);
+    list.appendChild(dayHeading);
+    for (const article of dayItems) {
     const card = document.createElement("article");
     card.className = "broadcast-article-card";
+    const masthead = document.createElement("div");
+    masthead.className = "broadcast-article-masthead";
+    const byline = document.createElement("span");
+    byline.textContent = "配信者：" + (article.broadcasterName || "未取得") + " · " + formatLibraryDate(article.startedAt || article.generatedAt);
+    masthead.appendChild(byline);
+    const stateBadge = document.createElement("span");
+    const articleIsLive = article.liveStatus === "live" || article.isLive === true;
+    stateBadge.className = "broadcast-article-status-badge" + (articleIsLive ? " is-live" : "");
+    stateBadge.textContent = articleIsLive ? "● 配信中" : "配信終了";
+    masthead.appendChild(stateBadge);
+    const hero = document.createElement("div");
+    hero.className = "broadcast-article-hero";
+    const heroCopy = document.createElement("div");
+    heroCopy.className = "broadcast-article-hero-copy";
+    const media = document.createElement("div");
+    media.className = "broadcast-article-media";
+    const mediaPlaceholder = document.createElement("div");
+    mediaPlaceholder.className = "broadcast-article-media-placeholder";
+    mediaPlaceholder.textContent = article.liveStatus === "live" || article.isLive
+      ? "● LIVE 配信中"
+      : "放送映像プレビュー";
+    media.appendChild(mediaPlaceholder);
+    const coverImage = typeof article.coverImage === "string" && article.coverImage.length < 420100 &&
+      /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(article.coverImage) ? article.coverImage : "";
+    if (coverImage) {
+      const cover = document.createElement("img");
+      cover.className = "broadcast-article-thumbnail";
+      cover.alt = (article.programTitle || article.title || "放送") + " の放送画面";
+      cover.loading = "lazy";
+      cover.src = coverImage;
+      cover.addEventListener("error", () => {
+        cover.remove();
+        mediaPlaceholder.hidden = false;
+        mediaPlaceholder.textContent = "保存画像を表示できません";
+      }, { once: true });
+      mediaPlaceholder.hidden = true;
+      media.appendChild(cover);
+    } else if (article.articlePath && typeof api.getArticleThumbnail === "function") {
+      const thumbnail = document.createElement("img");
+      thumbnail.className = "broadcast-article-thumbnail";
+      thumbnail.alt = (article.programTitle || article.title || "放送") + " の録画サムネイル";
+      thumbnail.loading = "lazy";
+      thumbnail.hidden = true;
+      mediaPlaceholder.textContent = "サムネイルを確認中…";
+      media.appendChild(thumbnail);
+      scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article);
+    } else {
+      mediaPlaceholder.textContent = "放送映像が保存されていません";
+    }
     const heading = document.createElement("div");
     heading.className = "broadcast-article-heading";
     const title = document.createElement("h3");
-    title.textContent = article.title || article.programTitle || article.liveId || "放送記事";
+    title.textContent = (article.aiProvider && article.title) || article.programTitle || article.title || article.liveId || "放送記事";
     const meta = document.createElement("p");
     meta.className = "broadcast-article-meta";
-    meta.textContent = [
-      article.broadcasterName || "配信者名未取得",
-      formatLibraryDate(article.startedAt || article.generatedAt),
-      article.liveId || ""
-    ].filter(Boolean).join(" · ");
+    meta.textContent = ["ニコニコ生放送", article.liveId || ""].filter(Boolean).join(" · ");
     if (article.liveStatus === "live" || article.isLive) {
       const liveBadge = document.createElement("span");
       liveBadge.className = "broadcast-article-live-badge";
@@ -1602,11 +2329,50 @@ function renderBroadcastArticles() {
     };
     if (article.aiProvider) addTag("AI生成 · " + article.aiProvider + (article.aiModel ? " / " + article.aiModel : ""), "ai");
     else addTag("統計・コメント整理記事", "local");
+    if (article.aiGenerationStatus === "recovered") addTag("本文を短縮再生成済み", "ai");
+    if (article.aiGenerationStatus === "stale") addTag("前回の完成記事を保持（今回のAI更新失敗）", "local");
+    if (article.aiGenerationStatus === "fallback") addTag("AI本文未完了・標準記事を表示中", "local");
     if (article.articleSource === "manual") addTag("登録なし・手動生成");
-    if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚", "video");
+    if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚" + (article.videoAiAnalyzed ? "・AI解析済み" : "・フレーム取得済み"), "video");
+    if (article.mediaAnalysis && article.mediaAnalysis.audio === "unavailable") addTag("音声未解析", "local");
+    if (article.mediaAnalysis && article.mediaAnalysis.comments === "unavailable") addTag("コメント未取得", "local");
     if (article.audioAnalysis || article.audioTranscriptSegmentCount) addTag("音声文字起こし済み", "audio");
     if (article.liveStatus === "live" || article.isLive) addTag("ライブ更新中", "live");
     if (tags.childElementCount) heading.appendChild(tags);
+    heroCopy.appendChild(heading);
+    if (article.title && article.programTitle && article.title !== article.programTitle) {
+      const editorialTitle = document.createElement("p");
+      editorialTitle.className = "broadcast-article-editorial-title";
+      editorialTitle.textContent = article.aiProvider
+        ? "元の番組タイトル：" + article.programTitle
+        : "記事見出し：" + article.title;
+      heroCopy.appendChild(editorialTitle);
+    }
+    const commentSignal = document.createElement("div");
+    commentSignal.className = "broadcast-article-comment-signal";
+    commentSignal.textContent = Number(article.commentCount || 0) > 0
+      ? "コメント " + Number(article.commentCount).toLocaleString("ja-JP") + "件を取得・記事に反映しています。"
+      : (articleIsLive ? "コメントの受信を待っています。" : "取得できたコメントはありません。");
+    heroCopy.appendChild(commentSignal);
+    const sources = document.createElement("div");
+    sources.className = "broadcast-article-evidence";
+    const sourceLabels = [];
+    if (Number(article.videoFrameCount) > 0 || article.videoAnalysis) sourceLabels.push("映像フレーム");
+    if (article.audioTranscript || article.audioAnalysis) sourceLabels.push("音声・文字起こし");
+    if (Number(article.commentCount) > 0) sourceLabels.push("保存コメント");
+    if (article.programTitle || article.description) sourceLabels.push("番組情報");
+    if (sourceLabels.length) {
+      const label = document.createElement("strong");
+      label.textContent = "記事の参照資料";
+      sources.appendChild(label);
+      for (const source of sourceLabels) {
+        const pill = document.createElement("span");
+        pill.textContent = source;
+        sources.appendChild(pill);
+      }
+      heroCopy.appendChild(sources);
+    }
+    hero.append(media, heroCopy);
 
     const stats = document.createElement("div");
     stats.className = "broadcast-article-stats";
@@ -1647,10 +2413,30 @@ function renderBroadcastArticles() {
       }
       highlights.append(heading, list); body.appendChild(highlights);
     }
-    for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
-      const p = document.createElement("p");
-      p.textContent = paragraph;
-      body.appendChild(p);
+    const articleSections = Array.isArray(article.aiSections)
+      ? article.aiSections.filter(item => item && item.heading && item.body).slice(0, 6)
+      : [];
+    if (articleSections.length) {
+      const sectionLabel = document.createElement("div");
+      sectionLabel.className = "broadcast-article-story-label";
+      sectionLabel.textContent = "放送の詳しい内容";
+      body.appendChild(sectionLabel);
+      for (const chapter of articleSections) {
+        const section = document.createElement("section");
+        section.className = "broadcast-article-chapter";
+        const heading = document.createElement("h4");
+        heading.textContent = String(chapter.heading).slice(0, 90);
+        const text = document.createElement("p");
+        text.textContent = String(chapter.body).slice(0, 2000);
+        section.append(heading, text);
+        body.appendChild(section);
+      }
+    } else {
+      for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
+        const p = document.createElement("p");
+        p.textContent = paragraph;
+        body.appendChild(p);
+      }
     }
     if (Array.isArray(article.aiTimeline) && article.aiTimeline.length) {
       const timeline = document.createElement("section");
@@ -1688,11 +2474,25 @@ function renderBroadcastArticles() {
     if (Number(article.aiCommentTotalCount) > 0) {
       sourceDetails.push("AI参照コメント：" + Number(article.aiCommentSampleCount || 0).toLocaleString("ja-JP") + " / " + Number(article.aiCommentTotalCount).toLocaleString("ja-JP") + "件");
     }
+    if (article.aiSourceCoverage && article.aiProvider) {
+      const coverage = article.aiSourceCoverage;
+      sourceDetails.push("映像AI：" + (coverage.video === "analyzed" ? "解析あり" : "未解析"));
+      sourceDetails.push("音声AI：" + (coverage.audio === "transcribed" ? "文字起こしを参照" : "未解析"));
+    }
+    if (article.aiEvidence && Number(article.aiEvidence.timestampedCount) > 0) {
+      sourceDetails.push("時刻付きコメント：" + Number(article.aiEvidence.timestampedCount).toLocaleString("ja-JP") + "件");
+    }
     if (sourceDetails.length) {
       const sources = document.createElement("p");
       sources.className = "broadcast-article-sources";
       sources.textContent = sourceDetails.join("　｜　");
       body.appendChild(sources);
+    }
+    if (Array.isArray(article.aiQualityNotes) && article.aiQualityNotes.length) {
+      const quality = document.createElement("p");
+      quality.className = "broadcast-article-sources";
+      quality.textContent = "記事の取得状況：" + article.aiQualityNotes.slice(0, 4).join(" ／ ");
+      body.appendChild(quality);
     }
     body.appendChild(note);
 
@@ -1720,6 +2520,28 @@ function renderBroadcastArticles() {
       });
       actions.appendChild(video);
     }
+    if (article.articlePath && !(article.liveStatus === "live" || article.isLive)) {
+      const reanalyze = document.createElement("button");
+      reanalyze.type = "button";
+      reanalyze.className = "button button-primary button-small";
+      reanalyze.textContent = "映像・音声・コメントを再解析";
+      reanalyze.title = "録画から映像を抽出し、音声を文字起こしして保存コメントと照合します。";
+      reanalyze.addEventListener("click", async () => {
+        reanalyze.disabled = true;
+        reanalyze.textContent = "再解析中…";
+        try {
+          const updated = await api.reanalyzeBroadcastArticle(article.articlePath);
+          showToast("映像・音声・コメントの再解析が完了しました：" + (updated.title || updated.programTitle || "放送記事"));
+          await loadBroadcastArticles();
+        } catch (error) {
+          showToast(error.message || "録画の再解析に失敗しました。", true);
+        } finally {
+          reanalyze.disabled = false;
+          reanalyze.textContent = "映像・音声・コメントを再解析";
+        }
+      });
+      actions.appendChild(reanalyze);
+    }
     const exportArticle = document.createElement("button");
     exportArticle.type = "button";
     exportArticle.className = "button button-outline button-small";
@@ -1738,7 +2560,7 @@ function renderBroadcastArticles() {
     deleteArticle.addEventListener("click", async () => {
       deleteArticle.disabled = true;
       try { const result = await api.deleteBroadcastArticle(article.articlePath); if (result && result.cancelled) return;
-        showToast("放送記事を削除しました。録画動画とコメントログは残っています。"); await loadBroadcastArticles(); await loadCaptureLibrary();
+        showToast("放送記事を削除しました。録画動画とコメントログは残っています。"); await loadBroadcastArticles(); await loadCaptureLibrary(); void refreshLiveArticlePreviews(true);
       } catch (error) { showToast(error.message || "放送記事を削除できませんでした。", true); }
       finally { deleteArticle.disabled = false; }
     });
@@ -1749,8 +2571,65 @@ function renderBroadcastArticles() {
       updated.textContent = "最終更新：" + formatLibraryDate(article.generatedAt);
       body.appendChild(updated);
     }
-    card.append(heading, stats, body, actions);
+    const articleStoryboard = article.articlePath && !articleIsLive &&
+      typeof api.getArticleVideoPreview === "function"
+      ? makeArticleVideoScenesPanel(article) : null;
+    if (articleStoryboard) {
+      const scenesButton = document.createElement("button");
+      scenesButton.type = "button";
+      scenesButton.className = "button button-outline button-small broadcast-article-scenes-button";
+      scenesButton.textContent = "動画内の場面一覧を見る";
+      scenesButton.setAttribute("aria-expanded", "false");
+      scenesButton.addEventListener("click", () => {
+        void articleStoryboard.expand();
+        scenesButton.setAttribute("aria-expanded", String(!articleStoryboard.panel.hidden));
+        scenesButton.textContent = articleStoryboard.panel.hidden
+          ? "動画内の場面一覧を見る" : "動画内の場面一覧を閉じる";
+      });
+      media.appendChild(scenesButton);
+    }
+    card.append(masthead, hero, stats);
+    if (articleStoryboard) card.appendChild(articleStoryboard.panel);
+    if (article.audioTranscript || article.audioAnalysis) {
+      const audio = document.createElement("section");
+      audio.className = "broadcast-article-audio";
+      const audioTitle = document.createElement("strong");
+      audioTitle.textContent = "音声から確認した内容";
+      const audioStatus = document.createElement("p");
+      audioStatus.textContent = article.audioAnalysis || "Whisper.cppで音声を文字起こししました。";
+      audio.append(audioTitle, audioStatus);
+      if (article.audioTranscript) {
+        const details = document.createElement("details");
+        details.className = "broadcast-article-transcript";
+        const summary = document.createElement("summary");
+        summary.textContent = "音声文字起こしを表示（" + Number(article.audioTranscriptSegmentCount || 0).toLocaleString("ja-JP") + "区間）";
+        const transcript = document.createElement("p");
+        transcript.textContent = String(article.audioTranscript).slice(0, 30000);
+        details.append(summary, transcript);
+        audio.appendChild(details);
+      }
+      card.appendChild(audio);
+    }
+    card.appendChild(body);
+    if (article.aiFallbackReason) {
+      const error = document.createElement("p");
+      error.className = "broadcast-article-ai-warning";
+      error.textContent = "AI更新エラー：" + article.aiFallbackReason;
+      card.appendChild(error);
+    }
+    const footer = document.createElement("div");
+    footer.className = "broadcast-article-footer";
+    const summary = document.createElement("p");
+    summary.textContent = [
+      article.durationMinutes != null ? "配信時間 " + article.durationMinutes + "分" : "",
+      "コメント " + Number(article.commentCount || 0).toLocaleString("ja-JP") + "件",
+      article.visitorCount != null ? "来場者 " + Number(article.visitorCount).toLocaleString("ja-JP") + "人" : "来場者未取得",
+      article.aiProvider ? "AI分析済み" : "AI未分析"
+    ].filter(Boolean).join(" · ");
+    footer.appendChild(summary);
+    card.append(footer, actions);
     list.appendChild(card);
+    }
   }
 }
 
@@ -1781,7 +2660,7 @@ async function startLiveArticleSession() {
     liveArticleSessionActive = true;
     button.hidden = true;
     byId("manual-article-live-stop-button").hidden = false;
-    status.textContent = "生放送の記事生成を開始しました。視聴ページは表示せず、コメント取得と映像フレーム取得を行います。初回記事を生成しています。録画は行いません。";
+    status.textContent = "生放送の記事生成を開始しました。実際の配信映像をStreamlink経由でサンプリングし、放送音声とコメントを照合して記事を更新します。録画ファイルは残しません。";
     showToast("生放送の記事生成を開始しました。");
   } catch (error) {
     status.textContent = error.message || "生放送記事を開始できませんでした。";
@@ -1878,6 +2757,7 @@ async function generateManualBroadcastArticle() {
 }
 
 async function loadBroadcastArticles() {
+  if (PRODUCT_EDITION) return;
   const button = byId("articles-refresh-button");
   if (button) button.disabled = true;
   const list = byId("articles-list");
@@ -1940,6 +2820,9 @@ function renderStreamlinkUpdateState(payload) {
   }
 }
 
+let releaseHistoryEntries = [];
+let releaseHistoryExpanded = false;
+
 function parseReleaseHistory(markdown) {
   const entries = [];
   let current = null;
@@ -1955,45 +2838,80 @@ function parseReleaseHistory(markdown) {
   }
   return entries;
 }
-function renderReleaseHistory(markdown) {
+
+function appendFormattedReleaseNote(parent, note) {
+  // Preserve changelog as safe text rather than injecting HTML.
+  for (const text of String(note).split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
+    if (!text) continue;
+    const bold = text.startsWith("**") && text.endsWith("**");
+    const code = text.startsWith("`") && text.endsWith("`");
+    if (bold || code) {
+      const el = document.createElement(bold ? "strong" : "code");
+      el.textContent = text.slice(bold ? 2 : 1, bold ? -2 : -1);
+      parent.appendChild(el);
+    } else parent.appendChild(document.createTextNode(text));
+  }
+}
+
+function renderVisibleReleaseHistory() {
   const list = byId("release-history-list");
-  if (!list) return;
+  const count = byId("release-history-count");
+  const more = byId("release-history-more-button");
+  if (!list || !count || !more) return;
+  const query = byId("release-history-search").value.trim().toLocaleLowerCase();
+  const matches = releaseHistoryEntries.filter(entry =>
+    (entry.title + " " + entry.notes.join(" ")).toLocaleLowerCase().includes(query)
+  );
+  const entries = query || releaseHistoryExpanded ? matches : matches.slice(0, 5);
+  const current = byId("app-current-version").textContent.replace(/^v/, "").trim();
   list.replaceChildren();
-  const entries = parseReleaseHistory(markdown);
+  for (const [index, entry] of entries.entries()) {
+    const details = document.createElement("details");
+    details.className = "release-history-item";
+    details.open = Boolean(query) || index === 0;
+    const summary = document.createElement("summary");
+    summary.className = "release-history-item-heading";
+    const title = document.createElement("strong");
+    title.textContent = entry.title;
+    summary.appendChild(title);
+    if (entry.title.replace(/^v/, "") === current) {
+      const currentBadge = document.createElement("span");
+      currentBadge.className = "release-history-current";
+      currentBadge.textContent = "使用中";
+      summary.appendChild(currentBadge);
+    }
+    const noteCount = document.createElement("span");
+    noteCount.className = "release-history-note-count";
+    noteCount.textContent = entry.notes.length + "件の変更";
+    summary.appendChild(noteCount);
+    details.appendChild(summary);
+    if (entry.notes.length) {
+      const ul = document.createElement("ul");
+      for (const note of entry.notes) {
+        const li = document.createElement("li");
+        appendFormattedReleaseNote(li, note);
+        ul.appendChild(li);
+      }
+      details.appendChild(ul);
+    }
+    list.appendChild(details);
+  }
   if (!entries.length) {
     const empty = document.createElement("div");
     empty.className = "release-history-empty";
-    empty.textContent = "更新履歴を読み込めませんでした。アプリを再起動して再度お試しください。";
+    empty.textContent = releaseHistoryEntries.length ? "一致する更新履歴がありません。検索語を変えてください。" : "更新履歴を読み込めませんでした。アプリを再起動して再度お試しください。";
     list.appendChild(empty);
-    return;
   }
-  const currentVersion = byId("app-current-version").textContent.replace(/^v/, "").trim();
-  for (const entry of entries) {
-    const article = document.createElement("article");
-    article.className = "release-history-item";
-    const heading = document.createElement("div");
-    heading.className = "release-history-item-heading";
-    const title = document.createElement("strong");
-    title.textContent = entry.title;
-    heading.appendChild(title);
-    if (entry.title === currentVersion || entry.title === "v" + currentVersion) {
-      const current = document.createElement("span");
-      current.className = "release-history-current";
-      current.textContent = "現在のバージョン";
-      heading.appendChild(current);
-    }
-    article.appendChild(heading);
-    if (entry.notes.length) {
-      const listItems = document.createElement("ul");
-      for (const note of entry.notes) {
-        const item = document.createElement("li");
-        item.textContent = note;
-        listItems.appendChild(item);
-      }
-      article.appendChild(listItems);
-    }
-    list.appendChild(article);
-  }
+  count.textContent = query ? matches.length + "件が見つかりました" : entries.length + " / " + releaseHistoryEntries.length + "件を表示";
+  more.hidden = Boolean(query) || releaseHistoryEntries.length <= 5;
+  more.textContent = releaseHistoryExpanded ? "最新5件だけ表示" :
+    "過去の更新履歴も表示（残り" + Math.max(0, releaseHistoryEntries.length - 5) + "件）";
+}
+
+function renderReleaseHistory(markdown) {
+  releaseHistoryEntries = parseReleaseHistory(markdown);
+  releaseHistoryExpanded = false;
+  renderVisibleReleaseHistory();
 }
 
 async function loadReleaseHistory() {
@@ -2010,6 +2928,20 @@ async function loadReleaseHistory() {
   }
 }
 
+function getUpdateStatusGuide(state) {
+  switch (state) {
+    case "checking": return { title: "最新版を確認中", action: "GitHub Releasesへの接続結果を確認しています。" };
+    case "available": return { title: "新しいバージョンがあります", action: "ダウンロード完了後に「再起動して更新」を選べます。" };
+    case "retrying": return { title: "ダウンロードを再試行中", action: "失敗が続く場合は手動ダウンロードも利用できます。" };
+    case "progress": return { title: "更新ファイルをダウンロード中", action: "下の進捗バーでダウンロード状況を確認できます。" };
+    case "downloaded": return { title: "更新の準備ができました", action: "「再起動して更新」を押すか、アプリを通常終了すると適用されます。" };
+    case "not-available": return { title: "現在のバージョンは最新です", action: "いま更新する必要はありません。次回も自動で確認します。" };
+    case "unsupported": return { title: "この配布形式では自動更新できません", action: "ZIP版はGitHub Releasesから新版をダウンロードしてください。" };
+    case "error": return { title: "更新確認またはダウンロードに失敗しました", action: "「今すぐ更新を確認」で再試行するか、手動でダウンロードしてください。" };
+    default: return { title: "更新状況はまだ未確認です", action: "「今すぐ更新を確認」を押すと新しいバージョンを探します。" };
+  }
+}
+
 function renderUpdateState(payload) {
   if (!payload) return;
   const panel = byId("update-panel");
@@ -2017,6 +2949,9 @@ function renderUpdateState(payload) {
   const progress = byId("update-progress");
   const installButton = byId("install-update-button");
   const checkButton = byId("check-update-button");
+  const retryButton = byId("retry-update-download-button");
+  const manualButton = byId("update-releases-button");
+  const settingsRetryButton = byId("settings-retry-update-download-button");
   const settingsStatus = byId("settings-update-status");
   const settingsProgress = byId("settings-update-progress");
   const settingsInstallButton = byId("settings-install-update-button");
@@ -2024,9 +2959,22 @@ function renderUpdateState(payload) {
   const settingsBadge = byId("settings-update-badge");
   const latestVersionRow = byId("settings-latest-version-row");
   const latestVersionLabel = byId("settings-latest-version");
+  const guide = getUpdateStatusGuide(payload.state);
+  byId("settings-update-overview").dataset.state = payload.state || "idle";
+  byId("settings-update-headline").textContent = guide.title;
+  byId("settings-update-next-action").textContent = payload.state === "error" && payload.category === "integrity"
+    ? "安全確認に失敗したため再ダウンロードは停止しました。GitHub Releasesで正式な配布ファイルを確認してください。"
+    : guide.action;
+  if (["not-available", "available", "error"].includes(payload.state)) {
+    const checked = new Date().toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    byId("settings-update-checked-at").textContent = "前回の更新確認：" + checked + (payload.state === "error" ? "（失敗）" : "");
+  }
   panel.hidden = false;
   progress.hidden = true;
   installButton.hidden = true;
+  retryButton.hidden = true;
+  manualButton.hidden = true;
+  settingsRetryButton.hidden = true;
   checkButton.disabled = false;
 
   const version = payload.version ? "v" + payload.version : "";
@@ -2039,6 +2987,10 @@ function renderUpdateState(payload) {
       status.textContent = version + " が見つかりました。バックグラウンドでダウンロードしています…";
       checkButton.disabled = true;
       break;
+    case "retrying":
+      status.textContent = payload.message || "インストーラー全体を再ダウンロードしています…";
+      checkButton.disabled = true;
+      break;
     case "progress": {
       const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
       progress.hidden = false;
@@ -2049,7 +3001,7 @@ function renderUpdateState(payload) {
       break;
     }
     case "downloaded":
-      status.textContent = version + " のダウンロードが完了しました。再起動して更新できます。";
+      status.textContent = version + " のダウンロードが完了しました。アプリ終了時に自動適用します。今すぐ更新する場合は「再起動して更新」を押してください。";
       progress.hidden = false;
       progress.value = 100;
       installButton.hidden = false;
@@ -2061,7 +3013,11 @@ function renderUpdateState(payload) {
       status.textContent = payload.message || "自動アップデートはWindowsのインストーラー版で利用できます。";
       break;
     case "error":
-      status.textContent = "更新を確認できませんでした: " + (payload.message || "通信エラー");
+      status.textContent = "自動更新エラー" + (payload.code ? "（" + String(payload.code) + "）" : "") +
+        "：" + (payload.message || "通信エラー");
+      retryButton.hidden = payload.category === "integrity";
+      settingsRetryButton.hidden = payload.category === "integrity";
+      manualButton.hidden = false;
       break;
     default:
       status.textContent = "更新状態を確認できません。";
@@ -2070,12 +3026,18 @@ function renderUpdateState(payload) {
   settingsStatus.textContent = status.textContent;
   settingsProgress.hidden = progress.hidden;
   settingsProgress.value = progress.value;
+  const progressLabel = byId("settings-update-progress-label");
+  progressLabel.hidden = progress.hidden;
+  if (!progress.hidden) progressLabel.textContent = "ダウンロードの進捗：" + Number(progress.value).toFixed(1) + "%";
   settingsInstallButton.hidden = installButton.hidden;
   settingsInstallButton.disabled = installButton.disabled;
+  settingsRetryButton.hidden = retryButton.hidden;
+  settingsRetryButton.disabled = retryButton.disabled;
   settingsCheckButton.disabled = checkButton.disabled;
 
   const badgeLabels = {
     checking: "確認中",
+    retrying: "再試行中",
     available: "更新あり",
     progress: "ダウンロード中",
     downloaded: "更新準備完了",
@@ -2085,11 +3047,15 @@ function renderUpdateState(payload) {
   };
   settingsBadge.textContent = badgeLabels[payload.state] || "状態確認中";
   settingsBadge.dataset.state = payload.state || "idle";
+  byId("settings-update-error-help").hidden = payload.state !== "error";
 
-  const latestVersion = payload.version || latestVersionLabel.textContent.replace(/^v/, "");
-  const hasNewVersion = ["available", "progress", "downloaded"].includes(payload.state) && Boolean(latestVersion);
-  latestVersionRow.hidden = !hasNewVersion;
-  latestVersionLabel.textContent = hasNewVersion ? "v" + latestVersion : "—";
+  latestVersionRow.hidden = false;
+  if (payload.version) latestVersionLabel.dataset.version = String(payload.version).replace(/^v/, "");
+  const knownVersion = latestVersionLabel.dataset.version || "";
+  if (payload.state === "checking") latestVersionLabel.textContent = "確認中…";
+  else if (payload.state === "unsupported") latestVersionLabel.textContent = "自動確認できません";
+  else if (payload.state === "error") latestVersionLabel.textContent = knownVersion ? "v" + knownVersion + "（前回取得）" : "確認できません";
+  else latestVersionLabel.textContent = knownVersion ? "v" + knownVersion : "情報を取得中";
 }
 
 async function checkAppUpdates() {
@@ -2110,6 +3076,22 @@ async function checkAppUpdates() {
       message: error && error.message ? error.message : "通信エラー"
     });
     showToast(error.message || "アップデートを確認できませんでした。", true);
+  }
+}
+
+async function retryAppUpdateDownload() {
+  const button = byId("retry-update-download-button");
+  const settingsButton = byId("settings-retry-update-download-button");
+  button.disabled = true;
+  settingsButton.disabled = true;
+  renderUpdateState({ state: "retrying", message: "ダウンロードを再試行しています…" });
+  try {
+    await api.retryUpdateDownload();
+  } catch (error) {
+    renderUpdateState({ state: "error", message: error && error.message || "ダウンロードを再試行できませんでした。" });
+  } finally {
+    button.disabled = false;
+    settingsButton.disabled = false;
   }
 }
 
@@ -2140,21 +3122,36 @@ try {
     setConnection(state);
   }
   if (channel === "comments:file" && payload && payload.path) {
-    byId("comment-file").textContent = "コメント：" + payload.path;
+    setCaptureText("comment-file", "コメント：" + payload.path);
   }
   if (channel === "video:state") {
-    if (payload && payload.recording) setCaptureDetail("映像録画中です。保存先：" + (payload.path || "準備中"));
-    else if (payload && payload.path) setCaptureDetail("録画ファイルを確定しました：" + payload.path);
-    else if (payload && payload.exitCode !== undefined) setCaptureDetail("録画プロセス終了。終了コード：" + payload.exitCode + " ／ 映像ファイル：" + (payload.path || "作成されていません"));
-    handleVideoState(payload);
+    if (payload && payload.starting) {
+      setCaptureDetail((payload.message || "Streamlink起動中です。") + " 保存先：" + (payload.path || "確認中"));
+    } else {
+      if (payload && payload.recording) setCaptureDetail("映像録画中です。保存先：" + (payload.path || "準備中"));
+      else if (payload && payload.path) setCaptureDetail("録画ファイルを確定しました：" + payload.path);
+      else if (payload && payload.exitCode !== undefined) setCaptureDetail("録画プロセス終了。終了コード：" + payload.exitCode + " ／ 映像ファイル：" + (payload.path || "作成されていません"));
+      handleVideoState(payload);
+    }
   }
   if (channel === "preview:state") renderLivePreviewState(payload);
   if (channel === "capture:state" && payload) {
-    if (payload.videoError) setCaptureDetail("映像録画の開始に失敗しました：" + payload.videoError);
-    else if (payload.commentError) setCaptureDetail("映像録画は開始しましたが、コメント取得に失敗しました：" + payload.commentError);
-    else if (payload.recording && payload.commentsConnected) setCaptureDetail("映像録画とコメント取得の両方が開始しました。");
+    if (payload.liveId && payload.liveId !== currentLiveId) return;
+    if (payload.videoError) {
+      setCaptureDetail("映像録画の開始に失敗しました：" + payload.videoError);
+    } else if (payload.commentPending) {
+      setConnection("connecting");
+      setCaptureDetail("映像・音声録画中です。コメント接続を継続しています…");
+    } else if (payload.commentError) {
+      setConnection("error");
+      setCaptureDetail("映像録画は継続していますが、コメント取得に失敗しました：" + payload.commentError);
+    } else if (payload.recording && payload.commentsConnected) {
+      setConnection("connected");
+      setCaptureDetail("映像録画とコメント取得の両方が開始しました。");
+    }
   }
   if (channel === "compose:status" && payload) {
+    lastCompositionBackendStatusAt = Date.now();
     const progress = payload.state === "converting" ? 0 :
       payload.state === "progress" ? Number(payload.percent) || 0 :
       payload.state === "complete" ? 100 : Number(byId("compose-progress").value);
@@ -2166,8 +3163,8 @@ try {
   if (channel === "timeshift:comments-progress" && payload) {
     const count = Number(payload.eventCount) || 0;
     const segments = Number(payload.segmentsFetched) || 0;
-    byId("live-meta").textContent = "過去コメント取得中：" + count.toLocaleString("ja-JP") +
-      "件 / " + segments + "セグメント";
+    setCaptureText("live-meta", "過去コメント取得中：" + count.toLocaleString("ja-JP") +
+      "件 / " + segments + "セグメント");
     byId("capture-status-detail").textContent = "タイムシフトの映像録画を継続しながら、過去コメントを取得しています。";
   }
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
@@ -2203,13 +3200,14 @@ try {
   if (channel === "monitor:target-status") {
     monitorStatuses.set(payload.userId, payload);
     renderMonitorTargets();
+    void refreshLiveArticlePreviews();
   }
   if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
   if (channel === "articles:live-state" && payload) {
     const status = byId("manual-article-live-status");
     const frameCount = Number(payload.frameCount) || 0;
     if (payload.state === "capturing") {
-      status.textContent = "生放送中：映像フレームを取得しました（累計 " + frameCount + " 枚）。15秒ごとに取得します。" + (payload.audioCapturing ? " Whisper.cpp用の音声も一時取得中です。" : "");
+      status.textContent = "生放送中：映像フレーム " + frameCount + "枚を保持中（" + (payload.videoSource === "streamlink" ? "配信ストリーム直接取得" : "視聴ページから取得") + "）。" + (payload.audioCapturing ? " Whisper.cppで音声も逐次解析中。" : "");
     } else if (payload.state === "generating") {
       status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…" + (payload.audioCapturing ? " 音声も取得中です。" : "");
     } else if (payload.state === "updated") {
@@ -2218,6 +3216,12 @@ try {
         : "生放送中：記事の材料を取得中です。コメント・番組情報が揃うと記事を生成します。";
     } else if (payload.state === "capture-error") {
       status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
+    } else if (payload.state === "video-capturing") {
+      status.textContent = "配信映像を直接取得中（15秒ごと）。" +
+        (payload.audioCapturing ? "音声もWhisper.cpp用に取り込み中。" : "Whisper未設定のため音声解析は省略。") +
+        "コメントも受信中です。";
+    } else if (payload.state === "video-error" || payload.state === "video-warning") {
+      status.textContent = "配信映像取得の注意：" + (payload.message || "ストリームを確認しています。");
     } else if (payload.state === "audio-capturing") {
       status.textContent = "生放送中：音声を約25秒ごとに分割し、Whisper.cppで逐次文字起こししています。";
     } else if (payload.state === "audio-transcribing") {
@@ -2236,7 +3240,28 @@ try {
       status.textContent = "記事更新エラー：" + (payload.message || "不明なエラー") + "。次回更新時に再試行します。";
     }
   }
+  if (channel === "articles:analysis-state" && payload) {
+    const status = byId("manual-article-status");
+    const stages = {
+      starting: "録画の記事解析を準備中…",
+      video: "録画映像を全体から抽出しています…",
+      audio: "録画の音声を2分ごとに分割して文字起こししています…",
+      ai: "映像・音声・コメントをOllamaで照合して記事を生成中…",
+      complete: "録画の映像・音声・コメントを使った記事生成が完了しました。"
+    };
+    if (payload.state === "audio-progress") {
+      status.textContent = "録画音声を文字起こし中：" + (Number(payload.processed) || 0) +
+        " / " + (Number(payload.total) || 0) + "区間";
+    } else if (payload.state === "error") {
+      status.textContent = "録画記事の解析に失敗：" + (payload.message || "不明なエラー");
+      addMonitorActivity(status.textContent, "error");
+    } else if (stages[payload.state]) {
+      status.textContent = stages[payload.state];
+      if (payload.state === "complete" && !byId("articles-panel").hidden) loadBroadcastArticles();
+    }
+  }
   if (channel === "articles:generated") {
+    void refreshLiveArticlePreviews(true);
     if (!byId("articles-panel").hidden) loadBroadcastArticles();
     const article = payload && payload.article;
     addMonitorActivity("放送記事を生成しました：" + (article && (article.programTitle || article.liveId) || ""));
@@ -2248,7 +3273,12 @@ try {
     (payload.name || payload.userId || "ユーザー") + " の状態確認エラー：" + (payload.error || ""),
     "error"
   );
-  if (channel === "auth:status") refreshAuthStatus();
+  if (channel === "auth:status") renderAuthStatus(payload);
+  if (channel === "auth:expired") {
+    const warning = byId("auth-session-warning");
+    if (warning) { warning.hidden = false; warning.textContent = payload.message || "ニコニコのセッションが無効です。再ログインしてください。"; }
+    showToast("ニコニコのセッションが期限切れです。設定から再ログインしてください。", true);
+  }
   if (channel === "app:error") showToast(String(payload || "エラーが発生しました。"), true);
   });
 } catch (error) {
@@ -2258,9 +3288,7 @@ try {
 
 // Register primary capture controls even if event subscription fails. This prevents
 // one preload/event-listener error from aborting all subsequent button bindings.
-connectButton.addEventListener("click", connectLive);
-disconnectButton.addEventListener("click", disconnectLive);
-recordButton.addEventListener("click", startVideoRecording);
+// Primary capture controls are registered at the top of this file.
 byId("record-mode").addEventListener("change", () => {
   const timeshift = byId("record-mode").value === "timeshift";
   byId("record-mode-hint").textContent = timeshift
@@ -2270,8 +3298,11 @@ byId("record-mode").addEventListener("change", () => {
     ? "● 過去配信（映像＋コメント）を録画"
     : "● 接続して映像・音声＋コメントを録画";
 });
-stopRecordButton.addEventListener("click", stopVideoRecording);
+// The stop control is bound with the other primary buttons before optional initialization.
 byId("check-update-button").addEventListener("click", checkAppUpdates);
+byId("retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
+byId("settings-retry-update-download-button").addEventListener("click", retryAppUpdateDownload);
+byId("update-releases-button").addEventListener("click", () => api.openGitHubReleases());
 byId("install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
 byId("open-github-releases-button").addEventListener("click", async () => {
@@ -2282,6 +3313,11 @@ byId("open-github-releases-button").addEventListener("click", async () => {
   }
 });
 byId("settings-install-update-button").addEventListener("click", installAppUpdate);
+byId("release-history-search").addEventListener("input", renderVisibleReleaseHistory);
+byId("release-history-more-button").addEventListener("click", () => {
+  releaseHistoryExpanded = !releaseHistoryExpanded;
+  renderVisibleReleaseHistory();
+});
 byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
@@ -2339,6 +3375,10 @@ byId("open-watch-button").addEventListener("click", async () => {
   try { await api.openWatch(liveId); } catch (error) { showToast(error.message, true); }
 });
 
+byId("save-user-session-button").addEventListener("click", saveUserSession);
+byId("clear-user-session-button").addEventListener("click", clearUserSession);
+byId("check-auth-status-button").addEventListener("click", refreshAuthStatus);
+
 byId("login-button").addEventListener("click", async () => {
   try {
     await api.openLogin();
@@ -2356,8 +3396,6 @@ byId("settings-open-updates-button").addEventListener("click", () => {
   closeSettings();
   setActivePage("updates");
 });
-byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
-byId("settings-install-update-button").addEventListener("click", installAppUpdate);
 setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
@@ -2386,13 +3424,99 @@ byId("library-open-folder-button").addEventListener("click", async () => {
   }
 });
 
-byId("export-ass-button").addEventListener("click", async () => {
+byId("test-ass-ng-button").addEventListener("click", async () => {
+  const button = byId("test-ass-ng-button");
+  const output = byId("ass-ng-test-result");
+  button.disabled = true;
+  output.dataset.state = "checking";
+  output.textContent = "NGワードを判定中…";
   try {
-    const result = await api.exportAss();
+    const result = await api.testAssNgRegex({
+      ngRegex: byId("ass-ng-regex").value,
+      sample: byId("ass-ng-test-comment").value
+    });
+    output.dataset.state = result.matched ? "match" : "pass";
+    const details = Array.isArray(result.matches)
+      ? result.matches.map(match => match.lineNumber + "行目「" + match.pattern + "」").join("、")
+      : "";
+    output.textContent = result.matched
+      ? "NG対象：ASSには出力されません。（一致：" + details + "）"
+      : "NG対象外：このコメントはASSに出力されます。" +
+          (result.ruleCount ? "（適用ルール " + result.ruleCount + "件）" : "（NGルール未設定）");
+  } catch (error) {
+    output.dataset.state = "error";
+    output.textContent = "NG判定エラー：" + (error.message || String(error));
+  } finally {
+    button.disabled = false;
+  }
+});
+
+for (const prefix of ["ass-", "setting-ass-"]) {
+  for (const [, id] of ASS_MOTION_FIELDS) {
+    byId(prefix + id).addEventListener("input", () => refreshAssMotionLabels(prefix));
+  }
+  byId(prefix + "auto-motion").addEventListener("change", () => refreshAssMotionLabels(prefix));
+  refreshAssMotionLabels(prefix);
+}
+
+byId("reset-ass-motion-button").addEventListener("click", () => {
+  applyAssMotionInputs("ass-", {
+    assAutoMotion: true,
+    assScrollSpeed: 360,
+    assEntryOffset: 0,
+    assScrollLanes: 18,
+    assFixedDuration: 5,
+    assPreventOverlap: true
+  });
+  showToast("ニコ生風の自動調整をONに戻しました。保存する場合は「流れ方の設定を保存」を押してください。");
+});
+
+byId("save-ass-motion-button").addEventListener("click", async () => {
+  const button = byId("save-ass-motion-button");
+  button.disabled = true;
+  try {
+    applyMonitorState(await api.saveMonitorSettings(readAssMotionInputs("ass-")));
+    applyAssMotionInputs("setting-ass-", monitorSettings);
+    showToast("ASSの流れ方を保存しました。録画後の自動ASS作成にも適用します。");
+  } catch (error) {
+    showToast(error.message || "ASS表示設定を保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId("save-ass-ng-button").addEventListener("click", async () => {
+  const button = byId("save-ass-ng-button");
+  button.disabled = true;
+  try {
+    applyMonitorState(await api.saveMonitorSettings({
+      assNgRegex: byId("ass-ng-regex").value
+    }));
+    byId("setting-ass-ng-regex").value = monitorSettings.assNgRegex || "";
+    showToast("ASS用のNGワード（正規表現）を保存しました。自動ASS作成にも適用されます。");
+  } catch (error) {
+    showToast(error.message || "NGワード設定を保存できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId("export-ass-button").addEventListener("click", async () => {
+  const button = byId("export-ass-button");
+  button.disabled = true;
+  try {
+    const result = await api.exportAss({ ngRegex: byId("ass-ng-regex").value, ...readAssMotionInputs("ass-") });
     if (result.cancelled) return;
-    showToast("ASSを書き出しました（" + result.commentCount + "件）: " + result.path);
+    const autoSummary = byId("ass-auto-motion").checked
+      ? "、自動調整 " + (result.automaticallyAdjustedCount || 0) + "件" +
+        ((result.automaticallyDeferredCount || 0) ? "（混雑による時間調整 " + result.automaticallyDeferredCount + "件）" : "")
+      : "";
+    showToast("ASSを書き出しました（" + result.commentCount + "件、NG除外 " +
+      (result.filteredCount || 0) + "件" + autoSummary + "）: " + result.path);
   } catch (error) {
     showToast(error.message || "ASSを書き出せませんでした。", true);
+  } finally {
+    button.disabled = false;
   }
 });
 
@@ -2418,6 +3542,7 @@ liveInput.addEventListener("keydown", (event) => {
     byId("build-version").textContent = version;
     byId("footer-version").textContent = text;
     byId("app-current-version").textContent = text;
+    if (releaseHistoryEntries.length) renderVisibleReleaseHistory();
   } catch (_) {}
   await loadReleaseHistory();
   await refreshAuthStatus();
@@ -2699,6 +3824,7 @@ function scheduleComposePreviewRefresh() {
   scheduleComposePreviewRefresh.timer = window.setTimeout(() => { void refreshComposePreview(); }, 120);
 }
 
+let lastCompositionBackendStatusAt = 0;
 function setCompositionProgress(value, label) {
   const progress = byId("compose-progress");
   if (progress) progress.value = Math.max(0, Math.min(100, Number(value) || 0));
@@ -2707,16 +3833,13 @@ function setCompositionProgress(value, label) {
 }
 
 function parseJsonlFile(text) {
-  const records = [];
-  const lines = String(text || "").split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].trim();
-    if (!line) continue;
-    try {
-      records.push(JSON.parse(line));
-    } catch (error) {
-      throw new Error("コメントログの" + (index + 1) + "行目を読み取れません: " + error.message);
-    }
+  const parser = window.nicoCommentComposition?.parseCommentJsonlText;
+  if (typeof parser !== "function") {
+    throw new Error("コメントログ読み込みモジュールを読み込めませんでした。");
+  }
+  const records = parser(text);
+  if (!records.length) {
+    throw new Error("コメントログから有効なJSONレコードを読み取れませんでした。JSONL形式のコメントファイルを選択してください。");
   }
   return records;
 }
@@ -2747,17 +3870,93 @@ async function composeCommentVideo() {
   let videoElement = null;
   let objectUrl = null;
   let canvasStream = null;
+  let sourceMediaStream = null;
   let finalStream = null;
   let audioContext = null;
   let recorder = null;
   let animationFrame = 0;
+  let videoFrameCallbackId = 0;
   let outputStarted = false;
   let cancelRequested = false;
   let writeError = null;
   let chunkQueue = Promise.resolve();
+  let pendingChunks = 0;
+  let playbackWatchdog = null;
+  let recorderStopTimer = null;
+  let recorderStopEntered = false;
+  let resolveStopFailure = null;
+  let lastPlaybackAdvanceAt = Date.now();
+  let lastPlaybackTime = 0;
+  // Playback time may advance even when a GPU/canvas failure silently kills
+  // requestAnimationFrame. Track rendering independently of video decoding.
+  let lastRenderedFrameAt = Date.now();
+  let consecutiveFrameErrors = 0;
+  const FRAME_STALL_MS = 45000;
+  const PLAYBACK_STALL_MS = 45000;
+  const SAVE_STALL_MS = 75000;
+  // Bound every asynchronous hand-off, not only the Electron stream write.
+  // MediaRecorder implementations can become inactive without firing 'stop',
+  // and Blob.arrayBuffer() can remain pending after a decoder failure.
+  const withDeadline = (operation, timeoutMs, description) => {
+    let timer;
+    return Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(
+          description + "が" + Math.ceil(timeoutMs / 1000) + "秒以上応答しません。生成を中断します。"
+        )), timeoutMs);
+      })
+    ]).finally(() => window.clearTimeout(timer));
+  };
+  // FFmpeg may legitimately take hours to encode a long stream. Check for
+  // missing *progress*, not the overall encode duration.
+  const withBackendProgressDeadline = (operation, stallMs = 240000) => {
+    lastCompositionBackendStatusAt = Date.now();
+    let watchdog;
+    return Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        watchdog = window.setInterval(() => {
+          if (Date.now() - lastCompositionBackendStatusAt > stallMs) {
+            reject(new Error(
+              "MP4変換・保存の進捗が4分間更新されませんでした。FFmpegや保存先ディスクを確認してください。"
+            ));
+          }
+        }, 5000);
+      })
+    ]).finally(() => window.clearInterval(watchdog));
+  };
+  let recordingStopRequestedAt = 0;
+  const stopRecorder = (failure = null) => {
+    if (failure) {
+      writeError = writeError || failure;
+      cancelRequested = true;
+    }
+    if (!recordingStopRequestedAt) recordingStopRequestedAt = Date.now();
+    if (videoElement && !videoElement.paused) videoElement.pause();
+    if (recorder && recorder.state !== "inactive") {
+      try { recorder.stop(); }
+      catch (error) { writeError = writeError || error; }
+    }
+    if (!recorderStopEntered && !recorderStopTimer && resolveStopFailure) {
+      recorderStopTimer = window.setTimeout(() => {
+        if (!recorderStopEntered && resolveStopFailure) {
+          resolveStopFailure({ error: writeError ||
+            new Error("動画エンコーダーが停止通知を返しませんでした。保存を中断しました。") });
+        }
+      }, 25000);
+    }
+  };
 
   const cleanup = async () => {
+    if (playbackWatchdog) window.clearInterval(playbackWatchdog);
+    if (recorderStopTimer) window.clearTimeout(recorderStopTimer);
     if (animationFrame) cancelAnimationFrame(animationFrame);
+    if (videoFrameCallbackId && videoElement?.cancelVideoFrameCallback) {
+      videoElement.cancelVideoFrameCallback(videoFrameCallbackId);
+      videoFrameCallbackId = 0;
+    }
+    if (sourceMediaStream) sourceMediaStream.getTracks().forEach((track) => track.stop());
     if (videoElement) {
       videoElement.pause();
       videoElement.removeAttribute("src");
@@ -2767,7 +3966,7 @@ async function composeCommentVideo() {
     if (finalStream) finalStream.getTracks().forEach((track) => track.stop());
     if (canvasStream) canvasStream.getTracks().forEach((track) => track.stop());
     if (audioContext && audioContext.state !== "closed") {
-      await audioContext.close().catch(() => {});
+      await withDeadline(() => audioContext.close(), 15000, "音声トラックの解放").catch(() => {});
     }
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     cancelActiveComposition = null;
@@ -2782,8 +3981,7 @@ async function composeCommentVideo() {
       Number(byId("compose-progress").value),
       "キャンセル処理中…"
     );
-    if (videoElement) videoElement.pause();
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    stopRecorder();
   };
 
   try {
@@ -2793,6 +3991,7 @@ async function composeCommentVideo() {
     videoElement = document.createElement("video");
     videoElement.preload = "auto";
     videoElement.playsInline = true;
+    videoElement.playbackRate = 1;
     videoElement.style.position = "fixed";
     videoElement.style.left = "-10000px";
     videoElement.style.top = "0";
@@ -2850,23 +4049,63 @@ async function composeCommentVideo() {
 
     canvasStream = canvas.captureStream(composeOptions.fps);
     const audioTracks = [];
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) {
+    let useAudioContextFallback = false;
+    // Use the source media element's captured audio track as the primary path.
+    // This avoids introducing a second, independently buffered Web Audio clock.
+    if (typeof videoElement.captureStream === "function") {
       try {
-        audioContext = new AudioContextClass();
-        const source = audioContext.createMediaElementSource(videoElement);
-        const destination = audioContext.createMediaStreamDestination();
-        source.connect(destination);
-        await audioContext.resume();
-        audioTracks.push(...destination.stream.getAudioTracks());
-      } catch (audioError) {
-        console.warn("Audio track composition unavailable:", audioError);
-        if (audioContext && audioContext.state !== "closed") {
-          await audioContext.close().catch(() => {});
+        sourceMediaStream = videoElement.captureStream();
+        const sourceAudioTracks = sourceMediaStream.getAudioTracks();
+        if (sourceAudioTracks.length) {
+          // Keep the first selected audio track; avoid ambiguous multi-track
+          // recording when a source file contains multiple language tracks.
+          const sourceAudioTrack = sourceAudioTracks[0];
+          audioTracks.push(sourceAudioTrack);
+          // Per Media Capture from DOM Elements, muting the element or hiding
+          // it does not silence the captured audio track.
+          videoElement.muted = true;
+          videoElement.volume = 0;
+          sourceMediaStream.getVideoTracks().forEach((track) => track.stop());
+          sourceAudioTracks.slice(1).forEach((track) => track.stop());
+        } else {
+          sourceMediaStream.getTracks().forEach((track) => track.stop());
+          sourceMediaStream = null;
+          useAudioContextFallback = true;
         }
-        audioContext = null;
-        showToast("音声合成を利用できないため、映像のみで生成します。");
+      } catch (captureError) {
+        console.warn("Direct source audio capture unavailable; using compatibility path:", captureError);
+        if (sourceMediaStream) sourceMediaStream.getTracks().forEach((track) => track.stop());
+        sourceMediaStream = null;
+        useAudioContextFallback = true;
       }
+    } else {
+      useAudioContextFallback = true;
+    }
+
+    // Compatibility fallback for older Chromium builds or unsupported media.
+    if (!audioTracks.length && useAudioContextFallback) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        try {
+          audioContext = new AudioContextClass();
+          const source = audioContext.createMediaElementSource(videoElement);
+          const destination = audioContext.createMediaStreamDestination();
+          source.connect(destination);
+          await withDeadline(() => audioContext.resume(), 15000, "音声トラックの起動");
+          audioTracks.push(...destination.stream.getAudioTracks());
+          showToast("互換音声モードで生成します。完成後に音声と映像の同期を確認してください。");
+        } catch (audioError) {
+          console.warn("Audio track composition unavailable:", audioError);
+          if (audioContext && audioContext.state !== "closed") {
+            await withDeadline(() => audioContext.close(), 15000, "音声トラックの停止").catch(() => {});
+          }
+          audioContext = null;
+          showToast("音声合成を利用できないため、映像のみで生成します。", true);
+        }
+      }
+    }
+    if (!audioTracks.length) {
+      showToast("元動画の音声トラックを取得できません。音声なしの動画として生成します。", true);
     }
 
     finalStream = new MediaStream([
@@ -2900,29 +4139,78 @@ async function composeCommentVideo() {
     let activeComments = [];
     let lastProgressUpdate = 0;
 
-    const drawFrame = () => {
-      if (!videoElement || videoElement.readyState < 2) {
+    const scheduleNextFrame = () => {
+      if (cancelRequested || !videoElement) return;
+      if (typeof videoElement.requestVideoFrameCallback === "function") {
+        videoFrameCallbackId = videoElement.requestVideoFrameCallback(() => {
+          videoFrameCallbackId = 0;
+          drawFrame();
+        });
+      } else {
         animationFrame = requestAnimationFrame(drawFrame);
+      }
+    };
+
+    const cancelScheduledFrame = () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
+      }
+      if (videoFrameCallbackId && videoElement?.cancelVideoFrameCallback) {
+        videoElement.cancelVideoFrameCallback(videoFrameCallbackId);
+        videoFrameCallbackId = 0;
+      }
+    };
+
+    const drawFrame = () => {
+      if (cancelRequested || !videoElement) return;
+      if (videoElement.ended) { stopRecorder(); return; }
+      if (videoElement.readyState < 2) {
+        scheduleNextFrame();
         return;
       }
       const currentMs = videoElement.currentTime * 1000;
-      context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-
-      while (nextCommentIndex < schedule.length && schedule[nextCommentIndex].startMs <= currentMs) {
-        activeComments.push(schedule[nextCommentIndex]);
-        nextCommentIndex += 1;
+      if (Number.isFinite(currentMs) && currentMs > lastPlaybackTime * 1000 + 50) {
+        lastPlaybackTime = videoElement.currentTime;
+        lastPlaybackAdvanceAt = Date.now();
       }
-      activeComments = activeComments.filter((comment) => comment.endMs >= currentMs);
-      drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height, composeOptions);
+      try {
+        context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        while (nextCommentIndex < schedule.length && schedule[nextCommentIndex].startMs <= currentMs) {
+          activeComments.push(schedule[nextCommentIndex]);
+          nextCommentIndex += 1;
+        }
+        activeComments = activeComments.filter((comment) => comment.endMs >= currentMs);
+        drawCommentOverlay(context, schedule, activeComments, currentMs, canvas.width, canvas.height, composeOptions);
+        consecutiveFrameErrors = 0;
+        lastRenderedFrameAt = Date.now();
+      } catch (frameError) {
+        // A single transient decoder/GPU error can clear up on the next frame.
+        // Do not silently abandon requestAnimationFrame after it throws.
+        consecutiveFrameErrors += 1;
+        if (consecutiveFrameErrors >= 5) {
+          stopRecorder(new Error("映像フレームを5回連続で描画できませんでした。GPU・動画デコードを確認してください：" +
+            (frameError && frameError.message || String(frameError))));
+        } else if (!cancelRequested) {
+          scheduleNextFrame();
+        }
+        return;
+      }
 
       const now = Date.now();
       if (now - lastProgressUpdate >= 250) {
         const percent = Math.min(100, (currentMs / durationMs) * 100);
-        setCompositionProgress(percent, "合成中 " + Math.floor(percent) + "%");
+        const remainingSeconds = Math.max(0, Math.ceil((durationMs - currentMs) / 1000));
+        const remainingLabel = remainingSeconds >= 3600
+          ? Math.floor(remainingSeconds / 3600) + "時間" + Math.ceil(remainingSeconds % 3600 / 60) + "分"
+          : Math.ceil(remainingSeconds / 60) + "分";
+        setCompositionProgress(percent,
+          "映像とコメントを合成中 " + Math.floor(percent) + "%（実時間処理／残り約" +
+          remainingLabel + " ＋保存・MP4変換）");
         lastProgressUpdate = now;
       }
       if (!videoElement.paused && !videoElement.ended && !cancelRequested) {
-        animationFrame = requestAnimationFrame(drawFrame);
+        scheduleNextFrame();
       }
     };
 
@@ -2930,58 +4218,132 @@ async function composeCommentVideo() {
     if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
     recorder = new MediaRecorder(finalStream, recorderOptions);
     recorder.ondataavailable = (event) => {
-      if (!event.data || !event.data.size) return;
+      if (!event.data || !event.data.size || writeError) return;
+      // MediaRecorder can generate chunks much faster than a slow/full drive
+      // can persist them. Stop before unbounded Blobs exhaust renderer memory.
+      pendingChunks += 1;
+      if (pendingChunks > 32) {
+        pendingChunks -= 1;
+        stopRecorder(new Error(
+          "動画の保存待ちデータが増えすぎました。保存先ディスクの速度・空き容量を確認してください。"
+        ));
+        return;
+      }
       const chunk = event.data;
       chunkQueue = chunkQueue.then(async () => {
-        await api.writeComposeChunk(await chunk.arrayBuffer());
+        if (writeError) return;
+        const buffer = await withDeadline(() => chunk.arrayBuffer(), 45000,
+          "録画データのエンコード");
+        await withDeadline(() => api.writeComposeChunk(buffer), SAVE_STALL_MS,
+          "合成動画のディスク保存");
       }).catch((error) => {
-        writeError = error;
-        cancelRequested = true;
-        if (recorder && recorder.state !== "inactive") recorder.stop();
-      });
+        stopRecorder(error);
+      }).finally(() => { pendingChunks = Math.max(0, pendingChunks - 1); });
     };
 
     const stopResultPromise = new Promise((resolve) => {
+      resolveStopFailure = resolve;
       recorder.onstop = async () => {
-        if (animationFrame) cancelAnimationFrame(animationFrame);
+        recorderStopEntered = true;
+        if (recorderStopTimer) window.clearTimeout(recorderStopTimer);
+        if (playbackWatchdog) window.clearInterval(playbackWatchdog);
+        cancelScheduledFrame();
         cancelButton.disabled = true;
+        setCompositionProgress(Number(byId("compose-progress").value),
+          cancelRequested ? "中断処理中…" : "動画データを保存・確定中…");
         try {
-          await chunkQueue;
+          await withDeadline(() => chunkQueue, SAVE_STALL_MS, "残りの動画データ保存");
           if (writeError) throw writeError;
           if (cancelRequested) {
-            await api.cancelCompose();
+            await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
+              "動画生成のキャンセル");
             resolve({ cancelled: true });
           } else {
-            const saved = await api.finishCompose();
+            const saved = await withBackendProgressDeadline(() => api.finishCompose());
             resolve(saved);
           }
         } catch (error) {
-          try { await api.cancelCompose(); } catch (_) {}
+          // The main process has its own writer/FFmpeg timeouts; never block
+          // this renderer indefinitely while trying to clean up a failure.
+          await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
+            "動画生成のクリーンアップ").catch(() => {});
           resolve({ error });
         }
       };
     });
 
     recorder.onerror = (event) => {
-      writeError = event.error || new Error("動画のエンコード中にエラーが発生しました。");
-      cancelRequested = true;
-      if (recorder && recorder.state !== "inactive") recorder.stop();
+      stopRecorder(event.error || new Error("動画のエンコード中にエラーが発生しました。"));
     };
-
-    videoElement.addEventListener("ended", () => {
-      if (recorder && recorder.state !== "inactive") recorder.stop();
-    }, { once: true });
+    videoElement.addEventListener("ended", () => stopRecorder(), { once: true });
+    videoElement.addEventListener("error", () => stopRecorder(
+      new Error("動画の再生中にエラーが発生しました。動画形式を確認してください。")), { once: true });
+    // Some damaged videos and GPU decoders never emit 'ended' and leave the
+    // MediaRecorder recording forever. Independently check advancing time.
+    playbackWatchdog = window.setInterval(() => {
+      if (!recorder || recorderStopEntered) return;
+      // Some Chromium hardware encoders silently enter 'inactive' without
+      // firing MediaRecorder.onstop. Previously we returned here forever,
+      // leaving stopResultPromise pending and the UI stuck.
+      if (recorder.state === "inactive") {
+        stopRecorder(new Error("動画エンコーダーが停止通知なしで終了しました。別の画質・形式で再試行してください。"));
+        return;
+      }
+      if (recordingStopRequestedAt) {
+        if (Date.now() - recordingStopRequestedAt > 25000) {
+          stopRecorder(new Error("エンコーダー停止処理が完了しませんでした。"));
+        }
+        return;
+      }
+      if (cancelRequested) return;
+      const current = Number(videoElement.currentTime) || 0;
+      if (current > lastPlaybackTime + 0.05) {
+        lastPlaybackTime = current;
+        lastPlaybackAdvanceAt = Date.now();
+      }
+      if (videoElement.ended || current * 1000 >= durationMs - 150) {
+        stopRecorder();
+      } else if (!videoElement.paused && window.nicoCommentComposition.isCompositionStalled(
+        lastRenderedFrameAt, Date.now(), FRAME_STALL_MS)) {
+        stopRecorder(new Error(
+          "映像の描画が45秒以上更新されませんでした。再生時刻が進んでいても動画の合成を安全に中断します。GPU・省電力設定を確認してください。"
+        ));
+      } else if (window.nicoCommentComposition.isCompositionStalled(
+        lastPlaybackAdvanceAt, Date.now(), PLAYBACK_STALL_MS)) {
+        stopRecorder(new Error(
+          "動画の再生位置が45秒以上進みませんでした。デコード停止・動画破損・省電力制限の可能性があります。"
+        ));
+      }
+    }, 4000);
 
     recorder.start(1000);
     cancelButton.disabled = false;
-    await videoElement.play();
+    lastPlaybackAdvanceAt = Date.now();
+    lastRenderedFrameAt = Date.now();
+    // Starting playback can itself hang on unsupported hardware decoders.
+    let playTimer;
+    try {
+      await Promise.race([
+        videoElement.play(),
+        new Promise((_, reject) => {
+          playTimer = window.setTimeout(() => reject(new Error(
+            "動画の再生開始が30秒以上応答しませんでした。動画形式を確認してください。"
+          )), 30000);
+        })
+      ]);
+    } finally {
+      if (playTimer) window.clearTimeout(playTimer);
+    }
     drawFrame();
 
-    setCompositionProgress(0, "合成を開始しました");
+    setCompositionProgress(0, audioTracks.length
+      ? "元動画の音声トラックを使用して映像・コメントを同期中…"
+      : "音声なしで映像・コメントを合成中…");
     const stopResult = await stopResultPromise;
-    outputStarted = false;
-
+    // Keep outputStarted true on errors so the catch block can close any
+    // Electron writer left open by a missing MediaRecorder stop event.
     if (stopResult.error) throw stopResult.error;
+    outputStarted = false;
     if (stopResult.cancelled) {
       setCompositionProgress(0, "生成をキャンセルしました");
       showToast("コメント付き動画の生成をキャンセルしました。");
@@ -2994,12 +4356,13 @@ async function composeCommentVideo() {
     }
   } catch (error) {
     if (recorder && recorder.state !== "inactive") {
-      cancelRequested = true;
-      recorder.stop();
+      stopRecorder(error);
     }
     if (outputStarted) {
-      await chunkQueue.catch(() => {});
-      await api.cancelCompose().catch(() => {});
+      await withDeadline(() => chunkQueue, SAVE_STALL_MS,
+        "未処理の動画データ保存").catch(() => {});
+      await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
+        "動画生成のキャンセル").catch(() => {});
     }
     setCompositionProgress(0, "エラー");
     showToast(error.message || "コメント付き動画を生成できませんでした。", true);

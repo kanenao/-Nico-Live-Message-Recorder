@@ -15,10 +15,17 @@ const preload = fs.readFileSync(path.join(root, "electron", "preload.cjs"), "utf
 const releaseWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-release.yml"), "utf8");
 const buildWorkflow = fs.readFileSync(path.join(root, ".github", "workflows", "nicolive-recorder-build.yml"), "utf8");
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 const composeExport = require(path.join(root, "electron", "composition-export.cjs"));
 const articleExport = require(path.join(root, "electron", "article-export.cjs"));
 const ollamaSource = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
 const audioTranscription = fs.readFileSync(path.join(root, "electron", "audio-transcription.cjs"), "utf8");
+
+test("Niconico watchCount is propagated into saved article metadata", () => {
+  assert.match(main, /visitorCount:\s*readField\(\["visitorCount", "watchCount"/);
+  assert.match(main, /visitorCount:\s*String\(programInfo\.visitorCount \?\? programInfo\.watchCount/);
+  assert.match(renderer, /\["visitorCount", "viewerCount", "viewers", "watchCount"/);
+});
 
 test("comment overlay preserves the video frame drawn to the canvas", () => {
   const start = renderer.indexOf("function drawCommentOverlay(");
@@ -72,13 +79,13 @@ test("saved monitor user IDs are validated with a numeric pattern", () => {
 
 test("automatic monitor recording is queued instead of interrupting an active recording", () => {
   assert.match(renderer, /const monitorAutoQueue = \[\]/);
-  assert.match(renderer, /if \(recordButton\.disabled \|\| recordStartedAt\) return/);
+  assert.match(renderer, /if \(captureStopInProgress \|\| recordButton\.disabled \|\| recordStartedAt\) return/);
   assert.match(renderer, /monitorAutoQueue\.push\(payload\)/);
   assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
   assert.ok(renderer.includes("finally {"));
   assert.ok(renderer.includes("recordStartInProgress = false;"));
   assert.ok(renderer.includes("processMonitorAutoQueue();"));
-  assert.ok(renderer.includes('recordButton.disabled = videoCaptureState === "recording"'));
+  assert.ok(renderer.includes('recordButton.disabled = captureStopInProgress || videoCaptureState === "recording"'));
   assert.match(renderer, /api\.retryMonitorTarget\(/);
 });
 
@@ -94,6 +101,54 @@ test("monitor prefers the authenticated follow-list API and retains public-histo
   assert.match(html, /<option value="10"(?: selected)?>10秒（最速・推奨）<\/option>/);
 });
 
+
+test("primary capture buttons are bound before renderer initialization can fail", () => {
+  const connectBinding = renderer.indexOf('connectButton.addEventListener("click"');
+  const recordBinding = renderer.indexOf('recordButton.addEventListener("click"');
+  const disconnectBinding = renderer.indexOf('disconnectButton.addEventListener("click"');
+  const firstStateInitialization = renderer.indexOf("let connected = false;");
+  assert.ok(connectBinding >= 0 && connectBinding < firstStateInitialization);
+  assert.ok(recordBinding >= 0 && recordBinding < firstStateInitialization);
+  assert.ok(disconnectBinding >= 0 && disconnectBinding < firstStateInitialization);
+  assert.match(renderer, /reportCaptureButtonError\("映像・音声録画", error\)/);
+});
+
+test("capture UI remains operational when optional view elements are absent", () => {
+  const vm = require("node:vm");
+  const helperStart = renderer.indexOf("function setCaptureDetail(");
+  const helperEnd = renderer.indexOf("\nfunction updateCaptureIndicators(", helperStart);
+  assert.ok(helperStart > 0 && helperEnd > helperStart);
+  const handlers = vm.runInNewContext(
+    renderer.slice(helperStart, helperEnd) + "\n({ setCaptureDetail, setCaptureText, showToast })",
+    {
+      byId: () => null,
+      console: { warn() {} },
+      window: { clearTimeout() {}, setTimeout() { throw Error("unexpected timer"); } }
+    }
+  );
+  assert.doesNotThrow(() => handlers.setCaptureDetail("録画中"));
+  assert.doesNotThrow(() => handlers.setCaptureText("video-file", "録画中"));
+  assert.doesNotThrow(() => handlers.showToast("通知"));
+  const stateStart = renderer.indexOf("function setConnection(state, label) {");
+  const stateEnd = renderer.indexOf("\nfunction normalizeId(", stateStart);
+  assert.ok(stateStart > 0 && stateEnd > stateStart);
+  const state = vm.runInNewContext(`
+    let connected = false;
+    let commentCaptureState = "disconnected";
+    let captureStopInProgress = false;
+    const connectButton = null, disconnectButton = null;
+    const byId = () => null;
+    const updateCaptureIndicators = () => {};
+    ${renderer.slice(stateStart, stateEnd)}
+    setConnection("connected");
+    ({ connected, commentCaptureState });
+  `);
+  assert.equal(state.connected, true);
+  assert.equal(state.commentCaptureState, "connected");
+  assert.match(renderer, /if \(recordIndicator\) recordIndicator\.classList\.toggle/);
+  assert.match(renderer, /if \(stopRecordButton\) stopRecordButton\.textContent/);
+  assert.match(renderer, /setCaptureText\("video-file", "保存先："/);
+});
 
 test("broadcast connection and direct video/audio recording share one integrated panel", () => {
   const panelStart = html.indexOf('<section class="panel session-panel"');
@@ -112,11 +167,23 @@ test("broadcast connection and direct video/audio recording share one integrated
   assert.match(panel, /コメント切断/);
   assert.match(preload, /startCapture:.*ipcRenderer\.invoke\("capture:start"/);
   assert.match(main, /ipcMain\.handle\("capture:start"/);
-  assert.match(main, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
+  assert.match(main, /const commentTask = \(reuseComments/);
+  assert.match(main, /const videoTask = startVideoInternal\(liveId, quality/);
+  assert.match(main, /video = await videoTask/);
+  assert.match(main, /commentPending: !commentSettled/);
   assert.match(main, /connectPreparedCommentSession\(liveId\)/);
   assert.match(main, /startVideoInternal\(liveId, quality/);
   assert.match(renderer, /api\.startCapture\(liveId, quality, \{/);
   assert.match(renderer, /currentLiveId = liveId;\s*liveInput\.value = liveId/);
+});
+
+test("recording library resolves broadcaster profile icons from Niconico user pages", () => {
+ const profile=require("../electron/nico-profile.cjs");
+ assert.equal(profile.extractNicoUserId("あかね？_351798591"),"351798591");
+ assert.equal(profile.extractNicoUserId("配信者名"),"");
+ assert.equal(profile.extractProfileImageUrl('<meta property="og:image" content="https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/123/a.jpg">'),"https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/123/a.jpg");
+ assert.equal(profile.extractProfileImageUrl('<meta property="og:image" content="http://example.com/a.jpg">'),"");
+ assert.match(main,/listCaptureLibraryWithProfiles/);assert.match(renderer,/profileIconUrl/);
 });
 
 test("past broadcasts support timeshift video and archived comments", () => {
@@ -151,7 +218,9 @@ test("comment output format and separate capture indicators are selectable", () 
   }
   assert.match(main, /function getCommentFormat/);
   assert.match(main, /async function exportCommentSidecars/);
-  assert.match(main, /generateAssFromRecords\(records\)/);
+  assert.match(main, /generateAssFromRecords\(records, \{/);
+  assert.match(main, /ngRegex: getMonitorSettings\(\)\.assNgRegex/);
+  assert.match(main, /\}\)\.content;/);
   assert.match(renderer, /function updateCaptureIndicators/);
   assert.match(renderer, /videoCaptureState = stopping \? "stopping"/);
   assert.match(renderer, /commentCaptureState = \["connected", "connecting", "error"\]/);
@@ -182,7 +251,7 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.match(renderer, /function setActivePage\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
   assert.match(renderer, /const groups = new Map\(\)/);
-  assert.match(renderer, /api\.getLibraryThumbnail\(thumbnailItem\.path\)/);
+  assert.match(renderer, /api\.getArticleThumbnail\(article\.articlePath\)/);
   assert.match(main, /ipcMain\.handle\("library:thumbnail"/);
   assert.match(preload, /getLibraryThumbnail:.*ipcRenderer\.invoke\("library:thumbnail"/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
@@ -251,13 +320,13 @@ test("release preflight treats an HTTP 404 as unpublished and surfaces other Git
   assert.doesNotMatch(releaseWorkflow, /gh release view/);
 });
 
-test("successful main-branch Windows builds automatically publish a beta update once", () => {
+test("successful main-branch Windows builds automatically publish a stable product release once", () => {
   assert.match(releaseWorkflow, /workflow_run:/);
   assert.match(releaseWorkflow, /Build Nico Live Message Recorder/);
   assert.match(releaseWorkflow, /conclusion == 'success'/);
   assert.match(releaseWorkflow, /Invoke-RestMethod/);
   assert.match(releaseWorkflow, /dist:win:release/);
-  assert.match(releaseWorkflow, /beta update metadata/);
+  assert.match(releaseWorkflow, /latest product update metadata/);
 });
 
 test("unsupported app update packages show their specific reason", () => {
@@ -298,7 +367,7 @@ test("Kick-inspired dashboard lists live broadcaster metadata and elapsed time",
   assert.match(main, /startedAt,\s*endedAt,/);
   assert.match(main, /watchPageUrl:/);
   assert.match(main, /normalizeMonitorDate\(live\.beginTime/);
-  assert.match(html, /LIVE一覧から録画も直接開始できます/);
+  assert.match(html, /LIVE一覧から録画開始・記事閲覧・記事作成ができます/);
 });
 
 
@@ -311,7 +380,7 @@ test("LIVE dashboard cards can start synchronized recording for their selected b
   assert.match(renderer, /recordStartInProgress \|\| recordStartedAt \|\| videoCaptureState === "recording"/);
   assert.match(renderer, /live-broadcast-record-button/);
   assert.match(css, /\.live-broadcast-actions/);
-  assert.match(html, /LIVE一覧から録画も直接開始できます/);
+  assert.match(html, /LIVE一覧から録画開始・記事閲覧・記事作成ができます/);
   assert.match(renderer, /renderLiveBroadcasts\(\);\s*if \(monitorAutoQueue\.length > 0/);
 });
 
@@ -342,11 +411,11 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.match(packageConfig.version, /^0\.1\.0-beta\.\d+$/);
+  assert.equal(packageConfig.version, "1.0.0");
+  assert.equal(packageConfig.nicoEdition, "product");
   assert.ok(html.includes("v" + packageConfig.version));
-  const betaNumber = packageConfig.version.split(".").pop();
-  assert.ok(betaNumber, "package version must be a beta release");
-  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows"));
+  assert.equal(packageConfig.build.win.publish[0].channel, "latest");
+  assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-Product-${{ steps.app-version.outputs.version }}-Windows"));
   assert.match(buildWorkflow, /Get-Content package\\.json -Raw \\| ConvertFrom-Json/);
 });
 
@@ -402,7 +471,7 @@ test("timeshift without a comment endpoint replaces and closes the previous comm
 test("comment video output confirms when the selected extension changes the destination", () => {
   assert.match(main, /normalizeCompositionOutputPath\(selectedPath, format\)/);
   assert.match(main, /pathWasNormalized/);
-  assert.match(main, /fs\.existsSync\(finalPath\)/);
+  assert.match(main, /hasNonEmptyFile/);
   assert.match(main, /変更後の保存先/);
   assert.match(main, /confirmation\.response !== 1/);
 });
@@ -412,7 +481,7 @@ test("MP4 comment video conversion reports progress and uses a unique intermedia
   assert.ok(main.includes("createMp4IntermediatePath(finalPath, randomUUID())"));
   assert.ok(main.includes('flags: format === "mp4" ? "wx" : "w"'));
   assert.ok(!main.includes("unlink(workingPath)"));
-  assert.ok(main.includes("calculateTranscodeProgressPercent(match[1], durationMs)"));
+  assert.ok(main.includes("calculateTranscodeProgressPercent(outputTime, durationMs)"));
   assert.ok(main.includes('state: "progress"'));
   assert.ok(renderer.includes("durationMs"));
   assert.ok(renderer.includes('payload.state === "progress" ? Number(payload.percent)'));
@@ -602,7 +671,11 @@ test("app settings expose the current version and a synchronized automatic updat
   assert.match(renderer, /settingsStatus\.textContent = status\.textContent/);
   assert.match(renderer, /settingsProgress\.value = progress\.value/);
   assert.match(renderer, /settingsCheckButton\.disabled = checkButton\.disabled/);
-  assert.match(renderer, /const latestVersion = payload\.version \|\| latestVersionLabel\.textContent\.replace/);
+  // The version UI now stores a confirmed value and always renders its state.
+  assert.match(renderer, /latestVersionRow\.hidden = false/);
+  assert.match(renderer, /if \(payload\.version\) latestVersionLabel\.dataset\.version/);
+  assert.match(renderer, /if \(payload\.state === "checking"\) latestVersionLabel\.textContent = "確認中…"/);
+  assert.match(renderer, /else if \(payload\.state === "error"\)/);
   assert.match(renderer, /byId\("settings-check-update-button"\)\.addEventListener\("click", checkAppUpdates\)/);
   assert.match(renderer, /byId\("settings-install-update-button"\)\.addEventListener\("click", installAppUpdate\)/);
   assert.match(renderer, /byId\("app-current-version"\)\.textContent = text/);
@@ -619,7 +692,8 @@ test("dedicated version update page shows the current version, updater controls,
     "settings-install-update-button", "release-history-list", "settings-open-updates-button", "open-github-releases-button"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing version page field: " + id);
   }
-  assert.match(renderer, /"articles", "updates"/);
+  assert.match(renderer, /const APP_PAGES = new Set\([\s\S]*"updates"\]\)/);
+  assert.match(renderer, /if \(!PRODUCT_EDITION\) APP_PAGES.add\("articles"\)/);
   assert.match(renderer, /function parseReleaseHistory\(/);
   assert.match(renderer, /function renderReleaseHistory\(/);
   assert.match(renderer, /api\.getChangelog\(\)/);
@@ -699,7 +773,7 @@ test("standalone article generation is available without monitor registration an
   assert.match(main, /articleRefreshPending = true/);
   assert.match(main, /state: "error", liveId/);
   assert.match(renderer, /channel === "articles:live-state"/);
-  assert.match(renderer, /15秒ごとに取得します/);
+  assert.match(renderer, /配信ストリーム直接取得/);
   assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
   assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
   assert.match(renderer, /api\.startLiveArticleSession\(/);
@@ -709,11 +783,11 @@ test("standalone article generation is available without monitor registration an
   assert.match(preload, /selectArticleVideo:.*ipcRenderer\.invoke\("articles:select-video"/);
   assert.match(renderer, /api\.selectArticleVideo\(\)/);
   assert.match(html, /id="manual-article-video-select-button"/);
-  assert.match(ollamaSource, /images: imageFrames.map/);
+  assert.match(ollamaSource, /images: imagesToAttach.map/);
   assert.match(main, /item.name === "qwen2.5vl:3b"/);
   assert.ok(main.includes("capturedAt: new Date().toISOString()"));
   assert.match(ollamaSource, /frameTimeline/);
-  assert.ok(ollamaSource.includes('frame => typeof frame === "string" ? frame : String(frame && frame.image'));
+  assert.match(ollamaSource, /imagesToAttach\.map\(frame\s*=>\s*typeof frame === "string" \? frame : String\(frame && frame\.image/);
 });
 
 test("manual article generation can combine Whisper audio transcript, video frames, and Nico comments", () => {
@@ -757,7 +831,8 @@ test("AI article cards render a newspaper-style lead, highlights, timeline, and 
   assert.match(main, /aiCommentSampleCount/);
   assert.match(main, /aiCommentTotalCount/);
   assert.match(ollamaSource, /selectRepresentativeComments/);
-  assert.match(ollamaSource, /放送時間全体に分散/);
+  assert.ok(ollamaSource.includes("prepareCommentEvidence(records, 24, 6)"));
+  assert.match(ollamaSource, /evidenceTimeline/);
   assert.match(ollamaSource, /highlights/);
   assert.match(ollamaSource, /audienceReaction/);
   assert.match(main, /capturedAt: timestamp/);
@@ -769,7 +844,7 @@ test("live broadcast article session integrates Whisper.cpp audio capture and fi
   assert.match(main, /stopLiveArticleAudioCapture\(currentLiveId\)/);
   assert.match(main, /audioTranscript: liveArticleAudioTranscript/);
   assert.match(main, /audio-transcribing/);
-  assert.match(main, /audioCapturing: Boolean\(liveArticleAudioProcess\)/);
+  assert.match(main, /audioCapturing: Boolean\(liveArticleAudioSegmentDirectory\)/);
   assert.match(renderer, /audio-capturing/);
   assert.match(renderer, /Whisper\.cpp/);
   assert.match(html, /音声解析用データは一時保存し、終了後に削除/);
@@ -794,7 +869,7 @@ test("Ollama setup downloads the official Windows installer and pulls the select
 
 
 test("article summaries are attached to capture library videos and article deletion preserves source recordings", () => {
-  assert.match(main, /const savedArticles = listBroadcastArticles\(\)\.items/);
+  assert.match(main, /const savedArticles = PRODUCT_EDITION \? \[\] : listBroadcastArticles\(\)\.items/);
   assert.match(main, /ipcMain\.handle\("articles:delete"/);
   assert.match(main, /録画動画・コメントログは削除されません/);
   assert.match(preload, /deleteBroadcastArticle/);
@@ -803,11 +878,30 @@ test("article summaries are attached to capture library videos and article delet
   assert.match(main, /article\.articlePath = fullPath/);
 });
 test("Streamlink waits for media bytes and preserves stderr when capture startup fails", () => {
-  assert.match(main, /const startupDeadline = Date\.now\(\) \+ 25000/);
-  assert.match(main, /fs\.statSync\(outputPath\)\.size > 0/);
-  assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ chunk\.toString/);
+  assert.match(main, /const startupDeadline = startupStartedAt \+ 60000/);
+  assert.match(main, /hasNonEmptyFile\(outputPath\)/);
+  assert.match(main, /streamlinkStderr = \(streamlinkStderr \+ line\)\.slice\(-12000\)/);
   assert.match(main, /Streamlink詳細:/);
+  assert.match(main, /Streamlink終了コード: /);
+  assert.match(main, /Streamlink終了シグナル: /);
 });
+test("Streamlink finalization verifies the final media file before deleting the TS backup", () => {
+  const finalizeStart = main.indexOf("async function finalizeStreamlinkRecording");
+  const finalizeEnd = main.indexOf('ipcMain.handle("video:tools-status"', finalizeStart);
+  const finalize = main.slice(finalizeStart, finalizeEnd);
+  assert.match(finalize, /if \(!hasNonEmptyFile\(mp4Path\)\)/);
+  assert.match(finalize, /let hasFinalOutput = hasNonEmptyFile\(finalPath\)/);
+  assert.match(finalize, /if \(!hasFinalOutput && finalPath !== rawPath && hasNonEmptyFile\(rawPath\)\)/);
+  assert.ok(finalize.indexOf("let hasFinalOutput = hasNonEmptyFile(finalPath)") < finalize.indexOf("await fs.promises.unlink(rawPath)"));
+  assert.match(finalize, /incomplete: !streamlinkStopRequested/);
+});
+
+test("changelog headings and entries use real Markdown line breaks", () => {
+    assert.doesNotMatch(changelog, /\\n/);
+  assert.match(changelog.replace(/\r\n/g, "\n"), /## 1\.0\.0\n\n- \*\*Nico Live Message Recorder 製品版を開始/);
+  assert.match(changelog, /放送記事・無料AI記事生成は製品版から除外/);
+});
+
 test("duplicate library IDs are removed and package version is displayed in the UI", () => {
   assert.equal((html.match(/id="library-list"/g) || []).length, 1);
   assert.ok(html.includes(packageConfig.version));
@@ -855,8 +949,10 @@ test("live article capture uses a hidden window and does not open the visible wa
 
 test("AI broadcast article prompt follows the Kick editorial structure while preserving source checks", () => {
   const ollama = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
-  assert.match(ollama, /Kick-Live-Message-RecorderのAI記事のように/);
-  assert.match(ollama, /summaryは結論と重要点を含むリード文/);
+  assert.match(ollama, /日本語の配信記事をJSONだけで作成/);
+  assert.match(ollama, /summaryは短い要約/);
+  assert.match(ollama, /num_ctx: 8192/);
+  assert.match(ollama, /repeat_penalty: retryMode/);
   assert.match(ollama, /highlights/);
   assert.match(ollama, /audienceReaction/);
   assert.match(ollama, /映像・音声・コメントの情報源を混同しない/);
@@ -865,9 +961,9 @@ test("AI broadcast article prompt follows the Kick editorial structure while pre
 
 test("primary recording controls remain bound when Electron event subscription fails", () => {
   const eventSubscription = renderer.indexOf('if (!api || typeof api.onEvent !== "function")');
-  const primaryBindings = renderer.indexOf('connectButton.addEventListener("click", connectLive)');
+  const primaryBindings = renderer.indexOf('connectButton.addEventListener("click", () =>');
   assert.ok(eventSubscription >= 0, "event subscription is guarded");
-  assert.ok(primaryBindings > eventSubscription, "primary controls are bound after guarded event subscription");
+  assert.ok(primaryBindings >= 0 && primaryBindings < renderer.indexOf("let connected = false;"), "primary controls are bound before renderer state initialization");
   assert.match(renderer, /Electron preload bridge のイベントAPIを利用できません/);
   assert.match(renderer, /event bridge initialization failed/);
   assert.ok(preload.includes('connectLive: (liveId) => ipcRenderer.invoke("live:connect", liveId)'));
@@ -914,19 +1010,200 @@ test("comment writer waits for write callbacks and reports failed persistence", 
       callback();
     }
   });
-  await writeCommentLine(writer, '{"type":"comment"}\\n');
+  await writeCommentLine(writer, '{"type":"comment"}');
   await finishCommentWriter(writer);
-  assert.equal(chunks.join(""), '{"type":"comment"}\\n');
+  assert.equal(chunks.join(""), '{"type":"comment"}\n');
   assert.equal(writer.writableFinished, true);
   const broken = new Writable({
     write(_chunk, _encoding, callback) { callback(new Error("disk full")); }
   });
-  await assert.rejects(writeCommentLine(broken, '{"type":"comment"}\\n'), /disk full/);
+  broken.on("error", () => {});
+  await assert.rejects(writeCommentLine(broken, '{"type":"comment"}'), /disk full/);
 });
 
 test("comment log finalization preserves a failed file and checks every write", () => {
-  assert.match(main, /writeCommentLine\(writer, JSON\.stringify\(record\)/);
+  assert.match(main, /void writeCommentLine\(commentWriter, JSON\.stringify\(record\)/);
   assert.match(main, /await finishCommentWriter\(writer\)/);
   assert.match(main, /未完成ファイルは元の場所に残しています/);
   assert.match(main, /await writeCommentLine\(commentWriter, JSON\.stringify\(record\)/);
+  assert.doesNotMatch(main, /commentWriter\.write\(/);
+  assert.match(main, /return writeCommentLine\(writer, JSON\.stringify\(marker\)\)/);
+});
+
+test("Streamlink startup reports progress and allows a longer first-media wait", () => {
+  assert.match(main, /startupDeadline = startupStartedAt \+ 60000/);
+  assert.match(main, /starting: true/);
+  assert.match(main, /配信データ受信待ち：/);
+  assert.match(renderer, /payload && payload\.starting/);
+  assert.match(renderer, /Streamlink起動中です。/);
+});
+
+
+test("recording startup runs Streamlink plugin preflight before opening the recording process", () => {
+  const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
+  const probe = fs.readFileSync(path.join(root, "electron", "streamlink-probe.cjs"), "utf8");
+  assert.match(main, /await verifyStreamlinkPlugin\(streamlinkPath, liveId, runtime\.configPath, \{ env: runtime\.env \}\)/);
+  assert.match(probe, /--can-handle-url/);
+  assert.match(probe, /ニコ生URLを処理できません/);
+});
+
+
+test("combined capture confirms video before the comment connection retry loop finishes", () => {
+  const handlerStart = main.indexOf('ipcMain.handle("capture:start"');
+  const handlerEnd = main.indexOf('async function stopStreamlinkRecording()', handlerStart);
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, "combined capture handler must exist");
+  const handler = main.slice(handlerStart, handlerEnd);
+  assert.match(handler, /const commentTask =/);
+  assert.match(handler, /const videoTask = startVideoInternal/);
+  assert.match(handler, /video = await videoTask/);
+  assert.match(handler, /commentPending: !commentSettled/);
+  assert.doesNotMatch(handler, /Promise\.allSettled\(\[commentTask, videoTask\]\)/);
+  assert.match(renderer, /result\.commentPending && !timeshift/);
+  assert.match(renderer, /コメント接続を継続しています/);
+});
+
+
+test("all Niconico authentication consumers use shared cookie-domain normalization", () => {
+  const main = fs.readFileSync(path.join(root, "electron", "main.cjs"), "utf8");
+  assert.match(main, /async function getNicoAuthCookies\(\)/);
+  assert.match(main, /return normalizeNicoCookies\(cookies\)/);
+  assert.doesNotMatch(main, /cookies\.get\(\{ domain: "nicovideo\.jp" \}\)/);
+  assert.match(main, /getNicoUserSession\(cookies\)/);
+});
+
+
+test("broadcast article page follows the Kick recorder editorial dashboard layout", () => {
+  assert.match(html, /broadcast-articles-panel kick-article-layout/);
+  assert.match(css, /\.kick-article-layout \.article-manual-generator/);
+  assert.match(css, /\.kick-article-layout \.article-library-toolbar/);
+  assert.match(css, /\.kick-article-layout \.broadcast-article-card/);
+  for (const id of ["manual-article-generate-button","manual-article-live-start-button","articles-search","articles-status-filter","articles-sort","articles-list"]) {
+    assert.ok(html.includes('id="' + id + '"'), "article workflow control missing: " + id);
+  }
+});
+
+
+test("broadcast article cards render video thumbnails and newspaper-style grid", () => {
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+  assert.match(renderer, /broadcast-article-media/);
+  assert.match(renderer, /getArticleThumbnail/);
+  assert.match(renderer, /broadcast-article-thumbnail/);
+  assert.match(renderer, /放送映像が保存されていません/);
+  assert.match(css, /auto-fill/);
+  assert.match(css, /aspect-ratio:16\/9/);
+});
+
+
+test("manual Niconico user_session controls use a dedicated secure cookie IPC", () => {
+  for (const id of ["setting-user-session", "save-user-session-button", "clear-user-session-button", "user-session-status"]) {
+    assert.ok(html.includes('id="' + id + '"'), "missing manual session control: " + id);
+  }
+  assert.match(html, /type="password" id="setting-user-session"/);
+  assert.match(renderer, /api\.setUserSession\(value\)/);
+  assert.match(renderer, /api\.setUserSession\(""\)/);
+  assert.match(preload, /setUserSession: \(value\) => ipcRenderer\.invoke\("auth:set-user-session", value\)/);
+  assert.match(main, /ipcMain\.handle\("auth:set-user-session"/);
+  assert.match(main, /authSession\.cookies\.set\(\{/);
+  assert.match(main, /httpOnly: true/);
+  assert.match(main, /authSession\.cookies\.remove\("https:\/\/nicovideo\.jp\//);
+  assert.doesNotMatch(main, /writeAppSettings\(\{[^}]*user_session/i);
+});
+
+
+test("early Streamlink startup failures retain stderr after the recording finalizer runs", () => {
+  assert.match(main, /let startupStderr = "";/);
+  assert.match(main, /startupStderr = \(startupStderr \+ line\)\.slice\(-12000\)/);
+  assert.match(main, /const detail = startupStderr\.trim\(\)\.slice\(-1800\)/);
+  assert.match(main, /Streamlinkのニコ生プラグインを確認しています/);
+});
+
+test("all static byId references correspond to elements in the current app HTML", () => {
+  const referenced = [...renderer.matchAll(/byId\("([^"]+)"\)/g)].map((item) => item[1]);
+  const missing = [...new Set(referenced)].filter((id) => !html.includes('id="' + id + '"'));
+  assert.deepEqual(missing, [], "Missing HTML IDs: " + missing.join(", "));
+});
+
+test("recording metadata rendering tolerates missing optional UI fields", () => {
+  const vm = require("node:vm");
+  const start = renderer.indexOf("function renderSessionProgramInfo()");
+  const end = renderer.indexOf("function updateMetadata(", start);
+  assert.ok(start >= 0 && end > start);
+  const elements = new Map([["session-current-title", { textContent: "", dataset: {} }],
+    ["session-current-status", { textContent: "", dataset: {} }]]);
+  const scope = {
+    currentProgramMetadata: { title: "番組テスト", broadcasterName: "放送者", viewerCount: 4 },
+    currentCaptureTarget: { liveId: "lv123456789" }, currentLiveId: "lv123456789",
+    videoCaptureState: "recording", connected: false,
+    byId: (id) => elements.get(id) || null, formatBroadcastStart: String
+  };
+  const render = vm.runInNewContext(renderer.slice(start, end) + "\nrenderSessionProgramInfo", scope);
+  assert.doesNotThrow(() => render());
+  assert.equal(elements.get("session-current-title").textContent, "番組テスト");
+  assert.equal(elements.get("session-current-status").dataset.state, "recording");
+  elements.clear();
+  assert.doesNotThrow(() => render());
+});
+
+test("Kick-like journal uses date headers and full-width broadcast hero instead of tiny article tiles", () => {
+  assert.match(renderer, /const dayGroups = new Map\(\)/);
+  assert.match(renderer, /broadcast-article-day-heading/);
+  assert.match(renderer, /broadcast-article-masthead/);
+  assert.match(renderer, /broadcast-article-hero/);
+  assert.match(renderer, /broadcast-article-comment-signal/);
+  assert.match(renderer, /card\.append\(masthead, hero, stats\)/);
+  assert.match(css, /\.kick-article-layout \.broadcast-articles-list \{ display:flex; flex-direction:column/);
+  assert.match(css, /\.broadcast-article-hero \{ display:grid; grid-template-columns/);
+  assert.match(css, /@media\(max-width:850px\)/);
+});
+
+test("new journal layout preserves AI errors, Whisper transcript, and existing article controls", () => {
+  const articleRender = renderer.slice(renderer.indexOf("function renderBroadcastArticles()"), renderer.indexOf("let broadcastArticles ="));
+  for (const fragment of ["broadcast-article-audio", "broadcast-article-transcript",
+    "broadcast-article-ai-warning", "article.aiFallbackReason", "broadcast-article-body",
+    "api.deleteBroadcastArticle(article.articlePath)", "api.exportBroadcastArticleHtml(article)",
+    "scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article)", "article.coverImage"]) {
+    assert.ok(articleRender.includes(fragment), "Missing journal feature: " + fragment);
+  }
+  assert.match(main, /article\.coverImage = selectArticleCoverImage\(extracted\.frames\)/);
+  assert.match(main, /selectArticleCoverImage\(options\.images, previousArticle && previousArticle\.coverImage\)/);
+});
+
+test("Nico login is verified by a real authenticated-account API, not only the Cookie presence", () => {
+  const checker = require("../electron/nico-auth-check.cjs");
+  assert.equal(checker.ME_URL, "https://account.nicovideo.jp/api/public/v2/user.json");
+  assert.match(main, /checkNicoAuthStatus\(\{ force: true \}\)/);
+  assert.match(main, /verifyNicoSession\(token\)/);
+  assert.match(main, /const AUTH_RECHECK_INTERVAL_MS = 3 \* 60 \* 1000/);
+  assert.match(main, /authCheckTimer = setInterval\(/);
+  assert.match(main, /auth:expired/);
+  assert.match(html, /id="check-auth-status-button"/);
+  assert.match(html, /id="auth-session-warning"/);
+  assert.match(renderer, /api\.setUserSession\(value\)/);
+  assert.doesNotMatch(main, /writeAppSettings\(\{[^}]*user_session/i);
+});
+
+test("auth feedback distinguishes verified login, expiry, missing Cookie, and network uncertainty", () => {
+  const vm = require("node:vm");
+  const start = renderer.indexOf("function renderAuthStatus(result) {");
+  const end = renderer.indexOf("async function refreshAuthStatus()", start);
+  assert.ok(start >= 0 && end > start);
+  const ids = new Map([["login-state", { textContent: "", className: "", title: "" }],
+    ["user-session-status", { textContent: "", dataset: {} }],
+    ["auth-session-warning", { textContent: "", hidden: true }]]);
+  const render = vm.runInNewContext(renderer.slice(start, end) + "\nrenderAuthStatus", {
+    byId: (id) => ids.get(id) || null
+  });
+  render({ state: "valid", userId: "12345678", nickname: "配信者" });
+  assert.equal(ids.get("login-state").textContent, "ログイン済み");
+  assert.match(ids.get("user-session-status").textContent, /認証成功：配信者/);
+  assert.equal(ids.get("auth-session-warning").hidden, true);
+  render({ state: "expired" });
+  assert.equal(ids.get("login-state").textContent, "セッション切れ");
+  assert.equal(ids.get("auth-session-warning").hidden, false);
+  render({ state: "unknown" });
+  assert.equal(ids.get("login-state").textContent, "認証確認不可");
+  assert.equal(ids.get("auth-session-warning").hidden, true);
+  render({ state: "missing" });
+  assert.equal(ids.get("login-state").textContent, "未ログイン");
 });

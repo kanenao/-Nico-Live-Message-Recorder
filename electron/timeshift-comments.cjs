@@ -51,7 +51,8 @@ function parseTimeshiftWatchPage(html, liveId) {
     beginAt,
     webSocketUrl,
     broadcasterName: String(supplier.name || ""),
-    broadcasterId: String(supplier.programProviderId || "")
+    broadcasterId: String(supplier.programProviderId || ""),
+    broadcasterType: String(supplier.programProviderType || supplier.type || "")
   };
 }
 
