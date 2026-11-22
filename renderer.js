@@ -3854,10 +3854,12 @@ async function composeCommentVideo() {
   let videoElement = null;
   let objectUrl = null;
   let canvasStream = null;
+  let sourceMediaStream = null;
   let finalStream = null;
   let audioContext = null;
   let recorder = null;
   let animationFrame = 0;
+  let videoFrameCallbackId = 0;
   let outputStarted = false;
   let cancelRequested = false;
   let writeError = null;
@@ -3934,6 +3936,11 @@ async function composeCommentVideo() {
     if (playbackWatchdog) window.clearInterval(playbackWatchdog);
     if (recorderStopTimer) window.clearTimeout(recorderStopTimer);
     if (animationFrame) cancelAnimationFrame(animationFrame);
+    if (videoFrameCallbackId && videoElement?.cancelVideoFrameCallback) {
+      videoElement.cancelVideoFrameCallback(videoFrameCallbackId);
+      videoFrameCallbackId = 0;
+    }
+    if (sourceMediaStream) sourceMediaStream.getTracks().forEach((track) => track.stop());
     if (videoElement) {
       videoElement.pause();
       videoElement.removeAttribute("src");
@@ -3968,6 +3975,7 @@ async function composeCommentVideo() {
     videoElement = document.createElement("video");
     videoElement.preload = "auto";
     videoElement.playsInline = true;
+    videoElement.playbackRate = 1;
     videoElement.style.position = "fixed";
     videoElement.style.left = "-10000px";
     videoElement.style.top = "0";
@@ -4025,23 +4033,63 @@ async function composeCommentVideo() {
 
     canvasStream = canvas.captureStream(composeOptions.fps);
     const audioTracks = [];
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) {
+    let useAudioContextFallback = false;
+    // Use the source media element's captured audio track as the primary path.
+    // This avoids introducing a second, independently buffered Web Audio clock.
+    if (typeof videoElement.captureStream === "function") {
       try {
-        audioContext = new AudioContextClass();
-        const source = audioContext.createMediaElementSource(videoElement);
-        const destination = audioContext.createMediaStreamDestination();
-        source.connect(destination);
-        await withDeadline(() => audioContext.resume(), 15000, "音声トラックの起動");
-        audioTracks.push(...destination.stream.getAudioTracks());
-      } catch (audioError) {
-        console.warn("Audio track composition unavailable:", audioError);
-        if (audioContext && audioContext.state !== "closed") {
-          await withDeadline(() => audioContext.close(), 15000, "音声トラックの停止").catch(() => {});
+        sourceMediaStream = videoElement.captureStream();
+        const sourceAudioTracks = sourceMediaStream.getAudioTracks();
+        if (sourceAudioTracks.length) {
+          // Keep the first selected audio track; avoid ambiguous multi-track
+          // recording when a source file contains multiple language tracks.
+          const sourceAudioTrack = sourceAudioTracks[0];
+          audioTracks.push(sourceAudioTrack);
+          // Per Media Capture from DOM Elements, muting the element or hiding
+          // it does not silence the captured audio track.
+          videoElement.muted = true;
+          videoElement.volume = 0;
+          sourceMediaStream.getVideoTracks().forEach((track) => track.stop());
+          sourceAudioTracks.slice(1).forEach((track) => track.stop());
+        } else {
+          sourceMediaStream.getTracks().forEach((track) => track.stop());
+          sourceMediaStream = null;
+          useAudioContextFallback = true;
         }
-        audioContext = null;
-        showToast("音声合成を利用できないため、映像のみで生成します。");
+      } catch (captureError) {
+        console.warn("Direct source audio capture unavailable; using compatibility path:", captureError);
+        if (sourceMediaStream) sourceMediaStream.getTracks().forEach((track) => track.stop());
+        sourceMediaStream = null;
+        useAudioContextFallback = true;
       }
+    } else {
+      useAudioContextFallback = true;
+    }
+
+    // Compatibility fallback for older Chromium builds or unsupported media.
+    if (!audioTracks.length && useAudioContextFallback) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        try {
+          audioContext = new AudioContextClass();
+          const source = audioContext.createMediaElementSource(videoElement);
+          const destination = audioContext.createMediaStreamDestination();
+          source.connect(destination);
+          await withDeadline(() => audioContext.resume(), 15000, "音声トラックの起動");
+          audioTracks.push(...destination.stream.getAudioTracks());
+          showToast("互換音声モードで生成します。完成後に音声と映像の同期を確認してください。");
+        } catch (audioError) {
+          console.warn("Audio track composition unavailable:", audioError);
+          if (audioContext && audioContext.state !== "closed") {
+            await withDeadline(() => audioContext.close(), 15000, "音声トラックの停止").catch(() => {});
+          }
+          audioContext = null;
+          showToast("音声合成を利用できないため、映像のみで生成します。", true);
+        }
+      }
+    }
+    if (!audioTracks.length) {
+      showToast("元動画の音声トラックを取得できません。音声なしの動画として生成します。", true);
     }
 
     finalStream = new MediaStream([
@@ -4075,11 +4123,34 @@ async function composeCommentVideo() {
     let activeComments = [];
     let lastProgressUpdate = 0;
 
+    const scheduleNextFrame = () => {
+      if (cancelRequested || !videoElement) return;
+      if (typeof videoElement.requestVideoFrameCallback === "function") {
+        videoFrameCallbackId = videoElement.requestVideoFrameCallback(() => {
+          videoFrameCallbackId = 0;
+          drawFrame();
+        });
+      } else {
+        animationFrame = requestAnimationFrame(drawFrame);
+      }
+    };
+
+    const cancelScheduledFrame = () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
+      }
+      if (videoFrameCallbackId && videoElement?.cancelVideoFrameCallback) {
+        videoElement.cancelVideoFrameCallback(videoFrameCallbackId);
+        videoFrameCallbackId = 0;
+      }
+    };
+
     const drawFrame = () => {
       if (cancelRequested || !videoElement) return;
       if (videoElement.ended) { stopRecorder(); return; }
       if (videoElement.readyState < 2) {
-        animationFrame = requestAnimationFrame(drawFrame);
+        scheduleNextFrame();
         return;
       }
       const currentMs = videoElement.currentTime * 1000;
@@ -4105,7 +4176,7 @@ async function composeCommentVideo() {
           stopRecorder(new Error("映像フレームを5回連続で描画できませんでした。GPU・動画デコードを確認してください：" +
             (frameError && frameError.message || String(frameError))));
         } else if (!cancelRequested) {
-          animationFrame = requestAnimationFrame(drawFrame);
+          scheduleNextFrame();
         }
         return;
       }
@@ -4123,7 +4194,7 @@ async function composeCommentVideo() {
         lastProgressUpdate = now;
       }
       if (!videoElement.paused && !videoElement.ended && !cancelRequested) {
-        animationFrame = requestAnimationFrame(drawFrame);
+        scheduleNextFrame();
       }
     };
 
@@ -4160,7 +4231,7 @@ async function composeCommentVideo() {
         recorderStopEntered = true;
         if (recorderStopTimer) window.clearTimeout(recorderStopTimer);
         if (playbackWatchdog) window.clearInterval(playbackWatchdog);
-        if (animationFrame) cancelAnimationFrame(animationFrame);
+        cancelScheduledFrame();
         cancelButton.disabled = true;
         setCompositionProgress(Number(byId("compose-progress").value),
           cancelRequested ? "中断処理中…" : "動画データを保存・確定中…");
@@ -4249,7 +4320,9 @@ async function composeCommentVideo() {
     }
     drawFrame();
 
-    setCompositionProgress(0, "映像とコメントを合成中（動画全編を実時間で処理し、その後に保存・MP4変換します）");
+    setCompositionProgress(0, audioTracks.length
+      ? "元動画の音声トラックを使用して映像・コメントを同期中…"
+      : "音声なしで映像・コメントを合成中…");
     const stopResult = await stopResultPromise;
     // Keep outputStarted true on errors so the catch block can close any
     // Electron writer left open by a missing MediaRecorder stop event.

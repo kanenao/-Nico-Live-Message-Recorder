@@ -58,6 +58,8 @@ function buildMp4TranscodeArgs(inputPath, outputPath, quality) {
     "-preset", profile.preset,
     "-crf", String(profile.crf),
     "-pix_fmt", "yuv420p",
+    // Keep the canvas capture's original timestamps when producing MP4.
+    "-fps_mode:v", "passthrough",
     "-c:a", "aac",
     "-b:a", "160k",
     "-movflags", "+faststart",
