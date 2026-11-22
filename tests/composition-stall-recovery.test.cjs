@@ -73,6 +73,7 @@ test("canvas draw exceptions are bounded instead of silently stopping the render
     lastProgressUpdate: 0,
     animationFrame: 0,
     requestAnimationFrame() { queued += 1; return queued; },
+    scheduleNextFrame() { queued += 1; },
     stopRecorder(error) { errors.push(error); },
     setCompositionProgress() {}
   };
