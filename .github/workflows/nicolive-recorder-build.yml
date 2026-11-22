@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - product
       - "feature/**"
     paths:
       - "electron/**"
@@ -51,7 +52,7 @@ jobs:
         with:
           node-version: 22
       - name: Synchronize product README and release history
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/product')
         shell: pwsh
         run: |
           npm run docs:update
