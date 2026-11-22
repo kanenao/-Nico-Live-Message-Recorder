@@ -2048,7 +2048,7 @@ function renderCaptureLibrary() {
       catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
     });
     actions.append(openButton, showButton);
-    if (item.type === "comment" && item.extension === "JSONL") {
+    if (!PRODUCT_EDITION && item.type === "comment" && item.extension === "JSONL") {
       const articleButton = document.createElement("button");
       articleButton.type = "button";
       articleButton.className = "button button-outline button-small";
