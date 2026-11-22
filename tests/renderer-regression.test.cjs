@@ -320,13 +320,13 @@ test("release preflight treats an HTTP 404 as unpublished and surfaces other Git
   assert.doesNotMatch(releaseWorkflow, /gh release view/);
 });
 
-test("successful main-branch Windows builds automatically publish a beta update once", () => {
+test("successful main-branch Windows builds automatically publish a stable product release once", () => {
   assert.match(releaseWorkflow, /workflow_run:/);
   assert.match(releaseWorkflow, /Build Nico Live Message Recorder/);
   assert.match(releaseWorkflow, /conclusion == 'success'/);
   assert.match(releaseWorkflow, /Invoke-RestMethod/);
   assert.match(releaseWorkflow, /dist:win:release/);
-  assert.match(releaseWorkflow, /beta update metadata/);
+  assert.match(releaseWorkflow, /latest product update metadata/);
 });
 
 test("unsupported app update packages show their specific reason", () => {
@@ -411,10 +411,10 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.match(packageConfig.version, /^\d+\.\d+\.\d+-beta\.\d+$/);
+  assert.equal(packageConfig.version, "1.0.0");
+  assert.equal(packageConfig.nicoEdition, "product");
   assert.ok(html.includes("v" + packageConfig.version));
-  const betaNumber = packageConfig.version.split(".").pop();
-  assert.ok(betaNumber, "package version must be an alpha release");
+  assert.equal(packageConfig.build.win.publish[0].channel, "latest");
   assert.ok(buildWorkflow.includes("Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows"));
   assert.match(buildWorkflow, /Get-Content package\\.json -Raw \\| ConvertFrom-Json/);
 });
