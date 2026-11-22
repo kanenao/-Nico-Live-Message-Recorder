@@ -1,10 +1,9 @@
-name: Build Nico Live Message Recorder
+name: Build Nico Live Message Recorder (Product)
 
 on:
   push:
     branches:
       - main
-      - beta
       - "feature/**"
     paths:
       - "electron/**"
@@ -35,7 +34,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: nicolive-recorder-build-${{ github.ref }}
+  group: nicolive-recorder-product-build-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -51,27 +50,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Synchronize README version and release history
-        if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
+      - name: Synchronize product README and release history
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
           npm run docs:update
-          if ($LASTEXITCODE -ne 0) { throw "README synchronization failed." }
+          if ($LASTEXITCODE -ne 0) { throw "Product README synchronization failed." }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add README.md
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "docs: sync README version and release history [skip ci]"
+            git commit -m "docs: sync product README and release history [skip ci]"
             git push
           }
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Run application tests
+      - name: Run product application tests
         run: npm test
-      - name: Build installer and portable ZIP
+      - name: Build Windows product installer and portable ZIP
         run: npm run dist:win
-      - name: Verify beta update manifest and installer checksum
+      - name: Verify product update manifest and installer checksum
         run: node scripts/verify-update-manifest.cjs
       - name: Read app version
         id: app-version
@@ -79,30 +78,10 @@ jobs:
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           "version=$version" >> $env:GITHUB_OUTPUT
-      - name: Upload Windows build
+      - name: Upload Windows product build
         uses: actions/upload-artifact@v4
         with:
-          name: Nico-Live-Message-Recorder-${{ steps.app-version.outputs.version }}-Windows
+          name: Nico-Live-Message-Recorder-Product-${{ steps.app-version.outputs.version }}-Windows
           path: dist/*
           if-no-files-found: error
-          retention-days: 14
-      - name: Publish beta prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = node -p "require('./package.json').version"
-          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+-beta\.\d+$') { throw 'Invalid beta version' }
-          $tag = "v$version"
-          if (-not (Test-Path 'dist/beta.yml')) { throw 'Missing beta.yml update metadata' }
-          $installer = @(Get-ChildItem dist -File -Filter '*Setup*.exe')
-          $portable = @(Get-ChildItem dist -File -Filter '*-win.zip')
-          if ($installer.Count -ne 1 -or $portable.Count -ne 1) { throw 'Missing Windows installer or portable ZIP' }
-          $assets = @(Get-ChildItem dist -File | Where-Object {
-            $_.Extension -in '.exe','.zip','.blockmap' -or $_.Name -eq 'beta.yml'
-          } | ForEach-Object { $_.FullName })
-          gh release view $tag --json url --jq .url
-          if ($LASTEXITCODE -eq 0) { Write-Host 'Alpha release already exists; skipping duplicate publication'; exit 0 }
-          gh release create $tag @assets --title "Nico Live Message Recorder $tag" --notes '開発用α版。実放送での録画成功は未検証です。詳細はCHANGELOG.mdを参照してください。' --prerelease --latest=false --target $env:GITHUB_SHA
-          if ($LASTEXITCODE -ne 0) { throw "Failed to publish $tag" }
+          retention-days: 30
