@@ -1481,6 +1481,14 @@ function makeWindow() {
 
 ipcMain.handle("app:version", () => app.getVersion());
 
+ipcMain.handle("app:open-feedback", async (_event, kind, details) => {
+  const { buildFeedbackIssueUrl } = require("./feedback-url.cjs");
+  const edition = require("../package.json").nicoEdition === "product" ? "product" : "beta";
+  const url = buildFeedbackIssueUrl({ kind, details, edition, version: app.getVersion() });
+  await shell.openExternal(url);
+  return true;
+});
+
 ipcMain.handle("app:open-releases", async () => {
   const releasesUrl = "https://github.com/kanenao/-Nico-Live-Message-Recorder/releases";
   await shell.openExternal(releasesUrl);

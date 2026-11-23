@@ -1615,3 +1615,11 @@ body[data-edition="product"] .library-article-summary {
   .edition-choice-card .edition-download-button { width: 100%; }
   .edition-public-item summary { align-items: flex-start; flex-direction: column; }
 }
+
+/* Shared compact GitHub feedback report panel. */
+.feedback-report-card { border: 1px solid var(--border, #344258); border-radius: 14px; padding: 16px; margin: 18px 0 8px; display: grid; gap: 10px; background: rgba(90, 120, 180, 0.06); }
+.feedback-report-card h3 { margin: 0 0 6px; font-size: 1.08rem; }
+.feedback-report-heading p, .feedback-report-note { margin: 0; color: var(--text-muted, #a8b1c4); font-size: 0.83rem; line-height: 1.55; }
+.feedback-report-label { font-size: 0.86rem; font-weight: 600; }
+#feedback-details { width: 100%; min-height: 86px; max-width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border, #344258); border-radius: 9px; background: var(--input-bg, #131e2e); color: inherit; font: inherit; resize: vertical; }
+.feedback-report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
