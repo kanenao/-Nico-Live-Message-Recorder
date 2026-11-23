@@ -1812,6 +1812,7 @@ function setActivePage(page) {
     else button.removeAttribute("aria-current");
   });
 
+  if (activePage === "updates") void refreshEditionReleaseHistory();
   if (activePage === "library") loadCaptureLibrary();
   if (activePage === "articles") loadBroadcastArticles();
   if (activePage === "dashboard") void refreshLiveArticlePreviews();
@@ -3079,6 +3080,177 @@ async function retryAppUpdateDownload() {
   }
 }
 
+let editionReleaseState = { beta: [], stable: [] };
+let editionReleaseLoading = false;
+let editionReleaseCheckedAt = 0;
+
+function formatEditionPublishedAt(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "公開日時：不明" :
+    "公開日：" + date.toLocaleString("ja-JP", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit"
+    });
+}
+
+function appendEditionReleaseNotes(container, notes) {
+  container.replaceChildren();
+  const lines = String(notes || "").split(/\r?\n/).slice(0, 100);
+  let list = null;
+  for (const original of lines) {
+    const line = original.trim();
+    if (!line) { list = null; continue; }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!list) {
+        list = document.createElement("ul");
+        container.appendChild(list);
+      }
+      const item = document.createElement("li");
+      appendFormattedReleaseNote(item, bullet[1]);
+      list.appendChild(item);
+    } else {
+      list = null;
+      const heading = line.match(/^#{1,6}\s+(.+)$/);
+      const element = document.createElement(heading ? "h4" : "p");
+      appendFormattedReleaseNote(element, heading ? heading[1] : line);
+      container.appendChild(element);
+    }
+  }
+  if (!container.childNodes.length) {
+    const message = document.createElement("p");
+    message.textContent = "このリリースには更新内容の説明が登録されていません。";
+    container.appendChild(message);
+  }
+}
+
+function renderPublicEditionHistory(edition) {
+  const list = byId("edition-" + edition + "-history");
+  const count = byId("edition-" + edition + "-count");
+  const releases = editionReleaseState[edition] || [];
+  if (!list || !count) return;
+  list.replaceChildren();
+  count.textContent = releases.length + "件・公開済みのみ";
+  if (!releases.length) {
+    const empty = document.createElement("p");
+    empty.className = "edition-history-empty";
+    empty.textContent = edition === "beta" ?
+      "公開済みのβ版インストーラーはまだ確認されていません。" :
+      "公開済みの製品版インストーラーはまだ確認されていません。";
+    list.appendChild(empty);
+    return;
+  }
+  releases.forEach((release, index) => {
+    const details = document.createElement("details");
+    details.className = "edition-public-item";
+    details.open = index === 0;
+    const summary = document.createElement("summary");
+    const label = document.createElement("strong");
+    label.textContent = "v" + release.version;
+    const date = document.createElement("span");
+    date.textContent = formatEditionPublishedAt(release.publishedAt);
+    summary.append(label, date);
+    details.appendChild(summary);
+    const title = document.createElement("p");
+    title.className = "edition-public-title";
+    title.textContent = release.title || "Nico Live Message Recorder";
+    details.appendChild(title);
+    const notes = document.createElement("div");
+    notes.className = "edition-public-notes";
+    appendEditionReleaseNotes(notes, release.notes);
+    details.appendChild(notes);
+    list.appendChild(details);
+  });
+}
+
+function renderEditionReleaseCards() {
+  for (const edition of ["beta", "stable"]) {
+    const releases = editionReleaseState[edition] || [];
+    const latest = releases[0] || null;
+    byId("edition-" + edition + "-version").textContent =
+      latest ? "公開済み：v" + latest.version : "公開済みのWindowsインストーラーは未確認です";
+    byId("edition-" + edition + "-published").textContent =
+      latest ? formatEditionPublishedAt(latest.publishedAt) : "";
+    const button = byId("edition-" + edition + "-download");
+    button.disabled = !latest;
+    const details = byId("edition-" + edition + "-latest-details");
+    details.hidden = !latest;
+    details.open = false;
+    appendEditionReleaseNotes(byId("edition-" + edition + "-latest-notes"),
+      latest ? latest.notes : "");
+    renderPublicEditionHistory(edition);
+  }
+}
+
+async function refreshEditionReleaseHistory(force = false) {
+  if (!byId("edition-release-manager") || typeof api.getEditionReleases !== "function") return;
+  if (editionReleaseLoading || (!force && editionReleaseCheckedAt && Date.now() - editionReleaseCheckedAt < 2 * 60 * 1000)) return;
+  editionReleaseLoading = true;
+  editionReleaseCheckedAt = 0;
+  editionReleaseState = { beta: [], stable: [] };
+  const refreshButton = byId("edition-release-refresh");
+  const checked = byId("edition-releases-checked");
+  refreshButton.disabled = true;
+  checked.textContent = "GitHub Releasesでβ版・製品版の公開状況を確認しています…";
+  for (const edition of ["beta", "stable"]) {
+    byId("edition-" + edition + "-download").disabled = true;
+    byId("edition-" + edition + "-version").textContent = "公開状況を確認中…";
+    byId("edition-" + edition + "-count").textContent = "確認中";
+  }
+  try {
+    const result = await api.getEditionReleases();
+    editionReleaseState = {
+      beta: Array.isArray(result && result.beta) ? result.beta : [],
+      stable: Array.isArray(result && result.stable) ? result.stable : []
+    };
+    editionReleaseCheckedAt = Date.now();
+    checked.textContent = "GitHub Releasesの確認日時：" +
+      new Date(editionReleaseCheckedAt).toLocaleString("ja-JP");
+    renderEditionReleaseCards();
+  } catch (error) {
+    editionReleaseState = { beta: [], stable: [] };
+    renderEditionReleaseCards();
+    for (const edition of ["beta", "stable"]) {
+      byId("edition-" + edition + "-version").textContent = "公開状況を確認できませんでした";
+      byId("edition-" + edition + "-count").textContent = "取得失敗";
+      const list = byId("edition-" + edition + "-history");
+      list.replaceChildren();
+      const message = document.createElement("p");
+      message.className = "edition-history-empty";
+      message.textContent = "GitHubへの接続を確認して「公開状況を再確認」を押してください。";
+      list.appendChild(message);
+    }
+    checked.textContent = "公開状況の取得に失敗しました：" +
+      (error && error.message || "通信エラー");
+  } finally {
+    editionReleaseLoading = false;
+    refreshButton.disabled = false;
+  }
+}
+
+async function openPublicEditionInstaller(edition) {
+  if (!["beta", "stable"].includes(edition)) return;
+  const latest = (editionReleaseState[edition] || [])[0];
+  if (!latest || typeof api.openEditionInstaller !== "function") return;
+  if (edition === "stable" && !window.confirm(
+    "製品版を取得しますか？\n\n製品版には放送記事・無料AI記事生成が含まれません。" +
+    "\n製品版のアプリ内からβ版へ戻す機能はありません。\n\n公式インストーラーのダウンロードページを開きます。"
+  )) return;
+  const button = byId("edition-" + edition + "-download");
+  button.disabled = true;
+  try {
+    const result = await api.openEditionInstaller(edition);
+    if (result && result.opened) {
+      showToast((edition === "beta" ? "β版" : "製品版") +
+        " v" + result.version + " の公式Windowsインストーラーをブラウザーで開きました。");
+    }
+  } catch (error) {
+    showToast(error && error.message || "インストーラーを開けませんでした。", true);
+  } finally {
+    button.disabled = editionReleaseLoading || !(editionReleaseState[edition] || []).length;
+  }
+}
+
 async function refreshUpdateChannelSettings() {
   const section = byId("update-channel-section");
   if (!section || typeof api.getUpdateChannel !== "function") return;
@@ -3363,6 +3535,9 @@ byId("update-channel-select").addEventListener("change", () => {
     ? "製品版へ切り替えて再起動" : "β版へ切り替えて再起動";
 });
 byId("update-channel-switch-button").addEventListener("click", switchUpdateChannel);
+byId("edition-release-refresh").addEventListener("click", () => void refreshEditionReleaseHistory(true));
+byId("edition-beta-download").addEventListener("click", () => void openPublicEditionInstaller("beta"));
+byId("edition-stable-download").addEventListener("click", () => void openPublicEditionInstaller("stable"));
 byId("open-github-releases-button").addEventListener("click", async () => {
   try {
     await api.openGitHubReleases();
