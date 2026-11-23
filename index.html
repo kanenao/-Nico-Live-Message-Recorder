@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v0.8.4-beta.137</span>
+        <span class="version" id="version">v1.0.1-beta.138</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -75,7 +75,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">0.8.4-beta.137</span></div>
+          <div class="small-version">BUILD <span id="build-version">1.0.1-beta.138</span></div>
         </div>
       </aside>
 
@@ -676,7 +676,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v0.8.4-beta.137</strong>
+              <strong id="app-current-version">v1.0.1-beta.138</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -704,6 +704,28 @@
             <button class="button button-quiet button-small" id="open-github-releases-button" type="button">GitHubで手動ダウンロード</button>
           </div>
           <p class="settings-help">起動時と6時間ごとに新しいバージョンを自動確認します。更新が見つかるとバックグラウンドでダウンロードし、通常終了時に適用します。「再起動して更新」からすぐに適用することもできます。</p>
+          <section class="update-channel-card" id="update-channel-section" aria-labelledby="update-channel-title">
+            <div class="update-channel-heading">
+              <div>
+                <div class="eyebrow">RELEASE CHANNEL</div>
+                <h3 id="update-channel-title">更新チャンネルの切り替え</h3>
+                <p>β版から製品版（安定版）へ、またはβ版のまま先行更新を受け取る設定です。</p>
+              </div>
+              <span class="update-channel-lock">β版専用機能</span>
+            </div>
+            <div class="update-channel-controls">
+              <label for="update-channel-select">次回起動後の更新先
+                <select id="update-channel-select">
+                  <option value="beta">β版（先行開発）</option>
+                  <option value="latest">製品版（安定版）</option>
+                </select>
+              </label>
+              <button class="button button-primary button-small" id="update-channel-switch-button" type="button">チャンネルを切り替えて再起動</button>
+            </div>
+            <p class="update-channel-status" id="update-channel-status" role="status" aria-live="polite">現在の更新先を確認しています…</p>
+            <p class="update-channel-note" id="update-channel-note">製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。製品版からβ版へ戻す切り替え機能はありません。切り替え時は録画・コメント取得を終了して再起動します。</p>
+          </section>
+
           <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>
 
           <div class="release-history-section">
@@ -725,7 +747,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v0.8.4-beta.137</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.0.1-beta.138</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
