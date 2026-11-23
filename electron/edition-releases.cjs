@@ -53,6 +53,25 @@ function parseEditionReleases(input) {
   return result;
 }
 
+function extractChangelogNotes(markdown, version) {
+  const allowed = BETA_VERSION.test(version) || STABLE_VERSION.test(version);
+  if (!allowed || typeof markdown !== "string") return "";
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const heading = "## " + version;
+  let collecting = false;
+  const notes = [];
+  for (const line of lines) {
+    if (line.trim() === heading) {
+      collecting = true;
+      continue;
+    }
+    if (collecting && /^##\s+/.test(line)) break;
+    if (collecting) notes.push(line);
+  }
+  const text = notes.join("\n").trim();
+  return text.startsWith("- ") || text.includes("\n- ") ? text.slice(0, 5000) : "";
+}
+
 async function fetchEditionReleases(fetcher = fetch) {
   const response = await fetcher(API_URL, {
     method: "GET",
@@ -66,7 +85,29 @@ async function fetchEditionReleases(fetcher = fetch) {
   if (!response.ok) {
     throw new Error("GitHub Releasesを取得できません（HTTP " + response.status + "）。");
   }
-  return parseEditionReleases(await response.json());
+  const result = parseEditionReleases(await response.json());
+  // Some published Releases only say "see CHANGELOG.md". Read notes from each
+  // release's immutable Git tag so β and stable users can actually see what changed.
+  // Failures only affect supplemental notes, not confirmed publication metadata.
+  const candidates = [...result.beta.slice(0, 5), ...result.stable.slice(0, 5)]
+    .filter(release => !release.notes.trim() || /CHANGELOG\.md|更新内容は/i.test(release.notes));
+  await Promise.all(candidates.map(async release => {
+    try {
+      const url = "https://raw.githubusercontent.com/" + REPOSITORY +
+        "/v" + release.version + "/CHANGELOG.md";
+      const detail = await fetcher(url, {
+        method: "GET",
+        headers: { "User-Agent": "Nico-Live-Message-Recorder" },
+        signal: AbortSignal.timeout(6000)
+      });
+      if (!detail.ok) return;
+      const notes = extractChangelogNotes(await detail.text(), release.version);
+      if (notes) release.notes = notes;
+    } catch (_) {
+      // Leave the verified release visible with its original release description.
+    }
+  }));
+  return result;
 }
 
-module.exports = { REPOSITORY, API_URL, parseEditionReleases, fetchEditionReleases };
+module.exports = { REPOSITORY, API_URL, parseEditionReleases, extractChangelogNotes, fetchEditionReleases };
