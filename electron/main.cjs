@@ -5,6 +5,7 @@ const {
   getEffectiveUpdateChannel,
   normalizeUpdateChannel
 } = require("./update-channel.cjs");
+const { fetchEditionReleases } = require("./edition-releases.cjs");
 const { spawn, execFile, execFileSync } = require("node:child_process");
 const { randomUUID, createHash } = require("node:crypto");
 const {
@@ -1485,6 +1486,26 @@ ipcMain.handle("app:changelog", async () => {
     console.warn("Could not read application changelog:", error);
     return "";
   }
+});
+
+ipcMain.handle("editions:list", () => fetchEditionReleases());
+
+ipcMain.handle("editions:open-installer", async (_event, edition) => {
+  if (edition !== "beta" && edition !== "stable") {
+    throw new Error("公開版の種類が不正です。");
+  }
+  if (PRODUCT_EDITION && edition === "beta") {
+    throw new Error("製品版からβ版への切り替えはできません。");
+  }
+  const releases = await fetchEditionReleases();
+  const latest = releases[edition][0];
+  if (!latest) {
+    throw new Error(edition === "beta"
+      ? "公開済みのβ版インストーラーが確認できません。"
+      : "公開済みの製品版インストーラーが確認できません。");
+  }
+  await shell.openExternal(latest.installerUrl);
+  return { opened: true, version: latest.version, edition };
 });
 
 ipcMain.handle("updates:get-channel", () => {
