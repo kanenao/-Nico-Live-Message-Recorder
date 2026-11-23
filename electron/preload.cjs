@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   getVersion: () => ipcRenderer.invoke("app:version"),
   getChangelog: () => ipcRenderer.invoke("app:changelog"),
   openGitHubReleases: () => ipcRenderer.invoke("app:open-releases"),
+  getUpdateChannel: () => ipcRenderer.invoke("updates:get-channel"),
+  switchUpdateChannel: (channel) => ipcRenderer.invoke("updates:switch-channel", { channel }),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   retryUpdateDownload: () => ipcRenderer.invoke("updates:retry-download"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
