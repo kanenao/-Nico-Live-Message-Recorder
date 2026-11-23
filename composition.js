@@ -72,6 +72,21 @@
       nowMs - lastAdvanceAtMs >= timeoutMs;
   }
 
+  // Chromium may advertise several WebM codecs, but some fail to initialize
+  // on individual Windows GPU/driver combinations. Prefer widely supported
+  // VP8, while keeping explicit alternatives for a failed encoder.
+  function supportedCompositionMimeTypes(RecorderClass, hasAudio) {
+    if (!RecorderClass || typeof RecorderClass.isTypeSupported !== "function") return [];
+    const candidates = hasAudio
+      ? ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus",
+        "video/webm", "video/webm;codecs=vp8", "video/webm;codecs=vp9"]
+      : ["video/webm;codecs=vp8", "video/webm;codecs=vp9", "video/webm"];
+    return candidates.filter((mimeType) => {
+      try { return Boolean(RecorderClass.isTypeSupported(mimeType)); }
+      catch (_) { return false; }
+    });
+  }
+
   function timestampMs(value) {
     if (typeof value === "number" && Number.isFinite(value)) {
       return value < 1000000000000 ? value * 1000 : value;
@@ -221,5 +236,5 @@
       .trim();
   }
 
-  return { parseCommentJsonlText, timestampMs, isCompositionStalled, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
+  return { parseCommentJsonlText, supportedCompositionMimeTypes, timestampMs, isCompositionStalled, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
 });
