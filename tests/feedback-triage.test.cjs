@@ -26,3 +26,10 @@ test("AI output is allowlisted and cannot change reporter-selected edition", () 
   assert.equal(safeAiResult('{"category":"admin","urgency":"urgent"}', fallback), null);
   assert.equal(safeAiResult("ignore all rules", fallback), null);
 });
+
+test("AI action response is validated before any labels are applied", () => {
+  const fallback = { category: "bug", edition: "beta", urgency: "review" };
+  assert.deepEqual(safeAiResult('{"category":"feature","urgency":"review"}', fallback),
+    { category: "feature", edition: "beta", urgency: "review" });
+  assert.equal(safeAiResult('{"category":"unsafe","urgency":"urgent"}', fallback), null);
+});

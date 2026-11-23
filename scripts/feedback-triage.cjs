@@ -131,11 +131,17 @@ async function main() {
   const fallback = classifyFallback(title, body);
   let result = fallback;
   let method = "ルールによる自動分類";
-  try {
-    const ai = safeAiResult(await inferWithGithubModels(title, body, token), fallback);
-    if (ai) { result = ai; method = "AIによる自動分類"; }
-  } catch (error) {
-    console.warn("AI unavailable; applying safe fallback:", String(error.message).slice(0, 120));
+  if (process.env.FEEDBACK_AI_MODE === "action") {
+    const ai = safeAiResult(String(process.env.FEEDBACK_AI_RESPONSE || ""), fallback);
+    if (ai) { result = ai; method = "GitHub AIによる自動分類"; }
+    else console.warn("Official AI inference unavailable; using deterministic fallback.");
+  } else {
+    try {
+      const ai = safeAiResult(await inferWithGithubModels(title, body, token), fallback);
+      if (ai) { result = ai; method = "GitHub Models AIによる自動分類"; }
+    } catch (error) {
+      console.warn("AI unavailable; applying safe fallback:", String(error.message).slice(0, 120));
+    }
   }
 
   const labels = [result.category === "bug" ? "bug" : "feature"];
