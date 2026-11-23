@@ -1,0 +1,26 @@
+name: AI Feedback Triage
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+  issues: write
+  models: read
+jobs:
+  classify:
+    if: github.event.issue.pull_request == null
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: AI classification and GitHub issue labels
+        run: node scripts/feedback-triage.cjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
