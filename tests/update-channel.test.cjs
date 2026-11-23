@@ -1,27 +1,24 @@
+"use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {
-  BETA_CHANNEL,
-  PRODUCT_CHANNEL,
-  normalizeUpdateChannel,
-  getEffectiveUpdateChannel,
-  canSwitchUpdateChannel
-} = require("../electron/update-channel.cjs");
-
-test("beta edition can select beta or stable product update channels", () => {
-  assert.equal(canSwitchUpdateChannel("beta"), true);
-  assert.equal(getEffectiveUpdateChannel("beta", BETA_CHANNEL), BETA_CHANNEL);
-  assert.equal(getEffectiveUpdateChannel("beta", PRODUCT_CHANNEL), PRODUCT_CHANNEL);
+const { normalizeUpdateChannel, hasBetaOrigin, getEffectiveUpdateChannel,
+  markBetaOrigin, canSwitchUpdateChannel } = require("../electron/update-channel.cjs");
+test("beta builds always retain beta and product channel choice", () => {
+  assert.equal(canSwitchUpdateChannel("beta", null), true);
+  assert.equal(getEffectiveUpdateChannel("beta", "beta"), "beta");
+  assert.equal(getEffectiveUpdateChannel("beta", "latest"), "latest");
 });
-
-test("product edition is permanently locked to the stable update channel", () => {
-  assert.equal(canSwitchUpdateChannel("product"), false);
-  assert.equal(getEffectiveUpdateChannel("product", BETA_CHANNEL), PRODUCT_CHANNEL);
-  assert.equal(getEffectiveUpdateChannel("product", PRODUCT_CHANNEL), PRODUCT_CHANNEL);
+test("native product cannot enter beta but beta-origin product can return", () => {
+  assert.equal(canSwitchUpdateChannel("product", null), false);
+  assert.equal(getEffectiveUpdateChannel("product", "beta", null), "latest");
+  const recorded = markBetaOrigin(null);
+  assert.equal(canSwitchUpdateChannel("product", recorded), true);
+  assert.equal(getEffectiveUpdateChannel("product", "beta", recorded), "beta");
 });
-
-test("invalid channel preferences safely fall back to beta for beta builds", () => {
+test("previous beta-to-product transition is treated as beta origin", () => {
+  const previous = { channel:"latest", updatedAt:"2026-11-23T00:00:00Z" };
+  assert.equal(hasBetaOrigin(previous), true);
+  assert.equal(hasBetaOrigin({ channel:"latest" }), false);
+  assert.equal(markBetaOrigin(previous).betaReturnEligible, true);
   assert.equal(normalizeUpdateChannel("alpha"), null);
-  assert.equal(normalizeUpdateChannel(""), null);
-  assert.equal(getEffectiveUpdateChannel("beta", "invalid"), BETA_CHANNEL);
 });

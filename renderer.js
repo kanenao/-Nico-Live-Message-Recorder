@@ -3271,7 +3271,7 @@ async function refreshUpdateChannelSettings() {
     select.disabled = !state.autoUpdateSupported;
     button.disabled = !state.autoUpdateSupported;
     note.textContent = state.autoUpdateSupported
-      ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。製品版からβ版へ戻す切り替え機能はありません。切り替え時は録画・コメント取得を終了して再起動します。"
+      ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版を利用していたユーザーだけは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。"
       : "ZIP版ではアプリ内の自動切り替えを利用できません。希望する版のGitHub Releasesからインストーラーを手動でインストールしてください。製品版からβ版へ戻す機能はありません。";
     button.textContent = select.value === "latest" ? "製品版へ切り替えて再起動" : "β版へ切り替えて再起動";
   } catch (error) {
@@ -3295,7 +3295,7 @@ async function switchUpdateChannel() {
     }
   } catch (_) {}
   const detail = nextChannel === "latest"
-    ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。製品版からβ版へ戻すことはできません。"
+    ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版ユーザーだった場合は製品版から戻すこともできます。"
     : "β版へ切り替えると、開発中の機能と更新を受け取ります。";
   if (!window.confirm(targetLabel + "へ切り替えますか？\n\n" + detail + "\n\n録画・コメント取得を終了してアプリを再起動します。")) return;
   button.disabled = true;

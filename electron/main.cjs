@@ -3,7 +3,8 @@ const PRODUCT_EDITION = require("../package.json").nicoEdition === "product";
 const {
   canSwitchUpdateChannel,
   getEffectiveUpdateChannel,
-  normalizeUpdateChannel
+  normalizeUpdateChannel,
+  markBetaOrigin
 } = require("./update-channel.cjs");
 const { fetchEditionReleases } = require("./edition-releases.cjs");
 const { spawn, execFile, execFileSync } = require("node:child_process");
@@ -328,12 +329,18 @@ function updateChannelPreferencePath() {
 
 function readUpdateChannelPreference() {
   if (PRODUCT_EDITION) return "latest";
-  try {
-    const saved = JSON.parse(fs.readFileSync(updateChannelPreferencePath(), "utf8"));
-    return getEffectiveUpdateChannel("beta", saved && saved.channel);
-  } catch (_) {
-    return "beta";
-  }
+  // Preserve the user's beta origin across in-place product/beta installations.
+  // This is written before any NSIS check, so ZIP users can also migrate manually.
+  let existing = null;
+  try { existing = JSON.parse(fs.readFileSync(updateChannelPreferencePath(), "utf8")); }
+  catch (_) { /* first run */ }
+  const record = markBetaOrigin(existing);
+  const filePath = updateChannelPreferencePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temp = filePath + "." + process.pid + ".tmp";
+  fs.writeFileSync(temp, JSON.stringify(record, null, 2), "utf8");
+  fs.renameSync(temp, filePath);
+  return getEffectiveUpdateChannel("beta", record.channel, record);
 }
 
 function writeUpdateChannelPreference(channel) {
@@ -345,7 +352,10 @@ function writeUpdateChannelPreference(channel) {
   const filePath = updateChannelPreferencePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporaryPath = filePath + "." + process.pid + ".tmp";
-  fs.writeFileSync(temporaryPath, JSON.stringify({ channel: normalized, updatedAt: new Date().toISOString() }, null, 2), "utf8");
+  let previous = null;
+  try { previous = JSON.parse(fs.readFileSync(filePath, "utf8")); } catch (_) {}
+  const record = markBetaOrigin(previous);
+  fs.writeFileSync(temporaryPath, JSON.stringify({ ...record, channel: normalized, updatedAt: new Date().toISOString() }, null, 2), "utf8");
   fs.renameSync(temporaryPath, filePath);
   return normalized;
 }
