@@ -55,7 +55,7 @@ test("auto-update is enabled only for the registered NSIS install location", () 
 
 test("main and renderer JavaScript files pass Node syntax checks", () => {
   const { execFileSync } = require("node:child_process");
-  for (const file of ["electron/main.cjs", "electron/preload.cjs", "electron/monitor.cjs", "electron/update-channel.cjs", "renderer.js"]) {
+  for (const file of ["electron/main.cjs", "electron/preload.cjs", "electron/monitor.cjs", "electron/update-channel.cjs", "electron/edition-releases.cjs", "renderer.js"]) {
     const sourcePath = path.join(__dirname, "..", file);
     execFileSync(process.execPath, ["--check", sourcePath], { stdio: "pipe" });
   }
