@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 const { supportedCompositionMimeTypes } = require("../composition.js");
 
 const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
@@ -53,4 +54,59 @@ test("rendering retries another codec when MediaRecorder constructor or start fa
 test("composition preserves the cause of an error on the screen after a toast disappears", () => {
   assert.match(compose, /setCompositionProgress\(0, "生成エラー：" \+ message\)/);
   assert.match(compose, /showToast\(message, true\)/);
+});
+
+test("retries a start-time codec failure in an executable mock", () => {
+  const from = compose.indexOf("    const recorderHandlers = {");
+  const to = compose.indexOf("    cancelButton.disabled = false;", from);
+  assert.ok(from >= 0 && to > from);
+  const created = [];
+  class FakeMediaRecorder {
+    constructor(_stream, options) {
+      this.mimeType = options.mimeType;
+      this.state = "inactive";
+      created.push(this);
+    }
+    start() {
+      if (this.mimeType === "vp8") throw new Error("driver refused VP8");
+      this.state = "recording";
+    }
+    stop() { this.state = "inactive"; }
+  }
+  const first = new FakeMediaRecorder({}, { mimeType: "vp8" });
+  first.ondataavailable = () => {};
+  first.onstop = () => {};
+  first.onerror = () => {};
+  const sandbox = {
+    recorder: first, MediaRecorder: FakeMediaRecorder,
+    selectedMimeIndex: 0, supportedMimeTypes: ["vp8", "vp9"],
+    finalStream: {}, recorderOptions: {}, cancelButton: { disabled: true }
+  };
+  vm.runInNewContext(compose.slice(from, to), sandbox);
+  assert.equal(sandbox.recorder.mimeType, "vp9");
+  assert.equal(sandbox.recorder.state, "recording");
+  assert.equal(first.ondataavailable, null);
+  assert.equal(first.onstop, null);
+  assert.equal(first.onerror, null);
+  assert.equal(created.length, 2);
+});
+
+test("reports failure when every supported encoder rejects the start call", () => {
+  const from = compose.indexOf("    const recorderHandlers = {");
+  const to = compose.indexOf("    cancelButton.disabled = false;", from);
+  class BrokenMediaRecorder {
+    constructor(_stream, options) { this.mimeType = options.mimeType; this.state = "inactive"; }
+    start() { throw new Error("encoder unavailable"); }
+  }
+  const first = new BrokenMediaRecorder({}, { mimeType: "vp8" });
+  const sandbox = {
+    recorder: first, MediaRecorder: BrokenMediaRecorder,
+    selectedMimeIndex: 0, supportedMimeTypes: ["vp8", "vp9"],
+    finalStream: {}, recorderOptions: {}, cancelButton: { disabled: true }
+  };
+  assert.throws(
+    () => vm.runInNewContext(compose.slice(from, to), sandbox),
+    /動画のWebMエンコーダーを開始できませんでした/
+  );
+  assert.equal(sandbox.recorder, null);
 });
