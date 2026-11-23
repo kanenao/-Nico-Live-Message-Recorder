@@ -3095,6 +3095,76 @@ async function retryAppUpdateDownload() {
   }
 }
 
+async function refreshUpdateChannelSettings() {
+  const section = byId("update-channel-section");
+  if (!section || typeof api.getUpdateChannel !== "function") return;
+  const select = byId("update-channel-select");
+  const button = byId("update-channel-switch-button");
+  const status = byId("update-channel-status");
+  const note = byId("update-channel-note");
+  try {
+    const state = await api.getUpdateChannel();
+    if (!state || !state.canSwitch) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    select.value = state.channel === "latest" ? "latest" : "beta";
+    const currentLabel = state.channel === "latest" ? "製品版（安定版）" : "β版（先行開発）";
+    status.textContent = "現在の更新先：" + currentLabel + " ／ インストール中：" + (state.currentVersion || "確認できません");
+    select.disabled = !state.autoUpdateSupported;
+    button.disabled = !state.autoUpdateSupported;
+    note.textContent = state.autoUpdateSupported
+      ? "β版へ戻すとAI記事生成など開発中の機能が利用できます。録画・コメント保存を終了して再起動後、β版の更新を確認します。"
+      : "ZIP版ではアプリ内の自動切り替えを利用できません。Windowsインストーラー版をご利用ください。";
+    button.textContent = select.value === "latest" ? "製品版へ切り替えて再起動" : "β版へ切り替えて再起動";
+  } catch (error) {
+    section.hidden = true;
+    status.textContent = error && error.message ? error.message : "更新チャンネルを確認できませんでした。";
+    select.disabled = true;
+    button.disabled = true;
+  }
+}
+
+async function switchUpdateChannel() {
+  const select = byId("update-channel-select");
+  const button = byId("update-channel-switch-button");
+  const status = byId("update-channel-status");
+  const nextChannel = select.value === "latest" ? "latest" : "beta";
+  const targetLabel = nextChannel === "latest" ? "製品版（安定版）" : "β版（先行開発）";
+  try {
+    const current = await api.getUpdateChannel();
+    if (current && current.channel === nextChannel) {
+      showToast("すでに" + targetLabel + "が選択されています。");
+      return;
+    }
+  } catch (_) {}
+  const detail = nextChannel === "latest"
+    ? "製品版に戻すとAI記事生成など開発中の機能は使えなくなります。"
+    : "β版へ切り替えると、開発中の機能と更新を受け取ります。";
+  if (!window.confirm(targetLabel + "へ切り替えますか？\n\n" + detail + "\n\n録画・コメント取得を終了してアプリを再起動します。")) return;
+  button.disabled = true;
+  select.disabled = true;
+  status.textContent = targetLabel + "へ切り替える準備中です。録画とコメントを安全に保存して再起動します…";
+  try {
+    const result = await api.switchUpdateChannel(nextChannel);
+    if (result && result.restarting) {
+      status.textContent = "再起動しています。次回起動時から" + targetLabel + "の更新を確認します。";
+      return;
+    }
+    await refreshUpdateChannelSettings();
+  } catch (error) {
+    status.textContent = error && error.message ? error.message : "更新チャンネルを切り替えられませんでした。";
+    showToast(status.textContent, true);
+    await refreshUpdateChannelSettings();
+  } finally {
+    if (status.textContent.indexOf("再起動しています") !== 0) {
+      button.disabled = false;
+      select.disabled = false;
+    }
+  }
+}
+
 async function installAppUpdate() {
   const button = byId("install-update-button");
   const settingsButton = byId("settings-install-update-button");
@@ -3305,6 +3375,10 @@ byId("settings-retry-update-download-button").addEventListener("click", retryApp
 byId("update-releases-button").addEventListener("click", () => api.openGitHubReleases());
 byId("install-update-button").addEventListener("click", installAppUpdate);
 byId("settings-check-update-button").addEventListener("click", checkAppUpdates);
+byId("update-channel-select").addEventListener("change", () => {
+  byId("update-channel-switch-button").textContent = byId("update-channel-select").value === "beta" ? "β版に戻して再起動" : "製品版に切り替えて再起動";
+});
+byId("update-channel-switch-button").addEventListener("click", switchUpdateChannel);
 byId("open-github-releases-button").addEventListener("click", async () => {
   try {
     await api.openGitHubReleases();
@@ -3544,6 +3618,7 @@ liveInput.addEventListener("keydown", (event) => {
     byId("app-current-version").textContent = text;
     if (releaseHistoryEntries.length) renderVisibleReleaseHistory();
   } catch (_) {}
+  await refreshUpdateChannelSettings();
   await loadReleaseHistory();
   await refreshAuthStatus();
   await refreshVideoTools();

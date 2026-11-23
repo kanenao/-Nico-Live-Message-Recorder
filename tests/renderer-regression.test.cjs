@@ -411,7 +411,7 @@ test("video deletion is limited to saved videos and requires a native confirmati
 });
 
 test("package, UI and CI artifact versions are kept in sync", () => {
-  assert.equal(packageConfig.version, "1.0.0");
+  assert.equal(packageConfig.version, "1.0.1");
   assert.equal(packageConfig.nicoEdition, "product");
   assert.ok(html.includes("v" + packageConfig.version));
   assert.equal(packageConfig.build.win.publish[0].channel, "latest");

@@ -17,7 +17,7 @@ const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 
 test("product edition uses a stable version and the latest update channel", () => {
   assert.equal(pkg.nicoEdition, "product");
-  assert.equal(pkg.version, "1.0.0");
+  assert.equal(pkg.version, "1.0.1");
   assert.equal(pkg.build.win.publish[0].channel, "latest");
   assert.equal(pkg.build.win.publish[0].releaseType, "release");
 });
@@ -56,4 +56,13 @@ test("product build and release workflows validate stable latest-channel metadat
   assert.match(releaseWorkflow, /stable X\.Y\.Z versions/);
   assert.match(releaseWorkflow, /latest\.yml/);
   assert.match(changelog, /^## 1\.0\.0/m);
+});
+
+test("beta-return UI and IPC are strictly conditioned on beta origin history", () => {
+  const helper = require("../electron/update-channel.cjs");
+  assert.equal(helper.canSwitchUpdateChannel("product", null), false);
+  assert.equal(helper.canSwitchUpdateChannel("product", helper.markBetaOrigin(null)), true);
+  assert.match(main, /if \(!canSwitchUpdateChannel\(edition, readUpdateChannelRecord\(\)\)\)/);
+  assert.match(html, /id="update-channel-section"[^>]*hidden/);
+  assert.match(renderer, /if \(!state \|\| !state\.canSwitch\)/);
 });

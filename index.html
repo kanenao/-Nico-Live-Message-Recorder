@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v1.0.0</span>
+        <span class="version" id="version">v1.0.1</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -676,7 +676,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v1.0.0</strong>
+              <strong id="app-current-version">v1.0.1</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -705,6 +705,22 @@
           </div>
           <p class="settings-help">起動時と6時間ごとに新しいバージョンを自動確認します。更新が見つかるとバックグラウンドでダウンロードし、通常終了時に適用します。「再起動して更新」からすぐに適用することもできます。</p>
           <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>
+          <section class="update-channel-card" id="update-channel-section" aria-labelledby="update-channel-title" hidden>
+            <div class="update-channel-heading">
+              <div><div class="eyebrow">BETA RETURN</div><h3 id="update-channel-title">β版へ戻す（元β版ユーザー専用）</h3>
+                <p>β版から製品版に移行した履歴のある場合のみ利用できます。</p></div>
+              <span class="update-channel-lock">移行履歴のあるユーザー限定</span>
+            </div>
+            <div class="update-channel-controls">
+              <label for="update-channel-select">更新先の選択
+                <select id="update-channel-select"><option value="latest">製品版（安定版）</option><option value="beta">β版（先行開発）</option></select>
+              </label>
+              <button class="button button-primary button-small" id="update-channel-switch-button" type="button">切り替えて再起動</button>
+            </div>
+            <p class="update-channel-status" id="update-channel-status" role="status" aria-live="polite">利用可能な更新先を確認しています…</p>
+            <p class="update-channel-note" id="update-channel-note">β版に戻すと、AI記事生成など開発中の機能を利用できます。録画とコメント保存を終了して再起動後、β版をダウンロードします。</p>
+          </section>
+
 
           <div class="release-history-section">
             <div class="release-history-heading">
@@ -713,7 +729,7 @@
             </div>
             <div class="release-history-tools">
               <label for="release-history-search">バージョン・更新内容を検索
-                <input type="search" id="release-history-search" placeholder="例：v1.0.0、録画、コメント" autocomplete="off">
+                <input type="search" id="release-history-search" placeholder="例：v1.0.1、録画、コメント" autocomplete="off">
               </label>
               <span class="release-history-count" id="release-history-count" aria-live="polite">履歴を読み込んでいます…</span>
             </div>
@@ -725,7 +741,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v1.0.0</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.0.1</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
