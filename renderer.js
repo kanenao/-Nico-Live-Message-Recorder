@@ -3538,6 +3538,25 @@ byId("update-channel-switch-button").addEventListener("click", switchUpdateChann
 byId("edition-release-refresh").addEventListener("click", () => void refreshEditionReleaseHistory(true));
 byId("edition-beta-download").addEventListener("click", () => void openPublicEditionInstaller("beta"));
 byId("edition-stable-download").addEventListener("click", () => void openPublicEditionInstaller("stable"));
+async function openFeedbackReport(kind) {
+  const details = String(byId("feedback-details").value || "").trim();
+  if (!details) {
+    showToast("不具合・機能要望の内容を入力してください。", true);
+    return;
+  }
+  try {
+    await api.openFeedback(kind, details);
+    byId("feedback-report-note").textContent =
+      "GitHubの報告フォームを開きました。送信はGitHubで確認して実行してください。";
+  } catch (error) {
+    const message = "報告フォームを開けませんでした：" + (error.message || error);
+    byId("feedback-report-note").textContent = message;
+    showToast(message, true);
+  }
+}
+byId("feedback-bug-button").addEventListener("click", () => void openFeedbackReport("bug"));
+byId("feedback-feature-button").addEventListener("click", () => void openFeedbackReport("feature"));
+
 byId("open-github-releases-button").addEventListener("click", async () => {
   try {
     await api.openGitHubReleases();

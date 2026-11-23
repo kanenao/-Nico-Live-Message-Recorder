@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v1.0.2-beta.143</span>
+        <span class="version" id="version">v1.0.2-beta.144</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -75,7 +75,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">1.0.2-beta.143</span></div>
+          <div class="small-version">BUILD <span id="build-version">1.0.2-beta.144</span></div>
         </div>
       </aside>
 
@@ -676,7 +676,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v1.0.2-beta.143</strong>
+              <strong id="app-current-version">v1.0.2-beta.144</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -808,10 +808,24 @@
             </div>
             <button class="button button-outline release-history-more" id="release-history-more-button" type="button" hidden>過去の更新履歴も表示</button>
           </div>
+          <section class="feedback-report-card" id="feedback-report-card" aria-labelledby="feedback-title">
+            <div class="feedback-report-heading">
+              <div class="eyebrow">FEEDBACK / AI TRIAGE</div>
+              <h3 id="feedback-title">不具合情報・機能要望</h3>
+              <p>β版・正規版どちらも対応。報告後にAIが種類・対象版・優先度を判断してタグを付けます。</p>
+            </div>
+            <label class="feedback-report-label" for="feedback-details">報告するメッセージ（500文字まで）</label>
+            <textarea id="feedback-details" rows="3" maxlength="500" placeholder="例：コメント付き動画の生成が50%で停止する／録画ライブラリをもっと見やすくしてほしい"></textarea>
+            <div class="feedback-report-actions">
+              <button class="button button-outline button-small" id="feedback-bug-button" type="button">不具合情報</button>
+              <button class="button button-secondary button-small" id="feedback-feature-button" type="button">機能要望</button>
+            </div>
+            <p class="feedback-report-note" id="feedback-report-note" role="status">GitHubで内容を確認して送信してください。送信後にAIが自動分類・受付します。user_session・Cookie・個人情報は書かないでください。</p>
+          </section>
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v1.0.2-beta.143</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.0.2-beta.144</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
