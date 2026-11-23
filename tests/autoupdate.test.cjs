@@ -19,6 +19,21 @@ test("GitHub beta channel is configured for auto-update metadata", () => {
   }]);
 });
 
+test("beta channel can switch to stable while product edition remains locked", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "electron", "preload.cjs"), "utf8");
+  const helper = require("../electron/update-channel.cjs");
+  assert.equal(helper.getEffectiveUpdateChannel("product", "beta"), "latest");
+  assert.equal(helper.canSwitchUpdateChannel("product"), false);
+  assert.equal(helper.getEffectiveUpdateChannel("beta", "latest"), "latest");
+  assert.equal(helper.getEffectiveUpdateChannel("beta", "beta"), "beta");
+  assert.ok(main.includes('ipcMain.handle("updates:switch-channel"'));
+  assert.ok(main.includes('if (!canSwitchUpdateChannel(PRODUCT_EDITION ? "product" : "beta"))'));
+  assert.ok(main.includes('autoUpdater.allowDowngrade = !PRODUCT_EDITION && activeUpdateChannel === "latest"'));
+  assert.ok(preload.includes('getUpdateChannel: () => ipcRenderer.invoke("updates:get-channel")'));
+  assert.ok(preload.includes('switchUpdateChannel: (channel) => ipcRenderer.invoke("updates:switch-channel", { channel })'));
+});
+
 test("release build explicitly publishes Windows NSIS update assets", () => {
   assert.match(packageJson.scripts["dist:win:release"], /electron-builder --win nsis zip --publish always/);
 });
@@ -40,7 +55,7 @@ test("auto-update is enabled only for the registered NSIS install location", () 
 
 test("main and renderer JavaScript files pass Node syntax checks", () => {
   const { execFileSync } = require("node:child_process");
-  for (const file of ["electron/main.cjs", "electron/preload.cjs", "electron/monitor.cjs", "renderer.js"]) {
+  for (const file of ["electron/main.cjs", "electron/preload.cjs", "electron/monitor.cjs", "electron/update-channel.cjs", "renderer.js"]) {
     const sourcePath = path.join(__dirname, "..", file);
     execFileSync(process.execPath, ["--check", sourcePath], { stdio: "pipe" });
   }
