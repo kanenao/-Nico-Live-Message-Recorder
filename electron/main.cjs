@@ -1,4 +1,10 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu, Tray, nativeImage, powerSaveBlocker, Notification } = require("electron");
+const PRODUCT_EDITION = require("../package.json").nicoEdition === "product";
+const {
+  canSwitchUpdateChannel,
+  getEffectiveUpdateChannel,
+  normalizeUpdateChannel
+} = require("./update-channel.cjs");
 const { spawn, execFile, execFileSync } = require("node:child_process");
 const { randomUUID, createHash } = require("node:crypto");
 const {
@@ -147,6 +153,7 @@ let composeFinalizePromise = null;
 let shutdownPromise = null;
 let shutdownComplete = false;
 let updateCheckPromise = null;
+let activeUpdateChannel = PRODUCT_EDITION ? "latest" : "beta";
 let downloadedUpdateInfo = null;
 let availableUpdateInfo = null;
 let failedUpdateDownload = false;
@@ -314,12 +321,47 @@ function sendUpdateState(state, details = {}) {
   send("update:state", { state, ...details });
 }
 
+function updateChannelPreferencePath() {
+  return path.join(app.getPath("userData"), "update-channel.json");
+}
+
+function readUpdateChannelPreference() {
+  if (PRODUCT_EDITION) return "latest";
+  try {
+    const saved = JSON.parse(fs.readFileSync(updateChannelPreferencePath(), "utf8"));
+    return getEffectiveUpdateChannel("beta", saved && saved.channel);
+  } catch (_) {
+    return "beta";
+  }
+}
+
+function writeUpdateChannelPreference(channel) {
+  if (!canSwitchUpdateChannel(PRODUCT_EDITION ? "product" : "beta")) {
+    throw new Error("製品版では更新チャンネルを変更できません。");
+  }
+  const normalized = normalizeUpdateChannel(channel);
+  if (!normalized) throw new Error("更新チャンネルの指定が正しくありません。");
+  const filePath = updateChannelPreferencePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporaryPath = filePath + "." + process.pid + ".tmp";
+  fs.writeFileSync(temporaryPath, JSON.stringify({ channel: normalized, updatedAt: new Date().toISOString() }, null, 2), "utf8");
+  fs.renameSync(temporaryPath, filePath);
+  return normalized;
+}
+
+function applyUpdateChannel(channel) {
+  activeUpdateChannel = getEffectiveUpdateChannel(PRODUCT_EDITION ? "product" : "beta", channel);
+  autoUpdater.channel = activeUpdateChannel;
+  autoUpdater.allowPrerelease = activeUpdateChannel === "beta";
+  // Do not drift from beta to stable unless the user explicitly chooses the product channel.
+  autoUpdater.allowDowngrade = !PRODUCT_EDITION && activeUpdateChannel === "latest";
+}
+
 function configureAutoUpdater() {
+  activeUpdateChannel = PRODUCT_EDITION ? "latest" : readUpdateChannelPreference();
   if (!isAutoUpdateSupported()) return false;
 
-  // Keep the app on the beta update feed; stable product builds use the latest feed.
-  autoUpdater.channel = "beta";
-  autoUpdater.allowPrerelease = true;
+  applyUpdateChannel(activeUpdateChannel);
   autoUpdater.autoDownload = true;
   // GitHub/CDN range requests and differential blockmaps can fail even when full EXEs are downloadable.
   // Use the verified full NSIS installer on the beta channel until differential downloads are proven reliable.
@@ -347,6 +389,8 @@ function configureAutoUpdater() {
       sendUpdateState("downloaded", { version: downloadedUpdateInfo.version || "" });
       return;
     }
+    availableUpdateInfo = null;
+    failedUpdateDownload = false;
     sendUpdateState("not-available", {
       version: info && info.version ? info.version : app.getVersion()
     });
@@ -1440,6 +1484,49 @@ ipcMain.handle("app:changelog", async () => {
   } catch (error) {
     console.warn("Could not read application changelog:", error);
     return "";
+  }
+});
+
+ipcMain.handle("updates:get-channel", () => {
+  const edition = PRODUCT_EDITION ? "product" : "beta";
+  return {
+    edition,
+    channel: getEffectiveUpdateChannel(edition, activeUpdateChannel),
+    canSwitch: canSwitchUpdateChannel(edition),
+    autoUpdateSupported: isAutoUpdateSupported(),
+    currentVersion: app.getVersion()
+  };
+});
+
+ipcMain.handle("updates:switch-channel", async (_event, input = {}) => {
+  if (!canSwitchUpdateChannel(PRODUCT_EDITION ? "product" : "beta")) {
+    throw new Error("製品版ではβ版への切り替えはできません。");
+  }
+  if (!isAutoUpdateSupported()) {
+    throw new Error("ZIP版ではアプリ内切り替えを利用できません。GitHub Releasesから希望する版を手動でインストールしてください。");
+  }
+  const nextChannel = normalizeUpdateChannel(input && input.channel);
+  if (!nextChannel) throw new Error("切り替え先はβ版または製品版を選択してください。");
+  if (nextChannel === activeUpdateChannel) return { changed: false, channel: activeUpdateChannel };
+  if (downloadedUpdateInfo || updateCheckPromise || retryUpdatePromise || (availableUpdateInfo && !failedUpdateDownload)) {
+    throw new Error("現在アップデート処理中、またはインストール待ちです。更新を完了してからチャンネルを切り替えてください。");
+  }
+
+  const previousChannel = activeUpdateChannel;
+  writeUpdateChannelPreference(nextChannel);
+  activeUpdateChannel = nextChannel;
+  isQuitting = true;
+  try {
+    await shutdownGracefully();
+    shutdownComplete = true;
+    app.relaunch();
+    setTimeout(() => app.quit(), 250);
+    return { changed: true, restarting: true, channel: nextChannel };
+  } catch (error) {
+    isQuitting = false;
+    activeUpdateChannel = previousChannel;
+    writeUpdateChannelPreference(previousChannel);
+    throw new Error("更新チャンネルの切り替え準備に失敗しました: " + error.message);
   }
 });
 
