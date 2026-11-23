@@ -1,0 +1,46 @@
+name: "🐛 不具合情報"
+description: "β版・正規版の録画やコメントなどの不具合を報告します。投稿後にAIが自動分類します。"
+title: "[不具合] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **公開Issueです。** user_session・Cookie・パスワード・個人情報は記載しないでください。
+        送信後、AIがカテゴリ・対象版・優先度を判定します。AIが使えない場合は通常の自動分類に切り替わります。
+  - type: dropdown
+    id: edition
+    attributes:
+      label: 対象版
+      options:
+        - β版
+        - 正規版
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: アプリのバージョン
+      placeholder: "例：1.0.2-beta.143 または 1.0.1"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 不具合の内容
+      description: "何が起きましたか？（必要に応じてエラー表示の一部）"
+      placeholder: "動画生成が途中で止まる、ボタンが反応しないなど"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      placeholder: "1. ...\n2. ...\n3. ..."
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作・追加情報

@@ -1,0 +1,40 @@
+name: "✨ 機能要望"
+description: "β版・正規版に追加・改善してほしい機能を報告します。投稿後にAIが自動整理します。"
+title: "[要望] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **公開Issueです。** user_session・Cookie・パスワード・個人情報は記載しないでください。
+        AIが内容と対象版を分類し、要望として整理します。正規版への採用は検証後・月次保守が原則です。
+  - type: dropdown
+    id: edition
+    attributes:
+      label: 対象版
+      options:
+        - β版
+        - 正規版
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: アプリのバージョン
+      placeholder: "例：1.0.2-beta.143 または 1.0.1"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 欲しい機能・改善内容
+      placeholder: "どの画面に、どんな機能が欲しいかを説明してください"
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: 利用目的・期待するメリット
+  - type: textarea
+    id: alternative
+    attributes:
+      label: 参考や代替案（任意）
