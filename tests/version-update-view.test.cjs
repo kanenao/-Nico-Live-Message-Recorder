@@ -59,3 +59,35 @@ test("changelog is expandable, searchable and safely rendered", () => {
   assert.equal(entries[0].title, "0.8.2-alpha.131");
   assert.equal(entries[0].notes.length, 1);
 });
+
+
+test("public beta and stable versions have separate Kick-style cards and release histories", () => {
+  for (const id of ["edition-release-manager", "edition-release-refresh", "edition-beta-card",
+    "edition-stable-card", "edition-beta-version", "edition-stable-version",
+    "edition-beta-download", "edition-stable-download", "edition-beta-history",
+    "edition-stable-history", "edition-beta-count", "edition-stable-count",
+    "edition-beta-latest-notes", "edition-stable-latest-notes"]) {
+    assert.ok(html.includes('id="' + id + '"'), "Missing public edition UI: " + id);
+  }
+  assert.match(html, /β版のバージョン更新履歴/);
+  assert.match(html, /製品版のバージョン更新履歴/);
+  assert.match(html, /製品版からβ版へのアプリ内切り替えはできません/);
+  assert.match(renderer, /async function refreshEditionReleaseHistory\(force = false\)/);
+  assert.match(renderer, /async function openPublicEditionInstaller\(edition\)/);
+  assert.match(renderer, /if \(activePage === "updates"\) void refreshEditionReleaseHistory\(\)/);
+  assert.match(renderer, /new Date\(editionReleaseCheckedAt\)\.toLocaleString\("ja-JP"\)/);
+  assert.match(css, /\.edition-choice-card/);
+  assert.match(css, /\.edition-public-item/);
+});
+
+test("GitHub public release notes are rendered as text, never HTML, and failures do not fake a published release", () => {
+  const start = renderer.indexOf("function appendEditionReleaseNotes(");
+  const end = renderer.indexOf("async function refreshUpdateChannelSettings()", start);
+  const section = renderer.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.doesNotMatch(section, /\.innerHTML\s*=/);
+  assert.match(section, /appendFormattedReleaseNote\(item, bullet\[1\]\)/);
+  assert.match(section, /editionReleaseState = \{ beta: \[\], stable: \[\] \}/);
+  assert.match(section, /公開状況を確認できませんでした/);
+  assert.match(section, /button\.disabled = !latest/);
+});
