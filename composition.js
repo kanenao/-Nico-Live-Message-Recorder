@@ -87,6 +87,38 @@
     });
   }
 
+  // Preserve requested quality when possible; some Windows encoders can only
+  // start below the selected bitrate despite reporting codec support.
+  function compositionEncoderCandidates(mimeTypes, requestedBitrate, audioBitrate = 0) {
+    if (!Array.isArray(mimeTypes) || !mimeTypes.length) return [];
+    const bitrate = Number(requestedBitrate);
+    const initial = Number.isFinite(bitrate)
+      ? Math.max(1000000, Math.min(20000000, Math.round(bitrate)))
+      : 6000000;
+    const bitrates = [initial, ...[4000000, 2000000, 1000000]
+      .filter((value) => value < initial)];
+    const n = Number(audioBitrate);
+    const audio = Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+    return [...new Set(bitrates)].flatMap((videoBitsPerSecond) =>
+      mimeTypes.filter((type) => typeof type === "string" && type.startsWith("video/webm"))
+        .map((mimeType) => ({
+          mimeType,
+          videoBitsPerSecond,
+          ...(audio ? { audioBitsPerSecond: audio } : {})
+        }))
+    );
+  }
+
+  // An unexpected MediaRecorder stop must not produce a truncated output.
+  function isUnexpectedCompositionStop(stopRequestedAt, ended, currentTimeSeconds, durationMs, graceMs = 1000) {
+    if (stopRequestedAt || ended) return false;
+    const duration = Number(durationMs);
+    const current = Number(currentTimeSeconds);
+    if (!Number.isFinite(duration) || duration <= 0) return false;
+    return !Number.isFinite(current) ||
+      current * 1000 < duration - Math.max(0, Number(graceMs) || 0);
+  }
+
   function timestampMs(value) {
     if (typeof value === "number" && Number.isFinite(value)) {
       return value < 1000000000000 ? value * 1000 : value;
@@ -236,5 +268,5 @@
       .trim();
   }
 
-  return { parseCommentJsonlText, supportedCompositionMimeTypes, timestampMs, isCompositionStalled, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
+  return { parseCommentJsonlText, supportedCompositionMimeTypes, compositionEncoderCandidates, isUnexpectedCompositionStop, timestampMs, isCompositionStalled, prepareCommentTimeline, reserveLane, calculateCommentLaneLayout, calculateScrollCommentHeadway, normalizeCommentDisplayText };
 });
