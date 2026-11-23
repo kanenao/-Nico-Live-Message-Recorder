@@ -4446,18 +4446,17 @@ async function composeCommentVideo() {
       }
     };
 
-    const recorderOptions = { videoBitsPerSecond: composeOptions.bitrate };
-    if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
-    // A codec may pass isTypeSupported() and still fail at construction.
-    // Try the next supported codec without discarding the source files.
-    let selectedMimeIndex = -1;
+    const encoderCandidates = window.nicoCommentComposition.compositionEncoderCandidates(
+      supportedMimeTypes, composeOptions.bitrate, audioTracks.length ? 160000 : 0
+    );
+    // Try all compatible codecs at the requested bitrate, then safe lower
+    // bitrates if the driver rejects the original setting.
+    let selectedCandidateIndex = -1;
     let encoderFailure = null;
-    for (let index = 0; index < supportedMimeTypes.length; index += 1) {
+    for (let index = 0; index < encoderCandidates.length; index += 1) {
       try {
-        recorder = new MediaRecorder(finalStream, {
-          ...recorderOptions, mimeType: supportedMimeTypes[index]
-        });
-        selectedMimeIndex = index;
+        recorder = new MediaRecorder(finalStream, encoderCandidates[index]);
+        selectedCandidateIndex = index;
         break;
       } catch (error) {
         encoderFailure = error;
@@ -4504,6 +4503,11 @@ async function composeCommentVideo() {
         try {
           await withDeadline(() => chunkQueue, SAVE_STALL_MS, "残りの動画データ保存");
           if (writeError) throw writeError;
+          if (window.nicoCommentComposition.isUnexpectedCompositionStop(
+            recordingStopRequestedAt, videoElement?.ended, videoElement?.currentTime, durationMs
+          )) {
+            throw new Error("動画エンコーダーが動画の終了前に停止しました。不完全な動画を保存せず中断しました。WebM形式・低めの画質で再試行してください。");
+          }
           if (cancelRequested) {
             await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
               "動画生成のキャンセル");
@@ -4576,19 +4580,19 @@ async function composeCommentVideo() {
     };
     let encoderStartError = null;
     let encoderStarted = false;
-    for (let index = selectedMimeIndex; index < supportedMimeTypes.length; index += 1) {
+    let selectedEncoderOptions = null;
+    for (let index = selectedCandidateIndex; index < encoderCandidates.length; index += 1) {
       let candidateRecorder = null;
       try {
-        candidateRecorder = index === selectedMimeIndex
+        candidateRecorder = index === selectedCandidateIndex
           ? recorder
-          : new MediaRecorder(finalStream, {
-            ...recorderOptions, mimeType: supportedMimeTypes[index]
-          });
+          : new MediaRecorder(finalStream, encoderCandidates[index]);
         candidateRecorder.ondataavailable = recorderHandlers.ondataavailable;
         candidateRecorder.onstop = recorderHandlers.onstop;
         candidateRecorder.onerror = recorderHandlers.onerror;
         candidateRecorder.start(1000);
         recorder = candidateRecorder;
+        selectedEncoderOptions = encoderCandidates[index];
         encoderStarted = true;
         break;
       } catch (error) {
@@ -4609,6 +4613,11 @@ async function composeCommentVideo() {
       throw new Error("動画のWebMエンコーダーを開始できませんでした。" +
         " 出力解像度を720p、FPSを30、画質を標準にして再試行してください。" +
         (encoderStartError?.message ? " 詳細：" + encoderStartError.message : ""));
+    }
+    if (selectedEncoderOptions.videoBitsPerSecond < composeOptions.bitrate) {
+      showToast("エンコーダーの互換性により、映像ビットレートを" +
+        (selectedEncoderOptions.videoBitsPerSecond / 1000000).toFixed(1) +
+        "Mbpsに下げて生成しています。");
     }
     cancelButton.disabled = false;
     lastPlaybackAdvanceAt = Date.now();
