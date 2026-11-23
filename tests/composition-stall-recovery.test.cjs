@@ -51,7 +51,7 @@ test("composition UI distinguishes real-time rendering, remaining playback, and 
 test("canvas draw exceptions are bounded instead of silently stopping the render loop", () => {
   const vm = require("node:vm");
   const start = compose.indexOf("const drawFrame = () => {");
-  const end = compose.indexOf("\n    const recorderOptions =", start);
+  const end = compose.indexOf("\n    const encoderCandidates =", start);
   assert.ok(start >= 0 && end > start, "drawFrame must be extractable");
   let queued = 0;
   const errors = [];

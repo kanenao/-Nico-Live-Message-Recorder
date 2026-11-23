@@ -285,7 +285,7 @@ test("comment video composer exposes timing, layout, appearance and quality cont
   assert.match(renderer, /displayMode === "bottom"/);
   assert.match(renderer, /context\.globalAlpha =/);
   assert.match(renderer, /canvas\.captureStream\(composeOptions\.fps\)/);
-  assert.match(renderer, /videoBitsPerSecond: composeOptions\.bitrate/);
+  assert.match(renderer, /compositionEncoderCandidates\(\s*supportedMimeTypes, composeOptions\.bitrate/);
   assert.match(renderer, /comment\.timeMs \+ composeOptions\.offsetMs/);
   assert.match(renderer, /rowLimit: number\("compose-row-limit"/);
   assert.match(renderer, /durationSeconds/);
