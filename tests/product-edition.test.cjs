@@ -17,7 +17,7 @@ const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 
 test("product edition uses a stable version and the latest update channel", () => {
   assert.equal(pkg.nicoEdition, "product");
-  assert.equal(pkg.version, "1.0.1");
+  assert.equal(pkg.version, "1.0.2");
   assert.equal(pkg.build.win.publish[0].channel, "latest");
   assert.equal(pkg.build.win.publish[0].releaseType, "release");
 });

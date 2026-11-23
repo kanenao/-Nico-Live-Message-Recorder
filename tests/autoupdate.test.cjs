@@ -10,7 +10,7 @@ test("production dependencies include electron-updater", () => {
 
 test("stable product release uses the latest auto-update channel", () => {
   assert.equal(packageJson.nicoEdition, "product");
-  assert.equal(packageJson.version, "1.0.1");
+  assert.equal(packageJson.version, "1.0.2");
   assert.equal(packageJson.build.generateUpdatesFilesForAllChannels, true);
   assert.deepEqual(packageJson.build.win.publish, [{
     provider: "github",
