@@ -684,12 +684,12 @@ test("app settings expose the current version and a synchronized automatic updat
 });
 
 
-test("beta update page exposes a one-way product and beta channel switch", () => {
+test("beta update page explains eligibility-limited return from product", () => {
   assert.ok(html.includes('id="update-channel-section"'));
   assert.ok(html.includes('id="update-channel-select"'));
   assert.ok(html.includes('<option value="beta">β版（先行開発）</option>'));
   assert.ok(html.includes('<option value="latest">製品版（安定版）</option>'));
-  assert.ok(html.includes("製品版からβ版へ戻す切り替え機能はありません"));
+  assert.ok(html.includes("元々β版を使っていたユーザーは、製品版からβ版に戻せます"));
   assert.ok(renderer.includes("async function refreshUpdateChannelSettings()"));
   assert.ok(renderer.includes("async function switchUpdateChannel()"));
   assert.ok(renderer.includes("await api.switchUpdateChannel(nextChannel)"));
