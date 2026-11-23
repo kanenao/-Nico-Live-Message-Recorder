@@ -89,6 +89,8 @@ jobs:
             throw "Beta base version $betaBase must be greater than stable product $stableBase to prevent an automatic channel crossover. Bump the beta base version first."
           }
           Write-Host "Beta $betaVersion is safely ahead of stable product $stableVersion."
+      - name: Run application tests
+        run: npm test
       - name: Build installer and portable ZIP
         run: npm run dist:win
       - name: Verify beta update manifest and installer checksum
