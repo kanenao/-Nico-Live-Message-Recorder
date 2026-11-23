@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v1.0.1-beta.138</span>
+        <span class="version" id="version">v1.0.1-beta.139</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -75,7 +75,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">1.0.1-beta.138</span></div>
+          <div class="small-version">BUILD <span id="build-version">1.0.1-beta.139</span></div>
         </div>
       </aside>
 
@@ -676,7 +676,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v1.0.1-beta.138</strong>
+              <strong id="app-current-version">v1.0.1-beta.139</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -704,11 +704,75 @@
             <button class="button button-quiet button-small" id="open-github-releases-button" type="button">GitHubで手動ダウンロード</button>
           </div>
           <p class="settings-help">起動時と6時間ごとに新しいバージョンを自動確認します。更新が見つかるとバックグラウンドでダウンロードし、通常終了時に適用します。「再起動して更新」からすぐに適用することもできます。</p>
+          <section class="edition-release-manager" id="edition-release-manager" aria-labelledby="edition-release-title">
+            <div class="edition-release-heading">
+              <div>
+                <h3 id="edition-release-title">版を選択（β版専用）</h3>
+                <p>β版と製品版、それぞれのGitHub公開状況・インストーラー・更新履歴を確認できます。</p>
+              </div>
+              <div class="edition-release-heading-actions">
+                <span class="edition-current-indicator" id="edition-current-indicator">現在：β版</span>
+                <button class="button button-outline button-small" type="button" id="edition-release-refresh">公開状況を再確認</button>
+              </div>
+            </div>
+            <p class="edition-releases-checked" id="edition-releases-checked" role="status" aria-live="polite">GitHub Releasesの公開状況を確認しています…</p>
+            <div class="edition-choice-list">
+              <article class="edition-choice-card" id="edition-beta-card">
+                <div class="edition-choice-info">
+                  <div class="edition-choice-name">
+                    <strong>β版を選択</strong>
+                    <span class="edition-using" id="edition-beta-using">現在使用中</span>
+                  </div>
+                  <p class="edition-choice-version" id="edition-beta-version">公開状況を確認中…</p>
+                  <p class="edition-choice-published" id="edition-beta-published"></p>
+                  <details class="edition-latest-notes" id="edition-beta-latest-details" hidden>
+                    <summary>最新リリースの更新内容を確認</summary>
+                    <div class="edition-latest-notes-content" id="edition-beta-latest-notes"></div>
+                  </details>
+                </div>
+                <button class="button button-primary button-small edition-download-button" id="edition-beta-download" type="button" disabled>β版を取得</button>
+              </article>
+              <article class="edition-choice-card" id="edition-stable-card">
+                <div class="edition-choice-info">
+                  <div class="edition-choice-name">
+                    <strong>製品版を選択</strong>
+                    <span class="edition-using" id="edition-stable-using" hidden>現在使用中</span>
+                  </div>
+                  <p class="edition-choice-version" id="edition-stable-version">公開状況を確認中…</p>
+                  <p class="edition-choice-published" id="edition-stable-published"></p>
+                  <details class="edition-latest-notes" id="edition-stable-latest-details" hidden>
+                    <summary>最新リリースの更新内容を確認</summary>
+                    <div class="edition-latest-notes-content" id="edition-stable-latest-notes"></div>
+                  </details>
+                </div>
+                <button class="button button-primary button-small edition-download-button" id="edition-stable-download" type="button" disabled>製品版を取得</button>
+              </article>
+            </div>
+            <p class="edition-selection-help">「取得」は公開済みの公式Windowsインストーラーをブラウザーで開く操作です。ダウンロード後にインストールしてください。自動更新先の変更は下の設定から行えます。製品版からβ版へのアプリ内切り替えはできません。</p>
+            <div class="edition-public-history">
+              <div class="edition-history-heading">
+                <h3>β版のバージョン更新履歴</h3>
+                <span id="edition-beta-count">公開状況を確認中</span>
+              </div>
+              <div class="edition-public-list" id="edition-beta-history" aria-live="polite">
+                <p class="edition-history-empty">公開済みβ版の履歴を読み込んでいます…</p>
+              </div>
+            </div>
+            <div class="edition-public-history">
+              <div class="edition-history-heading">
+                <h3>製品版のバージョン更新履歴</h3>
+                <span id="edition-stable-count">公開状況を確認中</span>
+              </div>
+              <div class="edition-public-list" id="edition-stable-history" aria-live="polite">
+                <p class="edition-history-empty">公開済み製品版の履歴を読み込んでいます…</p>
+              </div>
+            </div>
+          </section>
           <section class="update-channel-card" id="update-channel-section" aria-labelledby="update-channel-title">
             <div class="update-channel-heading">
               <div>
                 <div class="eyebrow">RELEASE CHANNEL</div>
-                <h3 id="update-channel-title">更新チャンネルの切り替え</h3>
+                <h3 id="update-channel-title">自動更新先の切り替え</h3>
                 <p>β版から製品版（安定版）へ、またはβ版のまま先行更新を受け取る設定です。</p>
               </div>
               <span class="update-channel-lock">β版専用機能</span>
@@ -730,7 +794,7 @@
 
           <div class="release-history-section">
             <div class="release-history-heading">
-              <div><h3>バージョン更新履歴</h3><p>最新5件を表示。項目を押して変更点を展開できます。</p></div>
+              <div><h3>アプリ内の詳細な変更履歴</h3><p>CHANGELOGの最新5件を表示。上の公開履歴とは別に、開発途中の変更も検索できます。</p></div>
               <span class="release-history-source">CHANGELOG</span>
             </div>
             <div class="release-history-tools">
@@ -747,7 +811,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v1.0.1-beta.138</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.0.1-beta.139</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
