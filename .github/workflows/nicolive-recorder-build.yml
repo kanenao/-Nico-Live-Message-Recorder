@@ -125,6 +125,6 @@ jobs:
             $_.Extension -in '.exe','.zip','.blockmap' -or $_.Name -eq 'beta.yml'
           } | ForEach-Object { $_.FullName })
           gh release view $tag --json url --jq .url
-          if ($LASTEXITCODE -eq 0) { Write-Host 'Alpha release already exists; skipping duplicate publication'; exit 0 }
-          gh release create $tag @assets --title "Nico Live Message Recorder $tag" --notes '開発用α版。実放送での録画成功は未検証です。詳細はCHANGELOG.mdを参照してください。' --prerelease --latest=false --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -eq 0) { Write-Host 'Beta release already exists; skipping duplicate publication'; exit 0 }
+          gh release create $tag @assets --title "Nico Live Message Recorder $tag" --notes '開発用β版。新機能と変更内容はCHANGELOG.mdを参照してください。' --prerelease --latest=false --target $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw "Failed to publish $tag" }
