@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseEditionReleases, fetchEditionReleases, API_URL } = require("../electron/edition-releases.cjs");
+const { parseEditionReleases, extractChangelogNotes, fetchEditionReleases, API_URL } = require("../electron/edition-releases.cjs");
 
 function release(version, edition = "beta", opts = {}) {
   const tag = "v" + version;
@@ -64,4 +64,25 @@ test("fetch uses one fixed official API and reports network errors", async () =>
     fetchEditionReleases(async () => ({ ok: false, status: 403 })),
     /HTTP 403/
   );
+});
+
+test("tagged CHANGELOG notes are used when a published beta or stable release has generic notes", async () => {
+  const beta = release("1.0.1-beta.139", "beta", { body: "詳細はCHANGELOG.mdを参照してください。" });
+  const stable = release("1.0.0", "stable", { body: "" });
+  let rawDownloads = 0;
+  const result = await fetchEditionReleases(async (url) => {
+    if (url === API_URL) return { ok: true, json: async () => [beta, stable] };
+    rawDownloads++;
+    if (url.endsWith("/v1.0.1-beta.139/CHANGELOG.md")) {
+      return { ok: true, text: async () => "## 1.0.1-beta.139\n\n- **β版**：画面改善\n\n## 1.0.1-beta.138\n\n- previous" };
+    }
+    if (url.endsWith("/v1.0.0/CHANGELOG.md")) {
+      return { ok: true, text: async () => "## 1.0.0\n\n- **製品版**：安定化\n" };
+    }
+    throw new Error("Unexpected external source: " + url);
+  });
+  assert.equal(rawDownloads, 2);
+  assert.equal(result.beta[0].notes, "- **β版**：画面改善");
+  assert.equal(result.stable[0].notes, "- **製品版**：安定化");
+  assert.equal(extractChangelogNotes("## 1.0.0\n\n- foo\n\n## 1.0.1\n- bar", "1.0.0"), "- foo");
 });
