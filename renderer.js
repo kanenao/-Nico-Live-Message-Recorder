@@ -4348,14 +4348,12 @@ async function composeCommentVideo() {
     ]);
     if (!finalStream.getVideoTracks().length) throw new Error("合成動画の映像トラックを作成できません。");
 
-    const mimeTypes = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm;codecs=vp9",
-      "video/webm"
-    ];
-    const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported(type));
-    if (!mimeType) throw new Error("この環境で利用できるWebMエンコーダーがありません。");
+    const supportedMimeTypes = window.nicoCommentComposition.supportedCompositionMimeTypes(
+      MediaRecorder, audioTracks.length > 0
+    );
+    if (!supportedMimeTypes.length) {
+      throw new Error("この環境で利用できるWebMエンコーダーがありません。アプリやグラフィックドライバーの更新を確認してください。");
+    }
 
     const output = await api.startCompose({
       format: composeOptions.outputFormat,
@@ -4448,9 +4446,27 @@ async function composeCommentVideo() {
       }
     };
 
-    const recorderOptions = { mimeType, videoBitsPerSecond: composeOptions.bitrate };
+    const recorderOptions = { videoBitsPerSecond: composeOptions.bitrate };
     if (audioTracks.length) recorderOptions.audioBitsPerSecond = 160000;
-    recorder = new MediaRecorder(finalStream, recorderOptions);
+    // A codec may pass isTypeSupported() and still fail at construction.
+    // Try the next supported codec without discarding the source files.
+    let selectedMimeIndex = -1;
+    let encoderFailure = null;
+    for (let index = 0; index < supportedMimeTypes.length; index += 1) {
+      try {
+        recorder = new MediaRecorder(finalStream, {
+          ...recorderOptions, mimeType: supportedMimeTypes[index]
+        });
+        selectedMimeIndex = index;
+        break;
+      } catch (error) {
+        encoderFailure = error;
+      }
+    }
+    if (!recorder) {
+      throw new Error("WebMエンコーダーを準備できませんでした。画質・解像度を下げて再試行してください：" +
+        (encoderFailure?.message || "対応するエンコーダーがありません"));
+    }
     recorder.ondataavailable = (event) => {
       if (!event.data || !event.data.size || writeError) return;
       // MediaRecorder can generate chunks much faster than a slow/full drive
@@ -4550,7 +4566,50 @@ async function composeCommentVideo() {
       }
     }, 4000);
 
-    recorder.start(1000);
+    // Some Windows GPU/Chromium combinations construct a MediaRecorder
+    // successfully but throw when start() is called. Retry the remaining
+    // supported WebM codecs before reporting failure to the user.
+    const recorderHandlers = {
+      ondataavailable: recorder.ondataavailable,
+      onstop: recorder.onstop,
+      onerror: recorder.onerror
+    };
+    let encoderStartError = null;
+    let encoderStarted = false;
+    for (let index = selectedMimeIndex; index < supportedMimeTypes.length; index += 1) {
+      let candidateRecorder = null;
+      try {
+        candidateRecorder = index === selectedMimeIndex
+          ? recorder
+          : new MediaRecorder(finalStream, {
+            ...recorderOptions, mimeType: supportedMimeTypes[index]
+          });
+        candidateRecorder.ondataavailable = recorderHandlers.ondataavailable;
+        candidateRecorder.onstop = recorderHandlers.onstop;
+        candidateRecorder.onerror = recorderHandlers.onerror;
+        candidateRecorder.start(1000);
+        recorder = candidateRecorder;
+        encoderStarted = true;
+        break;
+      } catch (error) {
+        encoderStartError = error;
+        if (candidateRecorder) {
+          // An unsuccessfully started recorder must never run the finalizer.
+          candidateRecorder.ondataavailable = null;
+          candidateRecorder.onstop = null;
+          candidateRecorder.onerror = null;
+          if (candidateRecorder.state !== "inactive") {
+            try { candidateRecorder.stop(); } catch (_) {}
+          }
+        }
+      }
+    }
+    if (!encoderStarted) {
+      recorder = null;
+      throw new Error("動画のWebMエンコーダーを開始できませんでした。" +
+        " 出力解像度を720p、FPSを30、画質を標準にして再試行してください。" +
+        (encoderStartError?.message ? " 詳細：" + encoderStartError.message : ""));
+    }
     cancelButton.disabled = false;
     lastPlaybackAdvanceAt = Date.now();
     lastRenderedFrameAt = Date.now();
@@ -4598,8 +4657,11 @@ async function composeCommentVideo() {
       await withDeadline(() => api.cancelCompose(), SAVE_STALL_MS,
         "動画生成のキャンセル").catch(() => {});
     }
-    setCompositionProgress(0, "エラー");
-    showToast(error.message || "コメント付き動画を生成できませんでした。", true);
+    const message = error?.message || "コメント付き動画を生成できませんでした。";
+    // Toasts disappear; leave the exact failure visible for troubleshooting.
+    setCompositionProgress(0, "生成エラー：" + message);
+    console.error("コメント付き動画の生成に失敗:", error);
+    showToast(message, true);
   } finally {
     await cleanup();
   }
