@@ -3328,6 +3328,8 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
   if (streamlinkProcess) throw new Error("映像録画はすでに実行中です。");
   const liveId = safeLiveId(value);
   const timeshift = Boolean(options && options.timeshift);
+  const chase = options && options.chase === true;
+  if (chase && timeshift) throw new Error("追っかけ録画と過去配信録画は同時に指定できません。");
   const toolStatus = getVideoToolStatus();
   const streamlinkPath = toolStatus.streamlinkPath;
   if (!streamlinkPath) {
@@ -3358,14 +3360,15 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
     quality,
     outputPath,
     ffmpegPath,
-    timeshift
+    timeshift,
+    chase
   });
 
   send("video:state", {
     starting: true,
     liveId,
     path: outputPath,
-    message: "Streamlinkのニコ生プラグインを確認しています（映像データはまだ未受信です）…"
+    message: chase ? "追っかけ録画を要求しています（取得開始位置は未確認です）…" : "Streamlinkのニコ生プラグインを確認しています（映像データはまだ未受信です）…"
   });
   try {
     await verifyStreamlinkPlugin(streamlinkPath, liveId, runtime.configPath, { env: runtime.env });
@@ -3484,6 +3487,15 @@ async function startVideoInternal(value, quality, displayName = "", broadcasterI
 }
 
 ipcMain.handle("video:start", async (_event, value, quality, options = {}) => {
+  if (options && options.chase === true) {
+    if (options.timeshift) throw new Error("追っかけ録画と過去配信録画は同時に指定できません。");
+    if (provider || commentWriter || commentFinalizing || liveArticleSessionActive) {
+      throw new Error("追っかけ録画は試験中の映像・音声専用機能です。コメント接続・放送記事を終了してください。");
+    }
+    if (streamlinkProcess || streamlinkFinalizePromise || timeshiftCommentFetchActive) {
+      throw new Error("別の録画または保存処理が実行中です。終了後に再試行してください。");
+    }
+  }
   if (!(options && options.timeshift)) {
     if (timeshiftCommentFetchActive) {
       throw new Error("過去配信のコメント取得中です。完了後に録画を開始してください。");
