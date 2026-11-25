@@ -47,6 +47,7 @@ let commentCaptureState = "disconnected";
 let videoCaptureState = "idle";
 let captureStopInProgress = false;
 let currentRecordingIsTimeshift = false;
+let currentRecordingIsChase = false;
 let commentCount = 0;
 let eventCount = 0;
 let displayedComments = 0;
@@ -615,6 +616,7 @@ async function clearUserSession() {
 }
 
 async function connectLive() {
+  if (currentRecordingIsChase) return showToast("追っかけ録画中はコメントを接続できません。先に録画を停止してください。", true);
   if (captureStopInProgress) return showToast("録画・コメントの停止完了後に接続してください。", true);
   const liveId = normalizeId(liveInput.value);
   if (!liveId) {
@@ -671,6 +673,57 @@ function formatDuration(milliseconds) {
   return hours + ":" + minutes + ":" + seconds;
 }
 
+// Experimental chase recording intentionally saves only video/audio until
+// archived comments can be aligned against the actual first media segment.
+async function startChaseRecording(liveId) {
+  if (commentCaptureState === "connected" || commentCaptureState === "connecting") {
+    showToast("追っかけ録画を開始する前にコメント接続を切断してください。", true);
+    return;
+  }
+  recordStartInProgress = true;
+  recordButton.disabled = true;
+  // The archive/standalone mode uses stopVideo, not stopCapture.
+  currentRecordingIsTimeshift = true;
+  currentRecordingIsChase = true;
+  currentCaptureTarget = null;
+  if (currentLiveId !== liveId) currentProgramMetadata = {};
+  currentLiveId = liveId;
+  liveInput.value = liveId;
+  currentProgramMetadata = { ...currentProgramMetadata, liveId };
+  if (stopRecordButton) stopRecordButton.textContent = "映像録画を停止";
+  renderSessionProgramInfo();
+  renderLiveBroadcasts();
+  setCaptureText("comment-file", "コメント：追っかけ録画では未対応（映像・音声のみ）");
+  setCaptureDetail("追っかけ録画を要求中…視聴権限・配信側の対応状況により取得できない場合があります。");
+  try {
+    requireCaptureApi("startVideo");
+    const quality = byId("record-quality")?.value || "best";
+    const video = await api.startVideo(liveId, quality, { chase: true });
+    // A short or interrupted stream may finalize before the IPC returns.
+    // Preserve the actual completion/error message and the final file path.
+    if (currentRecordingIsChase && videoCaptureState === "recording") {
+      setCaptureText("video-file", "保存先：" + (video.path || ""));
+      recordStartedAt = video.startedAt ? new Date(video.startedAt).getTime() : Date.now();
+      setVideoState(true);
+      startRecordClock();
+      setCaptureDetail("追っかけ録画のデータ受信を確認しました。実際の録画開始位置は未検証です。保存先：" + (video.path || "未取得"));
+      showToast("追っかけ録画（試験）の映像・音声を取得しています。");
+    }
+  } catch (error) {
+    currentRecordingIsTimeshift = false;
+    currentRecordingIsChase = false;
+    setVideoState(false);
+    const message = "追っかけ録画に失敗しました：" + (error.message || String(error));
+    setCaptureDetail(message);
+    showToast(message, true);
+  } finally {
+    recordStartInProgress = false;
+    recordButton.disabled = captureStopInProgress || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
+    renderLiveBroadcasts();
+  }
+  processMonitorAutoQueue();
+}
+
 async function startVideoRecording(target = null) {
   const selectedTarget = target && typeof target === "object" && target.liveId ? target : null;
   if (captureStopInProgress || recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
@@ -683,6 +736,7 @@ async function startVideoRecording(target = null) {
     return;
   }
 
+  if (!selectedTarget && byId("record-mode")?.value === "chase") return startChaseRecording(liveId);
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
   currentRecordingIsTimeshift = timeshift;
   if (stopRecordButton) stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
@@ -836,7 +890,7 @@ async function stopVideoRecording() {
   captureStopInProgress = true;
   setVideoState(true, true);
   setCaptureDetail(timeshift
-    ? "タイムシフト映像を停止・保存中です…"
+    ? "映像録画を停止・保存中です…"
     : "録画ファイルを確定してからコメント接続と保存処理を停止します…");
   try {
     requireCaptureApi(timeshift ? "stopVideo" : "stopCapture");
@@ -944,6 +998,7 @@ function handleVideoState(payload) {
   clearRecordClock();
   currentCaptureTarget = null;
   currentRecordingIsTimeshift = false;
+  currentRecordingIsChase = false;
   renderSessionProgramInfo();
   setVideoState(false);
   if (!captureStopInProgress) processMonitorAutoQueue();
@@ -1691,6 +1746,7 @@ function handleMonitorLiveDetected(payload) {
 }
 
 async function processMonitorAutoQueue() {
+  if (recordStartInProgress || currentRecordingIsChase) return;
   if (monitorAutoProcessing || monitorAutoQueue.length === 0) return;
   // Never interrupt an existing manual or automatic recording.
   if (captureStopInProgress || recordButton.disabled || recordStartedAt) return;
@@ -3515,7 +3571,13 @@ try {
 // one preload/event-listener error from aborting all subsequent button bindings.
 // Primary capture controls are registered at the top of this file.
 byId("record-mode").addEventListener("change", () => {
-  const timeshift = byId("record-mode").value === "timeshift";
+  const mode = byId("record-mode").value;
+  if (mode === "chase") {
+    byId("record-mode-hint").textContent = "追っかけ再生に対応し視聴権限がある放送で、取得可能な最初の映像・音声から録画を試みます。試験機能のため実際の開始位置・過去コメント同期は未保証です。通常録画には自動切り替えしません。";
+    recordButton.textContent = "● 追っかけ録画を開始（試験）";
+    return;
+  }
+  const timeshift = mode === "timeshift";
   byId("record-mode-hint").textContent = timeshift
     ? "視聴期限内で、ログイン中アカウントに視聴権限があるタイムシフトを最初から映像・音声と過去コメントを取得します。コメントAPIが利用できない場合も映像録画は継続します。"
     : "配信中の放送は映像・音声とコメントを同時に保存します。コメントだけ保存する場合は「コメントのみ接続」を選んでください。";

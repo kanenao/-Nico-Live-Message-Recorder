@@ -246,3 +246,58 @@ test("Streamlink failures explain Niconico access, authentication, and network d
   assert.match(network, /通信状態を確認/);
   assert.match(network, /Streamlink詳細: WebSocket connection timed out/);
 });
+
+
+test("chase recording opts in separately from live and archived recordings", () => {
+  const options = {configPath:"config",liveId:"lv123456789",outputPath:"video.ts"};
+  const chase = buildStreamlinkArgs({...options,chase:true});
+  assert.ok(chase.includes("--niconico-chase-play"));
+  assert.ok(chase.includes("--hls-live-restart"));
+  assert.equal(chase.includes("--niconico-timeshift-offset"), false);
+  for (const other of [options,{...options,timeshift:true}]) {
+    const args = buildStreamlinkArgs(other);
+    assert.equal(args.includes("--niconico-chase-play"), false);
+    assert.equal(args.includes("--hls-live-restart"), false);
+  }
+  assert.throws(() => buildStreamlinkArgs({...options,chase:true,timeshift:true}), /同時に指定/);
+});
+
+test("chase plugin patch is opt-in, idempotent and refuses unexpected upstream structures", () => {
+  const { patchNicoLiveChaseSource } = require("../scripts/patch-nicolive.cjs");
+  const original = [
+    '    def send_playerversion(self):',
+    '        data = {"chasePlay": False,}',
+    '    def send_getpermit(self):',
+    '        data = {"chasePlay": False,}',
+    '@pluginargument(',
+    '    "timeshift-offset",',
+    ')',
+    'class NicoLive(Plugin):',
+    '    def _get_streams(self):',
+    '        self.wsclient = NicoLiveWsClient(self.session, wss_api_url)',
+    '        self.wsclient.start()',
+    ''
+  ].join("\n");
+  const patched = patchNicoLiveChaseSource(original);
+  assert.match(patched, /argument_name="niconico-chase-play"/);
+  assert.match(patched, /action="store_true"/);
+  assert.equal(patched.split('getattr(self, "nlmr_chase_play", False)').length, 3);
+  assert.ok(patched.indexOf('self.wsclient.nlmr_chase_play = bool(self.get_option("chase-play"))') < patched.indexOf("self.wsclient.start()"));
+  assert.equal(patchNicoLiveChaseSource(patched), patched);
+  assert.throws(() => patchNicoLiveChaseSource(original.replace('"chasePlay": False,','"chasePlay": True,')), /安全に確認/);
+});
+
+test("experimental chase UI uses standalone recording IPC, not live comment synchronization", () => {
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root,"index.html"),"utf8");
+  const renderer = fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+  const main = fs.readFileSync(path.join(root,"electron/main.cjs"),"utf8");
+  assert.match(html, /<option value="chase">追っかけ録画/);
+  const chase = renderer.slice(renderer.indexOf("async function startChaseRecording"), renderer.indexOf("async function startVideoRecording"));
+  assert.match(chase, /api\.startVideo\(liveId, quality, \{ chase: true \}\)/);
+  assert.match(chase, /currentRecordingIsTimeshift = true/);
+  assert.match(chase, /コメント：追っかけ録画では未対応/);
+  assert.doesNotMatch(chase, /api\.startCapture\(/);
+  assert.match(main, /if \(options && options\.chase === true\)/);
+  assert.match(main, /追っかけ録画は試験中の映像・音声専用機能/);
+});
