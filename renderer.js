@@ -1835,6 +1835,47 @@ async function registerRankingMonitor(item) {
     renderIndependentRanking();
   }
 }
+function appendRankingImage(parent,url,className,label) {
+  if(!url)return;
+  try{
+    const u=new URL(url);
+    if(u.protocol!=="https:"||u.username||u.password||u.port||
+       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")))return;
+    const img=document.createElement("img");
+    img.className=className;img.alt=label;img.loading="lazy";img.referrerPolicy="no-referrer";
+    img.addEventListener("error",()=>img.remove(),{once:true});
+    img.src=u.href;parent.appendChild(img);
+  }catch{}
+}
+function appendRankingTrend(cell,item) {
+  const history=Array.isArray(item.rankHistory)?item.rankHistory.filter(s=>Number.isFinite(s.at)&&Number.isInteger(s.rank)&&s.rank>0):[];
+  if(history.length<2)return;
+  const first=history[0].at,last=history.at(-1).at;
+  if(last<=first)return;
+  const min=Math.min(...history.map(s=>s.rank)),max=Math.max(...history.map(s=>s.rank));
+  const points=history.map(s=>[3+(s.at-first)/(last-first)*66,3+(max===min?10:(s.rank-min)/(max-min)*20)]);
+  const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("viewBox","0 0 72 26");svg.setAttribute("class","ranking-trend");
+  svg.setAttribute("role","img");svg.setAttribute("aria-label","順位推移： "+history.map(s=>s.rank+"位").join(" → "));
+  const line=document.createElementNS("http://www.w3.org/2000/svg","polyline");
+  line.setAttribute("points",points.map(p=>p.join(",")).join(" "));
+  line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");
+  svg.appendChild(line);cell.appendChild(svg);
+}
+function refreshRankingActions() {
+  const fresh=isRankingFresh(rankingSnapshot);
+  const busy=captureStopInProgress||recordStartInProgress||Boolean(recordStartedAt)||
+    videoCaptureState==="recording"||videoCaptureState==="stopping"||monitorAutoProcessing;
+  for(const button of document.querySelectorAll("#ranking-list button[data-ranking-record]")){
+    const active=Boolean(currentCaptureTarget?.liveId===button.dataset.rankingRecord&&recordStartedAt);
+    button.textContent=active?"● 録画中":"● 録画";
+    button.disabled=busy||!fresh;
+  }
+  for(const button of document.querySelectorAll("#ranking-list button[data-ranking-monitor]")){
+    const pending=rankingMonitorPending.has(button.dataset.rankingMonitor);
+    button.textContent=pending?"確認中…":"＋監視";button.disabled=pending||!fresh;
+  }
+}
 function renderIndependentRanking() {
   const list = byId("ranking-list");
   if (!list || !rankingSnapshot) return;
@@ -1849,11 +1890,18 @@ function renderIndependentRanking() {
     videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
   for (const item of rows) {
     const tr = document.createElement("tr");
-    rankingCell(tr, item.rank + (item.rankChange>0?" ↑"+item.rankChange:item.rankChange<0?" ↓"+Math.abs(item.rankChange):""), "ranking-rank");
+    const rankCell=rankingCell(tr, item.rank + (item.rankChange>0?" ↑"+item.rankChange:item.rankChange<0?" ↓"+Math.abs(item.rankChange):""), "ranking-rank");
+    appendRankingTrend(rankCell,item);
     const info = rankingCell(tr,null,"ranking-program");
     const title=document.createElement("strong");title.textContent=item.title||item.liveId;
     const meta=document.createElement("small");meta.textContent=(item.name||"配信者未取得")+" · "+item.liveId+(item.startedAt?" · "+formatBroadcastElapsed(item.startedAt):"");
-    info.append(title,meta);
+    const identity=document.createElement("div");identity.className="ranking-identity";
+    const picture=document.createElement("div");picture.className="ranking-media";
+    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
+    appendRankingImage(picture,item.iconUrl,"ranking-icon","配信者アイコン");
+    if(!picture.children.length){const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";picture.appendChild(placeholder);}
+    const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
+    identity.append(picture,labels);info.appendChild(identity);
     rankingCell(tr,rankingNumber(item.points),"ranking-points");
     rankingCell(tr,rankingNumber(item.visitors));
     rankingCell(tr,rankingNumber(item.comments));
@@ -1861,7 +1909,7 @@ function renderIndependentRanking() {
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
     const isRecording=Boolean(currentCaptureTarget?.liveId===item.liveId&&recordStartedAt);
-    record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
+    record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
     record.addEventListener("click",async()=>{
       if(record.disabled||!isRankingFresh(rankingSnapshot)){
         showToast("ランキングの情報が古くなりました。更新してください。",true);return;
@@ -1873,7 +1921,7 @@ function renderIndependentRanking() {
     watch.addEventListener("click",()=>api.openWatch(item.liveId).catch(error=>showToast(error.message||"視聴ページを開けませんでした。",true)));
     const monitor=document.createElement("button");monitor.type="button";monitor.className="button button-outline button-small";
     const pending=rankingMonitorPending.has(item.liveId);
-    monitor.textContent=pending?"確認中…":"＋監視";
+    monitor.dataset.rankingMonitor=item.liveId;monitor.textContent=pending?"確認中…":"＋監視";
     monitor.disabled=pending||!isRankingFresh(rankingSnapshot);
     monitor.title="公式の番組情報で配信者を確認して監視リストに登録";
     monitor.addEventListener("click",()=>void registerRankingMonitor(item));
@@ -1909,7 +1957,7 @@ function configureRankingRefresh(active) {
   void refreshIndependentRanking();
   // Refresh the disabled/REC display even if auto-refresh is off.
   rankingTimer=setInterval(()=>{
-    renderIndependentRanking();
+    refreshRankingActions();
     if(byId("ranking-auto").checked&&!rankingLoading&&
        (!rankingSnapshot||Date.now()-Date.parse(rankingSnapshot.checkedAt)>=90000))void refreshIndependentRanking();
   },5000);

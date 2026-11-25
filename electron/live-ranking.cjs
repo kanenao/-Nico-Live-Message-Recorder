@@ -39,6 +39,19 @@ function time(v) {
   const ms=n>0&&n<1e12?n*1000:n;
   return Number.isFinite(ms)&&ms>0&&ms<8.64e15?new Date(ms).toISOString():"";
 }
+function rankingImageUrl(value) {
+  if(typeof value!=="string"||value.length>2048)return "";
+  try{
+    const u=new URL(value);
+    if(u.protocol!=="https:"||u.username||u.password||u.port||
+       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")))return "";
+    return u.href;
+  }catch{return "";}
+}
+function firstRankingImage(...values){
+  for(const value of values){const url=rankingImageUrl(value);if(url)return url;}
+  return "";
+}
 function jsonRow(raw) {
   if(!raw||typeof raw!=="object"||Array.isArray(raw)) return null;
   const p=raw.program&&typeof raw.program==="object"?raw.program:raw;
@@ -53,6 +66,8 @@ function jsonRow(raw) {
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
     broadcasterId:/^\d{1,15}$/.test(String(provider.id??p.userId??""))?String(provider.id??p.userId):"",
     startedAt:time(p.schedule?.beginTime??p.beginAt??p.startTime??p.startedAt),
+    iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small),
+    thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.url,p.thumbnail?.middle,p.thumbnails?.large,p.thumbnails?.small),
     visitors:count(statistics.watchCount??statistics.visitorCount??p.watchCount??p.visitorCount??p.viewCounter),
     comments:count(statistics.commentCount??p.commentCount??p.commentCounter)};
 }
@@ -92,7 +107,7 @@ function parseRankingPage(html) {
     if(!id)continue;
     const title=clean(a[1].match(/\b(?:title|aria-label)\s*=\s*(["'])(.*?)\1/i)?.[2]||a[2]);
     if(!title||/^(視聴|見る|開く|放送ページ|LIVE|lv\d+)$/i.test(title))continue;
-    rows.push({liveId:id,title,name:"",broadcasterId:"",startedAt:"",visitors:null,comments:null});
+    rows.push({liveId:id,title,name:"",broadcasterId:"",startedAt:"",iconUrl:"",thumbnailUrl:"",visitors:null,comments:null});
   }
   return unique(rows);
 }
@@ -128,7 +143,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
       let item=byId.get(row.liveId);
       if(!item){item={...row,sourceRanks:{},commentSamples:{},points:0};byId.set(row.liveId,item);}
       if(row.comments!=null)item.commentSamples[source.id]=row.comments;
-      for(const field of ["name","broadcasterId","startedAt"])if(!item[field]&&row[field])item[field]=row[field];
+      for(const field of ["name","broadcasterId","startedAt","iconUrl","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
       item.sourceRanks[source.id]=i+1;
@@ -156,7 +171,16 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
     row.previousRank=old?.rank??null;
     return row;
   }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
-  return rows.map((row,i)=>({...row,rank:i+1,rankChange:row.previousRank==null?null:row.previousRank-(i+1)}));
+  return rows.map((row,i)=>{
+    const rank=i+1;
+    const old=prior.get(row.liveId);
+    // Do not join across changed coverage or long interruptions. A missing
+    // program is not interpreted as last place. Keep at most one hour / 40 samples.
+    const history=old&&elapsed>0&&elapsed<=3&&Array.isArray(old.rankHistory)
+      ?old.rankHistory.filter(sample=>Number.isFinite(sample.at)&&sample.at>=now-3600000&&sample.at<now).slice(-39):[];
+    return {...row,rank,rankChange:row.previousRank==null?null:row.previousRank-rank,
+      rankHistory:[...history,{at:now,rank}]};
+  });
 }
 function createRankingService(options={}) {
   const fetchImpl=options.fetchImpl||globalThis.fetch;
@@ -196,4 +220,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget};
+module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl};
