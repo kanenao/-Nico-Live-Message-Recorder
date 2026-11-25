@@ -724,6 +724,17 @@ async function startChaseRecording(liveId) {
   processMonitorAutoQueue();
 }
 
+function syncSelectedRecordingMode(target) {
+  if(!target)return;
+  const selector=byId("record-mode");
+  if(!selector)return;
+  const mode=target.chase===true?"chase":"live";
+  if(selector.value!==mode){
+    selector.value=mode;
+    selector.dispatchEvent(new Event("change"));
+  }
+}
+
 async function startVideoRecording(target = null) {
   const selectedTarget = target && typeof target === "object" && target.liveId ? target : null;
   if (captureStopInProgress || recordStartInProgress || recordStartedAt || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing) {
@@ -736,6 +747,7 @@ async function startVideoRecording(target = null) {
     return;
   }
 
+  syncSelectedRecordingMode(selectedTarget);
   if (selectedTarget?.chase === true || (!selectedTarget && byId("record-mode")?.value === "chase")) return startChaseRecording(liveId);
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
   currentRecordingIsTimeshift = timeshift;
@@ -2041,8 +2053,6 @@ function renderIndependentRanking() {
       if(!window.confirm("追っかけ録画（試験）を開始しますか？\n映像・音声のみ保存し、過去コメントは取得しません。放送の対応状況により開始できない場合があります。"))return;
       if(!isRankingFresh(rankingSnapshot))return showToast("ランキングが古くなりました。更新してください。",true);
       setActivePage("record");
-      byId("record-mode").value="chase";
-      byId("record-mode").dispatchEvent(new Event("change"));
       await startVideoRecording({liveId:item.liveId,chase:true});
     });
     actions.append(record,watch,monitor,chase);list.appendChild(tr);
