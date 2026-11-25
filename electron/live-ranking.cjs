@@ -62,11 +62,19 @@ function jsonRow(raw) {
   if(p.isOnAir===false)return null;
   const provider=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
   const statistics=p.statistics??p.stats??raw.statistics??raw.stats??{};
+  const providerType=String(provider.programProviderType??provider.type??"").trim().toLowerCase();
+  const numeric=String(provider.id??p.userId??"").trim();
+  // Official-format providers include programProviderId and a provider type.
+  // Keep the legacy untyped numeric-ID format for ranking lists only.
+  // A named channel must never be treated as a user.
+  const hasIdentityLink=[provider.url,provider.pageUrl,provider.userPageUrl,provider.profileUrl].some(v=>typeof v==="string"&&v);
+  const broadcasterId=providerType||hasIdentityLink?officialSupplierUserId(provider):
+    /^\d{1,15}$/.test(numeric)?numeric:"";
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
-    broadcasterId:/^\d{1,15}$/.test(String(provider.id??p.userId??""))?String(provider.id??p.userId):"",
-    startedAt:time(p.schedule?.beginTime??p.beginAt??p.startTime??p.startedAt),
-    iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small),
-    thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.url,p.thumbnail?.middle,p.thumbnails?.large,p.thumbnails?.small),
+    broadcasterId,
+    startedAt:time(p.schedule?.beginTime??p.beginTime??p.beginAt??p.startTime??p.startedAt),
+    iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small,provider.thumbnailUrl),
+    thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnail?.middle,p.thumbnails?.large,p.thumbnails?.small),
     visitors:count(statistics.watchCount??statistics.visitorCount??p.watchCount??p.visitorCount??p.viewCounter),
     comments:count(statistics.commentCount??p.commentCount??p.commentCounter)};
 }
@@ -193,7 +201,9 @@ function parseOfficialRankingDetails(html,id) {
       if(!p||typeof p!=="object"||!clean(p.title))continue;
       const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id);
       if(declared&&declared!==id)return null;
-      const supplier=p.supplier??p.programProvider??{};
+      // Some public watch payloads carry supplier metadata next to program.
+      // Use it only for an explicitly matching program, never an unrelated page.
+      const supplier=p.supplier??p.programProvider??(declared===id?data.supplier??data.programProvider:null)??{};
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
@@ -276,9 +286,11 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       const entry=cache.get(row.liveId);
       const d=entry&&entry.expiresAt>now()?entry.details:null;
       if(!d)return row;
-      return {...row,title:d.title||row.title,name:d.name||row.name,
+      const conflict=d.broadcasterId&&row.broadcasterId&&d.broadcasterId!==row.broadcasterId;
+      // Prefer verified official identity; do not retain a mismatched name or icon.
+      return {...row,title:d.title||row.title,name:d.name||(conflict?"":row.name),
         broadcasterId:d.broadcasterId,startedAt:d.startedAt||row.startedAt,
-        iconUrl:d.iconUrl||row.iconUrl,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl};
+        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl};
     });
   };
 }
@@ -324,7 +336,11 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
       if(!item){item={...row,sourceRanks:{},commentSamples:{},visitorSamples:{},points:0};byId.set(row.liveId,item);}
       if(row.comments!=null)item.commentSamples[source.id]=row.comments;
       if(row.visitors!=null)item.visitorSamples[source.id]=row.visitors;
-      for(const field of ["name","broadcasterId","startedAt","iconUrl","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
+      for(const field of ["startedAt","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
+      const identityConflict=item.broadcasterId&&row.broadcasterId&&item.broadcasterId!==row.broadcasterId;
+      if(!identityConflict){
+        for(const field of ["name","broadcasterId","iconUrl"])if(!item[field]&&row[field])item[field]=row[field];
+      }
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
       item.sourceRanks[source.id]=i+1;

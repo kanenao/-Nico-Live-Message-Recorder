@@ -571,3 +571,41 @@ test("HTML-only ranking rejects untrusted and ambiguous thumbnails",()=>{
     link("lv456789",'<img src="https://cdn.nimg.jp/usericon/123.jpg">'));
   assert.deepEqual(rows.map(r=>r.thumbnailUrl),["https://cdn.nimg.jp/a.jpg","","",""]);
 });
+
+
+test("ranking JSON understands official provider identifiers, rejects explicit channels and preserves official artwork",()=>{
+  const provider={name:"配信者",programProviderType:"user",programProviderId:"123456"};
+  const p={id:"lv123456",title:"番組",beginTime:1700000000,programProvider:provider,thumbnail:{huge:"https://cdn.nimg.jp/thumb.jpg"}};
+  const [row,channel]=parseRankingPage(page([p,{...p,id:"lv234567",programProvider:{...provider,programProviderType:"channel",id:"654321"}}]));
+  assert.equal(row.broadcasterId,"123456");
+  assert.equal(row.startedAt,new Date(1700000000000).toISOString());
+  assert.equal(row.thumbnailUrl,p.thumbnail.huge);
+  assert.equal(channel.broadcasterId,"");
+});
+test("cross-source duplicate metadata never fills artwork from a conflicting provider",()=>{
+  const a={id:"a",ok:true,rows:[{liveId:"lv123456",title:"番組",broadcasterId:"123456",comments:10}]};
+  const b={id:"b",ok:true,rows:[{liveId:"lv123456",title:"番組",broadcasterId:"654321",name:"別人",iconUrl:"https://cdn.nimg.jp/other.jpg",comments:20}]};
+  const [row]=buildRanking([a,b]);
+  assert.equal(row.broadcasterId,"123456");
+  assert.ok(!row.name);
+  assert.ok(!row.iconUrl);
+  assert.equal(row.comments,20);
+});
+test("official enrichment does not keep conflicting artwork when verified supplier changes",async()=>{
+  const {createRankingDetailEnricher}=require("../electron/live-ranking.cjs");
+  const enrich=createRankingDetailEnricher(async(url)=>{
+    if(url.includes("/watch/"))return {ok:true,text:async()=>officialPage({nicoliveProgramId:"lv123456",title:"番組",supplier:{type:"user",id:"654321",name:"正しい配信者"}})};
+    return {ok:false,status:404};
+  });
+  const [row]=await enrich([{liveId:"lv123456",title:"番組",name:"別人",broadcasterId:"123456",iconUrl:"https://cdn.nimg.jp/other.jpg"}]);
+  assert.equal(row.broadcasterId,"654321");
+  assert.equal(row.name,"正しい配信者");
+  assert.equal(row.iconUrl,"");
+});
+test("official watch payload uses top-level supplier only for the matching declared program",()=>{
+  const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+  const payload={program:{nicoliveProgramId:"lv123456",title:"番組"},supplier:{type:"user",id:"123456",name:"配信者"}};
+  const html='<script id="embedded-data" data-props="'+JSON.stringify(payload).replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'"></script>';
+  assert.equal(parseOfficialRankingDetails(html,"lv123456").broadcasterId,"123456");
+  assert.equal(parseOfficialRankingDetails(html,"lv999999"),null);
+});
