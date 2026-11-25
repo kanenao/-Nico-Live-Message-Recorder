@@ -2964,7 +2964,7 @@ const getIndependentLiveRanking = createRankingService({ enrichDetails: true });
 ipcMain.handle("ranking:list", async () => {
   const snapshot=await getIndependentLiveRanking();
   return {...snapshot,rows:snapshot.rows.map(row=>{
-    const activity=provider&&commentWriter&&!timeshiftCommentFetchActive?rankingActivity.snapshot(row.liveId):null;
+    const activity=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(row.liveId):null;
     return {...row,activePeople:activity?.count??null,activePeopleComplete:activity?.complete??false};
   })};
 });
