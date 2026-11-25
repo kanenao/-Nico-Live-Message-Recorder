@@ -1834,7 +1834,9 @@ function renderIndependentRanking() {
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
     record.textContent="● 録画";record.disabled=busy||rankingSnapshot.stale||Date.now()-Date.parse(rankingSnapshot.dataAt)>180000;
     record.addEventListener("click",async()=>{
-      if(record.disabled)return;
+      if(record.disabled||rankingSnapshot.stale||Date.now()-Date.parse(rankingSnapshot.dataAt)>180000){
+        showToast("ランキングの情報が古くなりました。更新してください。",true);return;
+      }
       setActivePage("record");
       await startVideoRecording({liveId:item.liveId,title:item.title,name:item.name,broadcasterId:item.broadcasterId,startedAt:item.startedAt});
     });

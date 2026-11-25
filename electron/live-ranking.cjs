@@ -133,7 +133,10 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
       item.sourceRanks[source.id]=i+1;
     });
   }
-  const prior=new Map(previous.map(r=>[r.liveId,r]));
+  const currentSources=results.filter(s=>s.ok).map(s=>s.id).sort().join(",");
+  const priorSources=[...new Set(previous.flatMap(row=>Object.keys(row.sourceRanks||{})))].sort().join(",");
+  const comparable=currentSources===priorSources;
+  const prior=new Map((comparable?previous:[]).map(r=>[r.liveId,r]));
   const elapsed=(now-previousAt)/60000;
   const rows=[...byId.values()].map(row=>{
     const ranks=Object.values(row.sourceRanks);
