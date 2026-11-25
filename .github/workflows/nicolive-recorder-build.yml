@@ -92,6 +92,11 @@ jobs:
           Write-Host "Beta $betaVersion is safely ahead of stable product $stableVersion."
       - name: Run application tests
         run: npm test
+      - name: Check public ranking source availability (diagnostic)
+        if: github.head_ref == 'feature/independent-live-ranking' || github.ref == 'refs/heads/feature/independent-live-ranking'
+        continue-on-error: true
+        timeout-minutes: 2
+        run: node scripts/check-live-ranking.cjs
       - name: Build installer and portable ZIP
         run: npm run dist:win
       - name: Verify beta update manifest and installer checksum
