@@ -290,3 +290,29 @@ test("live dashboard and monitor use shared ranking labels and only poll with li
   assert.match(source,/const showLiveRanks=page==="dashboard"\|\|page==="monitor"/);
   assert.match(source,/\(active\|\|\(showLiveRanks&&hasLive\(\)\)\)&&byId\("ranking-auto"\)\.checked/);
 });
+
+
+test("comment rate survives partial source failure without comparing unrelated counters",()=>{
+  const source=(id,value)=>({id,ok:true,rows:parseRankingPage(page([program("lv123456",value)]))});
+  const failed={id:"b",ok:false,rows:[]};
+  const now=1700000000000;
+  const before=buildRanking([source("a",100),source("b",900)],[],now,0);
+  const partial=buildRanking([source("a",115),failed],before,now+90000,now);
+  assert.equal(partial[0].commentRate,10);
+  assert.equal(partial[0].commentRateSourceCount,1);
+  assert.equal(partial[0].rankChange,null);
+  const restored=buildRanking([source("a",130),source("b",1500)],partial,now+180000,now+90000);
+  assert.equal(restored[0].commentRate,10);
+  assert.equal(restored[0].commentRateSourceCount,1);
+  assert.equal(restored[0].rankChange,null);
+  const reset=buildRanking([source("a",5),source("b",1499)],restored,now+270000,now+180000);
+  assert.equal(reset[0].commentRate,null);
+  assert.equal(reset[0].commentRateSourceCount,0);
+  const short=buildRanking([source("a",140)],restored,now+190000,now+180000);
+  assert.equal(short[0].commentRate,null);
+  const expired=buildRanking([source("a",140)],restored,now+180000+16*60000,now+180000);
+  assert.equal(expired[0].commentRate,null);
+  const zero=buildRanking([source("a",130)],restored,now+270000,now+180000);
+  assert.equal(zero[0].commentRate,0);
+  assert.equal(zero[0].commentRateSourceCount,1);
+});

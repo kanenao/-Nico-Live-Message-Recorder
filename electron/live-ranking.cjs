@@ -244,7 +244,8 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
   const currentSources=results.filter(s=>s.ok).map(s=>s.id).sort().join(",");
   const priorSources=[...new Set(previous.flatMap(row=>Object.keys(row.sourceRanks||{})))].sort().join(",");
   const comparable=currentSources===priorSources;
-  const prior=new Map((comparable?previous:[]).map(r=>[r.liveId,r]));
+  const priorSamples=new Map(previous.map(r=>[r.liveId,r]));
+  const prior=comparable?priorSamples:new Map();
   const elapsed=(now-previousAt)/60000;
   const rows=[...byId.values()].map(row=>{
     const ranks=Object.values(row.sourceRanks);
@@ -253,13 +254,17 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
     const old=prior.get(row.liveId);
     // A source can disappear or start returning a counter with a different
     // delay. Only compare successive measurements from the same source.
-    const rates=old&&elapsed>=1&&elapsed<=15?Object.entries(row.commentSamples).flatMap(([id,value])=>{
-      const previousValue=old.commentSamples?.[id];
+    // Rank comparability requires identical source coverage; a comment rate
+    // only needs two valid samples from the same source, even in partial coverage.
+    const oldSamples=priorSamples.get(row.liveId);
+    const rates=oldSamples&&elapsed>=1&&elapsed<=15?Object.entries(row.commentSamples).flatMap(([id,value])=>{
+      const previousValue=oldSamples.commentSamples?.[id];
       return Number.isFinite(previousValue)&&value>=previousValue?[(value-previousValue)/elapsed]:[];
     }):[];
     rates.sort((a,b)=>a-b);
     const middle=Math.floor(rates.length/2);
     row.commentRate=rates.length?Math.round((rates.length%2?rates[middle]:(rates[middle-1]+rates[middle])/2)*10)/10:null;
+    row.commentRateSourceCount=rates.length;
     row.previousRank=old&&elapsed>0&&elapsed<=3?old.rank??null:null;
     return row;
   }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);

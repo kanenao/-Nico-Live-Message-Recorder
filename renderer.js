@@ -1988,7 +1988,11 @@ function renderIndependentRanking() {
     rankingCell(tr,rankingNumber(item.points),"ranking-points");
     rankingCell(tr,rankingNumber(item.visitors));
     rankingCell(tr,rankingNumber(item.comments));
-    rankingCell(tr,rankingNumber(item.commentRate));
+    const rateCell=rankingCell(tr,rankingNumber(item.commentRate));
+    const sampleCount=Number.isInteger(item.commentRateSourceCount)?item.commentRateSourceCount:0;
+    rateCell.title=Number.isFinite(item.commentRate)&&sampleCount>0
+      ?"同一取得元のコメント増加数 / 分（比較可能な取得元 "+sampleCount+" 件）"
+      :"比較可能なコメント数が不足、または取得間隔が対象外です。";
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
     const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
