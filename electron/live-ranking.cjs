@@ -61,8 +61,8 @@ function jsonRow(raw) {
   const status=String(p.schedule?.status??p.liveStatus??p.status??"").toUpperCase();
   if(status&&!["ON_AIR","ONAIR","LIVE","ON AIR"].includes(status))return null;
   if(p.isOnAir===false)return null;
-  const provider=p.programProvider??p.provider??p.supplier??{};
-  const statistics=p.statistics??p.stats??{};
+  const provider=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
+  const statistics=p.statistics??p.stats??raw.statistics??raw.stats??{};
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
     broadcasterId:/^\d{1,15}$/.test(String(provider.id??p.userId??""))?String(provider.id??p.userId):"",
     startedAt:time(p.schedule?.beginTime??p.beginAt??p.startTime??p.startedAt),
@@ -82,8 +82,28 @@ function extractJsonRows(value) {
   walk(value,0);return rows;
 }
 function unique(rows) {
-  const seen=new Set();
-  return rows.filter(row=>{if(!row?.liveId||seen.has(row.liveId))return false;seen.add(row.liveId);return true;}).slice(0,LIMIT);
+  const byId=new Map();
+  for(const row of rows){
+    if(!row?.liveId)continue;
+    const old=byId.get(row.liveId);
+    if(!old){
+      if(byId.size<LIMIT)byId.set(row.liveId,{...row});
+      continue;
+    }
+    // Keep the first listing position and existing values. Later duplicate
+    // records may contain metadata omitted from the first listing.
+    // Never combine user identity or artwork across conflicting identities.
+    const conflict=old.broadcasterId&&row.broadcasterId&&old.broadcasterId!==row.broadcasterId;
+    for(const field of ["startedAt","thumbnailUrl","visitors","comments"]){
+      if((old[field]==null||old[field]==="")&&row[field]!=null&&row[field]!=="")old[field]=row[field];
+    }
+    if(!conflict){
+      for(const field of ["name","broadcasterId","iconUrl"]){
+        if(!old[field]&&row[field])old[field]=row[field];
+      }
+    }
+  }
+  return [...byId.values()];
 }
 function parseRankingPage(html) {
   if(typeof html!=="string"||html.length>MAX_BYTES)return [];

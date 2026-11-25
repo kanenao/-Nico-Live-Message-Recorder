@@ -378,3 +378,39 @@ test("ranking poll retries respect the refresh interval and recover after clock 
   assert.match(status({...snapshot,stale:true},1,now+10000),/更新失敗/);
   assert.match(status(snapshot,1,now-1000),/古いデータ/);
 });
+
+
+test("duplicate ranking records preserve listing position and fill missing metrics and artwork",()=>{
+  const rows=parseRankingPage(page([
+    {id:"lv123456",title:"先頭",statistics:{watchCount:0}},
+    program("lv234567"),
+    {id:"lv123456",title:"別表示",programProvider:{id:"123456",name:"配信者",icon:"https://cdn.nimg.jp/icon.jpg"},statistics:{watchCount:999,commentCount:15},thumbnailUrl:"https://cdn.nimg.jp/thumb.jpg"}
+  ]));
+  assert.deepEqual(rows.map(r=>r.liveId),["lv123456","lv234567"]);
+  assert.equal(rows[0].title,"先頭");
+  assert.equal(rows[0].visitors,0);
+  assert.equal(rows[0].comments,15);
+  assert.equal(rows[0].name,"配信者");
+  assert.equal(rows[0].iconUrl,"https://cdn.nimg.jp/icon.jpg");
+  assert.equal(rows[0].thumbnailUrl,"https://cdn.nimg.jp/thumb.jpg");
+});
+test("duplicate ranking records reject conflicting provider identity and icon",()=>{
+  const rows=parseRankingPage(page([
+    {id:"lv123456",title:"先頭",programProvider:{id:"123456"}},
+    {id:"lv123456",title:"先頭",programProvider:{id:"234567",name:"別人",icon:"https://cdn.nimg.jp/other.jpg"}}
+  ]));
+  assert.equal(rows[0].broadcasterId,"123456");
+  assert.equal(rows[0].name,"");
+  assert.equal(rows[0].iconUrl,"");
+});
+test("ranking wrappers can expose provider and statistics beside the program",()=>{
+  const rows=parseRankingPage(page([{
+    program:{id:"lv123456",title:"番組",status:"ON_AIR"},
+    programProvider:{id:"123456",name:"配信者",icon:"https://cdn.nimg.jp/icon.jpg"},
+    statistics:{commentCount:0,watchCount:42}
+  }]));
+  assert.equal(rows[0].name,"配信者");
+  assert.equal(rows[0].iconUrl,"https://cdn.nimg.jp/icon.jpg");
+  assert.equal(rows[0].comments,0);
+  assert.equal(rows[0].visitors,42);
+});

@@ -93,7 +93,7 @@ jobs:
       - name: Run application tests
         run: npm test
       - name: Check public ranking source availability (diagnostic)
-        if: github.head_ref == 'feature/independent-live-ranking' || github.ref == 'refs/heads/feature/independent-live-ranking'
+        if: github.head_ref == 'feature/independent-live-ranking' || github.ref == 'refs/heads/feature/independent-live-ranking' || startsWith(github.head_ref, 'fix/ranking-') || startsWith(github.ref, 'refs/heads/fix/ranking-')
         continue-on-error: true
         timeout-minutes: 2
         run: node scripts/check-live-ranking.cjs
