@@ -122,3 +122,48 @@ test("ranking monitor button confirms identity before using the existing registr
   assert.match(main,/ipcMain.handle\("ranking:resolve-monitor"/);
   assert.match(preload,/ipcRenderer.invoke\("ranking:resolve-monitor", liveId\)/);
 });
+
+test("ranking images accept only Nico image CDN HTTPS URLs",()=>{
+  const {rankingImageUrl}=require("../electron/live-ranking.cjs");
+  const icon="https://secure-dcdn.cdn.nimg.jp/usericon/123/123456.jpg";
+  const thumbnail="https://live.cdn.nimg.jp/thumb/example.jpg";
+  const row=parseRankingPage(page([{...program("lv123456"),programProvider:{name:"配信者",icon},thumbnail:{large:thumbnail}}]))[0];
+  assert.equal(row.iconUrl,icon);
+  assert.equal(row.thumbnailUrl,thumbnail);
+  for(const url of ["http://nimg.jp/a","https://nimg.jp.evil.example/a","https://user:pw@nimg.jp/a","https://nimg.jp:8443/a","file:///etc/passwd","data:image/svg+xml,abc","https://example.com/a"]){
+    assert.equal(rankingImageUrl(url),"");
+  }
+  const unsafe=parseRankingPage(page([{...program("lv123456"),thumbnailUrl:"https://example.com/a",programProvider:{icon:"file:///a"}}]))[0];
+  assert.equal(unsafe.thumbnailUrl,"");
+  assert.equal(unsafe.iconUrl,"");
+});
+test("rank trend is bounded and only joins comparable continuous snapshots",()=>{
+  const a={id:"a",ok:true,rows:parseRankingPage(page([program("lv123456"),program("lv234567")]))};
+  const b={id:"b",ok:true,rows:parseRankingPage(page([program("lv234567"),program("lv123456")]))};
+  let now=1700000000000;
+  let rows=buildRanking([a],[],now,0);
+  assert.equal(rows[0].rankHistory.length,1);
+  for(let i=0;i<50;i++){
+    const prevAt=now;now+=90000;
+    rows=buildRanking([a],rows,now,prevAt);
+  }
+  assert.ok(rows[0].rankHistory.length<=40);
+  assert.ok(rows[0].rankHistory.every(sample=>sample.at>=now-3600000));
+  assert.equal(rows[0].rankHistory.at(-1).rank,rows[0].rank);
+  const changed=buildRanking([a,b],rows,now+90000,now);
+  assert.equal(changed[0].rankHistory.length,1);
+  assert.equal(changed[0].rankChange,null);
+  const gap=buildRanking([a],rows,now+360001,now);
+  assert.equal(gap[0].rankHistory.length,1);
+  const missing=buildRanking([{...a,rows:[a.rows[1]]}],rows,now+90000,now);
+  const returned=buildRanking([a],missing,now+180000,now+90000);
+  assert.equal(returned.find(row=>row.liveId==="lv123456").rankHistory.length,1);
+});
+test("ranking artwork and trend render without rebuilding the list every five seconds",()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  assert.match(renderer,/appendRankingImage\(picture,item\.thumbnailUrl/);
+  assert.match(renderer,/appendRankingImage\(picture,item\.iconUrl/);
+  assert.match(renderer,/appendRankingTrend\(rankCell,item\)/);
+  assert.match(renderer,/rankingTimer=setInterval\(\(\)=>\{\s*refreshRankingActions\(\)/);
+  assert.match(renderer,/img\.referrerPolicy="no-referrer"/);
+});
