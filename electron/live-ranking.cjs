@@ -116,7 +116,10 @@ function parseRankingPage(html) {
     // Decode attribute entities without stripping JSON strings or truncating.
     try{const json=match[2].replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");rows.push(...extractJsonRows(JSON.parse(json)));}catch{}
   }
-  if(rows.length)return unique(rows);
+  // Structured rows define membership and rank when present. HTML may only
+  // supplement images for those same IDs; navigation links cannot add rows.
+  const structured=rows.length?unique(rows):null;
+  const known=structured?new Map(structured.map(row=>[row.liveId,row])):null;
   // Only accept actual Nico Live watch links with a descriptive anchor title.
   // Never guess a program ID from a user ID, thumbnail or arbitrary text.
   const safeHtml=html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi,"").replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi,"");
@@ -124,11 +127,25 @@ function parseRankingPage(html) {
     const href=a[1].match(/\bhref\s*=\s*(["'])(.*?)\1/i)?.[2];
     const id=liveId(href);
     if(!id)continue;
+    const existing=known?.get(id);
+    if(known&&!existing)continue;
+    // A single non-icon Nico CDN image inside the exact watch link is a
+    // conservative thumbnail candidate. Never attach neighboring card art.
+    const images=[...a[2].matchAll(/<img\b([^>]*)>/gi)];
+    const imageUrls=images.flatMap(img=>{
+      const attrs=img[1];
+      if(/(?:user[-_ ]?icon|avatar|profile|badge|logo|アイコン)/i.test(attrs))return [];
+      const value=name=>attrs.match(new RegExp("(?:^|\\s)"+name+"\\s*=\\s*([\"'])(.*?)\\1","i"))?.[2]?.replace(/&amp;/g,"&");
+      const url=firstRankingImage(value("data-src"),value("data-original"),value("src"));
+      return url&&!/\/(?:usericon|user-icon|icons?)\//i.test(new URL(url).pathname)?[url]:[];
+    });
+    const thumbnailUrl=[...new Set(imageUrls)].length===1?imageUrls[0]:"";
+    if(existing){if(!existing.thumbnailUrl&&thumbnailUrl)existing.thumbnailUrl=thumbnailUrl;continue;}
     const title=clean(a[1].match(/\b(?:title|aria-label)\s*=\s*(["'])(.*?)\1/i)?.[2]||a[2]);
     if(!title||/^(視聴|見る|開く|放送ページ|LIVE|lv\d+)$/i.test(title))continue;
-    rows.push({liveId:id,title,name:"",broadcasterId:"",startedAt:"",iconUrl:"",thumbnailUrl:"",visitors:null,comments:null});
+    rows.push({liveId:id,title,name:"",broadcasterId:"",startedAt:"",iconUrl:"",thumbnailUrl,visitors:null,comments:null});
   }
-  return unique(rows);
+  return structured||unique(rows);
 }
 async function readBounded(response) {
   if(Number(response.headers?.get?.("content-length")||0)>MAX_BYTES)throw Error("取得上限超過");

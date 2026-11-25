@@ -549,3 +549,25 @@ test("ranking elapsed time uses the existing per-second clock and hidden rows ar
   const next=buildRanking([{id:"a",ok:true,rows:[{liveId:"lv999999",title:"番組"},...rows.slice(0,199)]}],first,now+30000,now);
   assert.equal(next.find(x=>x.liveId==="lv999999").rankNew,false);
 });
+
+
+test("ranking watch links supply only a single trusted thumbnail without changing structured membership",()=>{
+  const thumb="https://live.cdn.nimg.jp/thumb/program.jpg";
+  const icon="https://cdn.nimg.jp/usericon/123.jpg";
+  const link=(id,content)=>'<a href="https://live.nicovideo.jp/watch/'+id+'" title="番組">'+content+'</a>';
+  const rows=parseRankingPage(page([program("lv123456"),{...program("lv234567"),status:"ENDED"}])+
+    link("lv123456",'<img class="avatar" src="'+icon+'"><img data-src="'+thumb+'" src="https://evil.example/pixel">')+
+    link("lv234567",'<img src="'+thumb+'">')+
+    link("lv345678",'<img src="'+thumb+'">'));
+  assert.deepEqual(rows.map(r=>r.liveId),["lv123456"]);
+  assert.equal(rows[0].thumbnailUrl,thumb);
+  assert.equal(rows[0].iconUrl,"");
+});
+test("HTML-only ranking rejects untrusted and ambiguous thumbnails",()=>{
+  const link=(id,content)=>'<a href="https://live.nicovideo.jp/watch/'+id+'" title="番組">'+content+'</a>';
+  const rows=parseRankingPage(link("lv123456",'<img data-src="https://cdn.nimg.jp/a.jpg">')+
+    link("lv234567",'<img src="https://evil.example/a.jpg">')+
+    link("lv345678",'<img src="https://cdn.nimg.jp/a.jpg"><img src="https://cdn.nimg.jp/b.jpg">')+
+    link("lv456789",'<img src="https://cdn.nimg.jp/usericon/123.jpg">'));
+  assert.deepEqual(rows.map(r=>r.thumbnailUrl),["https://cdn.nimg.jp/a.jpg","","",""]);
+});
