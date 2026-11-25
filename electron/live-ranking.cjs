@@ -185,20 +185,27 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
   }
   return async function enrich(rows){
     const at=now();
-    for(const [id,entry] of cache)if(entry.expiresAt<=at)cache.delete(id);
+    // Retain expired entries to prioritize programs not yet checked.
     for(const [id,entry] of profileCache)if(entry.expiresAt<=at)profileCache.delete(id);
-    const wanted=rows.filter(row=>!cache.has(row.liveId)&&(!row.iconUrl||!row.thumbnailUrl||!row.name)).slice(0,6);
+    const wanted=rows.filter(row=>(cache.get(row.liveId)?.expiresAt??0)<=at&&(!row.iconUrl||!row.thumbnailUrl||!row.name))
+      .sort((a,b)=>{
+        const left=cache.get(a.liveId),right=cache.get(b.liveId);
+        if(!left||!right)return Number(Boolean(left))-Number(Boolean(right));
+        return left.expiresAt-right.expiresAt;
+      }).slice(0,6);
     for(let i=0;i<wanted.length;i+=2){
       await Promise.all(wanted.slice(i,i+2).map(async row=>{
         const details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
         if(details?.broadcasterId&&!details.iconUrl)details.iconUrl=await getProfileIcon(details.broadcasterId);
+        cache.delete(row.liveId);
         cache.set(row.liveId,{details,expiresAt:now()+(details?1800000:300000)});
       }));
     }
     while(cache.size>400)cache.delete(cache.keys().next().value);
     while(profileCache.size>400)profileCache.delete(profileCache.keys().next().value);
     return rows.map(row=>{
-      const d=cache.get(row.liveId)?.details;
+      const entry=cache.get(row.liveId);
+      const d=entry&&entry.expiresAt>now()?entry.details:null;
       if(!d)return row;
       return {...row,title:d.title||row.title,name:d.name||row.name,
         broadcasterId:d.broadcasterId,startedAt:d.startedAt||row.startedAt,
@@ -253,7 +260,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
     rates.sort((a,b)=>a-b);
     const middle=Math.floor(rates.length/2);
     row.commentRate=rates.length?Math.round((rates.length%2?rates[middle]:(rates[middle-1]+rates[middle])/2)*10)/10:null;
-    row.previousRank=old?.rank??null;
+    row.previousRank=old&&elapsed>0&&elapsed<=3?old.rank??null:null;
     return row;
   }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
   return rows.map((row,i)=>{

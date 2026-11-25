@@ -155,6 +155,9 @@ test("rank trend is bounded and only joins comparable continuous snapshots",()=>
   assert.equal(changed[0].rankChange,null);
   const gap=buildRanking([a],rows,now+360001,now);
   assert.equal(gap[0].rankHistory.length,1);
+  assert.equal(gap[0].rankChange,null);
+  const reversed=buildRanking([a],rows,now-1000,now);
+  assert.equal(reversed[0].rankChange,null);
   const missing=buildRanking([{...a,rows:[a.rows[1]]}],rows,now+90000,now);
   const returned=buildRanking([a],missing,now+180000,now+90000);
   assert.equal(returned.find(row=>row.liveId==="lv123456").rankHistory.length,1);
@@ -234,4 +237,29 @@ test("ranking chase action is explicit, confirmed and uses the standalone chase 
   assert.match(renderer,/selectedTarget\?\.chase === true \|\| \(!selectedTarget && byId\("record-mode"\)\?\.value === "chase"\)/);
   assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId,title:item.title/);
   assert.match(renderer,/api\.startVideo\(liveId, quality, \{ chase: true \}\)/);
+});
+
+
+test("expired ranking detail entries do not starve unvisited lower-ranked programs",async()=>{
+  const {createRankingDetailEnricher}=require("../electron/live-ranking.cjs");
+  let now=1700000000000;
+  const requested=[];
+  const enrich=createRankingDetailEnricher(async(url)=>{
+    const id=url.split("/").at(-1);
+    requested.push(id);
+    return {ok:true,text:async()=>officialPage({nicoliveProgramId:id,title:"公式番組",supplier:{name:"配信者"},thumbnail:{large:"https://cdn.nimg.jp/a.jpg"}})};
+  },()=>now);
+  const rows=Array.from({length:18},(_,i)=>({liveId:"lv"+(123456+i),title:"元の番組"}));
+  const first=await enrich(rows);
+  assert.equal(first.filter(r=>r.thumbnailUrl).length,6);
+  now+=1800001;
+  const second=await enrich(rows);
+  assert.equal(second[0].thumbnailUrl,undefined);
+  assert.equal(second[6].thumbnailUrl,"https://cdn.nimg.jp/a.jpg");
+  now+=1800001;
+  await enrich(rows);
+  assert.deepEqual(requested,rows.map(r=>r.liveId));
+  now+=1800001;
+  await enrich(rows);
+  assert.deepEqual(requested.slice(18),rows.slice(0,6).map(r=>r.liveId));
 });
