@@ -6,6 +6,6 @@ const {createRankingService}=require("../electron/live-ranking.cjs");
   const snapshot=await createRankingService({enrichDetails:true})();
   console.log(JSON.stringify({checkedAt:snapshot.checkedAt,stale:snapshot.stale,partial:snapshot.partial,
     programs:snapshot.rows.length,withVisitors:snapshot.rows.filter(x=>x.visitors!=null).length,
-    withComments:snapshot.rows.filter(x=>x.comments!=null).length,withIcons:snapshot.rows.filter(x=>x.iconUrl).length,withThumbnails:snapshot.rows.filter(x=>x.thumbnailUrl).length,sources:snapshot.sources},null,2));
+    withComments:snapshot.rows.filter(x=>x.comments!=null).length,withVerifiedUserIds:snapshot.rows.filter(x=>x.broadcasterId).length,withNames:snapshot.rows.filter(x=>x.name).length,withIcons:snapshot.rows.filter(x=>x.iconUrl).length,withThumbnails:snapshot.rows.filter(x=>x.thumbnailUrl).length,sources:snapshot.sources},null,2));
   if(snapshot.stale){console.error("No public ranking sources could be parsed in this environment.");process.exitCode=1;}
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

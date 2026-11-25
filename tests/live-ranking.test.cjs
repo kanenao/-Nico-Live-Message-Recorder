@@ -185,8 +185,12 @@ test("official watch enrichment extracts only bounded public metadata and truste
 });
 test("official enrichment limits each refresh to six requests and caches by program ID",async()=>{
   const {createRankingDetailEnricher}=require("../electron/live-ranking.cjs");
-  let calls=0,active=0,maxActive=0,now=1700000000000;
+  let calls=0,profileCalls=0,active=0,maxActive=0,now=1700000000000;
   const enrich=createRankingDetailEnricher(async(url,options)=>{
+    if(url==="https://nvapi.nicovideo.jp/v1/users/123456"){
+      profileCalls++;assert.equal(options.redirect,"error");assert.equal(options.headers.cookie,undefined);
+      return {ok:true,text:async()=>JSON.stringify({data:{user:{id:123456,icons:{large:"https://cdn.nimg.jp/icon.jpg"}}}})};
+    }
     calls++;active++;maxActive=Math.max(active,maxActive);
     assert.match(url,/^https:\/\/live\.nicovideo\.jp\/watch\/lv\d+$/);
     assert.equal(options.redirect,"error");
@@ -199,9 +203,21 @@ test("official enrichment limits each refresh to six requests and caches by prog
   const first=await enrich(rows);
   assert.equal(calls,6);assert.ok(maxActive<=2);
   assert.equal(first.filter(r=>r.thumbnailUrl).length,6);
+  assert.equal(first.filter(r=>r.iconUrl).length,6);assert.equal(profileCalls,1);
   assert.equal(first[0].rank,1);assert.equal(first[0].points,100);
   const second=await enrich(rows);
   assert.equal(calls,10);assert.equal(second.filter(r=>r.thumbnailUrl).length,10);
-  await enrich(rows);assert.equal(calls,10);
+  await enrich(rows);assert.equal(calls,10);assert.equal(profileCalls,1);
   now+=1800001;await enrich(rows);assert.equal(calls,16);
+});
+
+test("profile fallback rejects unverified IDs, mismatched identities and untrusted icons",async()=>{
+  const {fetchOfficialRankingProfileIcon}=require("../electron/live-ranking.cjs");
+  let calls=0;
+  const response=payload=>async()=>{calls++;return {ok:true,text:async()=>JSON.stringify(payload)};};
+  assert.equal(await fetchOfficialRankingProfileIcon("ch123",response({})), "");
+  assert.equal(calls,0);
+  assert.equal(await fetchOfficialRankingProfileIcon("123456",response({data:{user:{id:234567,icons:{large:"https://cdn.nimg.jp/icon.jpg"}}}})), "");
+  assert.equal(await fetchOfficialRankingProfileIcon("123456",response({data:{user:{id:123456,icons:{large:"https://evil.example/icon.jpg"}}}})), "");
+  assert.equal(await fetchOfficialRankingProfileIcon("123456",response({data:{user:{id:123456,icons:{large:"https://cdn.nimg.jp/icon.jpg"}}}})), "https://cdn.nimg.jp/icon.jpg");
 });

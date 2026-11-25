@@ -155,19 +155,48 @@ async function fetchOfficialRankingDetails(id,fetchImpl) {
 }
 // Limit each actual refresh to six lookups, with two concurrent requests.
 // Cache successes and failures, and prefer uncached rows in rank order.
+async function fetchOfficialRankingProfileIcon(userId,fetchImpl) {
+  if(!/^\d{5,15}$/.test(userId))return "";
+  try {
+    const response=await fetchImpl("https://nvapi.nicovideo.jp/v1/users/"+userId,{
+      redirect:"error",headers:{accept:"application/json","X-Frontend-Id":"6","X-Frontend-Version":"0"},signal:AbortSignal.timeout(4000)});
+    if(!response?.ok)return "";
+    const payload=JSON.parse(await readBounded(response));
+    const user=payload?.data?.user??payload?.data??payload?.user;
+    if(!user||typeof user!=="object")return "";
+    const claimed=user.id??user.userId;
+    if(claimed!=null&&String(claimed)!==userId)return "";
+    return rankingImageUrl(require("./nico-profile.cjs").extractApiProfileIcon(payload));
+  }catch{return "";}
+}
 function createRankingDetailEnricher(fetchImpl,now=Date.now) {
   const cache=new Map();
+  const profileCache=new Map();
+  async function getProfileIcon(id){
+    const old=profileCache.get(id);
+    if(old&&old.expiresAt>now())return old.promise;
+    const entry={expiresAt:now()+300000,promise:null};
+    entry.promise=fetchOfficialRankingProfileIcon(id,fetchImpl).then(icon=>{
+      entry.expiresAt=now()+(icon?21600000:300000);
+      return icon;
+    });
+    profileCache.set(id,entry);
+    return entry.promise;
+  }
   return async function enrich(rows){
     const at=now();
     for(const [id,entry] of cache)if(entry.expiresAt<=at)cache.delete(id);
+    for(const [id,entry] of profileCache)if(entry.expiresAt<=at)profileCache.delete(id);
     const wanted=rows.filter(row=>!cache.has(row.liveId)&&(!row.iconUrl||!row.thumbnailUrl||!row.name)).slice(0,6);
     for(let i=0;i<wanted.length;i+=2){
       await Promise.all(wanted.slice(i,i+2).map(async row=>{
         const details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
+        if(details?.broadcasterId&&!details.iconUrl)details.iconUrl=await getProfileIcon(details.broadcasterId);
         cache.set(row.liveId,{details,expiresAt:now()+(details?1800000:300000)});
       }));
     }
     while(cache.size>400)cache.delete(cache.keys().next().value);
+    while(profileCache.size>400)profileCache.delete(profileCache.keys().next().value);
     return rows.map(row=>{
       const d=cache.get(row.liveId)?.details;
       if(!d)return row;
@@ -280,4 +309,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher};
+module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon};
