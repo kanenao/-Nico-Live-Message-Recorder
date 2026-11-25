@@ -91,3 +91,34 @@ test("invalid timestamps and old snapshots cannot enable the record button",()=>
   }
   assert.equal(fresh({dataAt:new Date(now).toISOString(),stale:true},now),false);
 });
+
+test("ranking monitor registration uses only verified official user identity",async()=>{
+  const {resolveRankingMonitorTarget}=require("../electron/live-ranking.cjs");
+  const actual={liveId:"lv123456",broadcasterType:"user",broadcasterId:"123456",broadcasterName:"公式確認名"};
+  const resolved=await resolveRankingMonitorTarget("lv123456",async id=>{
+    assert.equal(id,"lv123456");
+    return actual;
+  });
+  assert.deepEqual(resolved,{userId:"123456",name:"公式確認名"});
+  for(const page of [null,{...actual,broadcasterType:"channel"},{...actual,broadcasterType:"official"},{...actual,broadcasterType:""},{...actual,liveId:"lv234567"},{...actual,broadcasterId:"invalid"},{...actual,broadcasterName:""}]){
+    await assert.rejects(resolveRankingMonitorTarget("lv123456",async()=>page),/確認できません/);
+  }
+  let requested=false;
+  await assert.rejects(resolveRankingMonitorTarget("https://example.com/",async()=>{requested=true;}),/正しい放送ID/);
+  assert.equal(requested,false);
+});
+test("ranking monitor button confirms identity before using the existing registration IPC",()=>{
+  const root=path.join(__dirname,"..");
+  const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+  const main=fs.readFileSync(path.join(root,"electron/main.cjs"),"utf8");
+  const preload=fs.readFileSync(path.join(root,"electron/preload.cjs"),"utf8");
+  const start=renderer.indexOf("async function registerRankingMonitor(");
+  const end=renderer.indexOf("function renderIndependentRanking(",start);
+  const block=renderer.slice(start,end);
+  assert.ok(block.indexOf("await api.resolveRankingMonitorTarget(item.liveId)")<block.indexOf("window.confirm("));
+  assert.ok(block.indexOf("window.confirm(")<block.indexOf("await api.addMonitorTarget(target)"));
+  assert.match(block,/rankingMonitorPending\.has\(item\.liveId\)/);
+  assert.match(block,/rankingMonitorPending\.delete\(item\.liveId\)/);
+  assert.match(main,/ipcMain.handle\("ranking:resolve-monitor"/);
+  assert.match(preload,/ipcRenderer.invoke\("ranking:resolve-monitor", liveId\)/);
+});
