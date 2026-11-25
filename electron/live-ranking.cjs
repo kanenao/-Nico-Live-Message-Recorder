@@ -328,6 +328,56 @@ function momentumPoints(ranks,commentRate,visitorRate){
   // Square roots limit the impact of sudden spikes and very large channels.
   return Math.round(reference+50*Math.sqrt(Math.max(0,commentRate??0))+20*Math.sqrt(Math.max(0,visitorRate??0)));
 }
+// Adaptive statistical score, not a trained AI or official ranking.
+const SCORE_METRICS=Object.freeze({points:0.35,visitors:0.20,comments:0.20,commentRate:0.25});
+function applyCompositeScores(rows){
+  const scales={};
+  for(const key of Object.keys(SCORE_METRICS)){
+    const values=rows.map(r=>r[key]).filter(v=>Number.isFinite(v)&&v>=0).sort((a,b)=>a-b);
+    scales[key]=values.length?Math.max(1,values[Math.ceil((values.length-1)*0.9)]):1;
+  }
+  return rows.map(row=>{
+    let sum=0,coverage=0;
+    const scoreParts={};
+    for(const [key,weight] of Object.entries(SCORE_METRICS)){
+      const value=row[key];
+      if(!Number.isFinite(value)||value<0){scoreParts[key]=null;continue;}
+      const normalized=Math.min(1,Math.log1p(value)/Math.log1p(scales[key]));
+      scoreParts[key]=Math.round(normalized*weight*1000);
+      sum+=normalized*weight;coverage+=weight;
+    }
+    return {...row,compositeScore:Math.round(sum*1000),scoreCoverage:Math.round(coverage*100),scoreParts};
+  });
+}
+function createRankingActivityTracker(now=Date.now){
+  let liveId="",connected=false,startedAt=0,lastAt=0,uncertainAt=null;
+  const users=new Map();
+  const WINDOW=300000,LIMIT_USERS=50000;
+  function reset(id){liveId=id||"";connected=false;startedAt=0;lastAt=0;uncertainAt=null;users.clear();}
+  function state(id,active){
+    if(id!==liveId||!active)reset(id);
+    if(active&&!connected){startedAt=now();lastAt=startedAt;connected=true;}
+  }
+  function prune(at){
+    if(at<lastAt){reset(liveId);return false;}
+    lastAt=at;
+    for(const [id,seen] of users)if(at-seen>=WINDOW)users.delete(id);
+    return true;
+  }
+  function observe(record){
+    if(!connected||record?.type!=="comment"||record.isHistory||record.liveId!==liveId)return;
+    const at=now();if(!prune(at))return;
+    const id=String(record.userId??"").trim();
+    if(!id||id.length>160||(!users.has(id)&&users.size>=LIMIT_USERS)){uncertainAt=at;return;}
+    users.set(id,at);
+  }
+  function snapshot(id){
+    if(!connected||id!==liveId)return null;
+    const at=now();if(!prune(at))return null;
+    return {count:users.size,complete:at-startedAt>=WINDOW&&(uncertainAt===null||at-uncertainAt>=WINDOW)};
+  }
+  return {reset,state,observe,snapshot};
+}
 function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSourceIds=null) {
   const byId=new Map();
   for(const source of results.filter(s=>s.ok)){
@@ -354,7 +404,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
   const priorSamples=new Map(previous.map(r=>[r.liveId,r]));
   const prior=comparable?priorSamples:new Map();
   const elapsed=(now-previousAt)/60000;
-  const rows=[...byId.values()].map(row=>{
+  const candidates=[...byId.values()].map(row=>{
     const ranks=Object.values(row.sourceRanks);
     const old=prior.get(row.liveId);
     const oldSamples=priorSamples.get(row.liveId);
@@ -377,7 +427,8 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
     // A previous top-200 snapshot cannot establish that an omitted program is new.
     row.rankNew=Boolean(!old&&comparable&&previous.length&&previous.length<LIMIT&&elapsed>0&&elapsed<=3);
     return row;
-  }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
+  });
+  const rows=applyCompositeScores(candidates).sort((a,b)=>b.compositeScore-a.compositeScore||b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
   return rows.map((row,i)=>{
     const rank=i+1;
     const old=prior.get(row.liveId);
@@ -433,4 +484,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon};
+module.exports={SOURCES,REFRESH_MS,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon};

@@ -280,14 +280,14 @@
             <div><div class="eyebrow">NICO LIVE / RANKING</div><h2>ニコニコ生放送ランキング</h2></div>
             <button class="button button-primary button-small" id="ranking-refresh" type="button">更新</button>
           </div>
-          <p class="hint">勢いポイントはコメント・来場者の1分あたりの伸びを重視し、取得した参考順位を加味する独自計算です。初回は参考順位のみ。公式ポイントではありません。順位グラフは同じ取得条件で連続した最大約1時間の履歴（アプリ実行中）です。画像と配信者情報は取得可能な公式番組情報から順次補完します。</p>
+          <p class="hint">総合順位は勢いpt・来場者数・コメント数・コメント増加/分の4指標を統計モデルで相対評価します。未取得の指標は加点せず充足率を表示。アクティブ人数は現在コメント接続している番組の直近5分間の観測投稿者数です。公式順位ではありません。順位グラフは同じ取得条件で連続した最大約1時間の履歴（アプリ実行中）です。画像と配信者情報は取得可能な公式番組情報から順次補完します。</p>
           <div class="ranking-toolbar">
             <label>検索 <input id="ranking-search" type="search" placeholder="配信者・タイトル・放送ID"></label>
-            <label>並び順 <select id="ranking-sort"><option value="points">勢いポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="startedAt">新着順</option></select></label>
+            <label>並び順 <select id="ranking-sort"><option value="compositeScore">総合ポイント（独自モデル）</option><option value="points">勢いポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="startedAt">新着順</option></select></label>
             <label><input id="ranking-auto" type="checkbox" checked> 自動更新（30秒）</label>
           </div>
           <p class="hint" id="ranking-status" aria-live="polite">ランキング未取得</p>
-          <div class="ranking-scroll"><table class="ranking-table"><thead><tr><th>順位</th><th>番組 / 配信者</th><th>勢いpt</th><th>来場者</th><th>コメント</th><th>増加/分</th><th>操作</th></tr></thead><tbody id="ranking-list"></tbody></table></div>
+          <div class="ranking-scroll"><table class="ranking-table"><thead><tr><th>順位</th><th>番組 / 配信者</th><th>総合pt</th><th>勢いpt</th><th>来場者</th><th>コメント</th><th>増加/分</th><th>アクティブ人数</th><th>操作</th></tr></thead><tbody id="ranking-list"></tbody></table></div>
           <p class="hint">通常録画は映像・音声＋コメントです。「追っかけ（試験）」は映像・音声のみで、実際の開始位置は未保証です。「＋監視」は公式の番組情報で配信者を確認して登録します。視聴権限が必要です。取得失敗時は前回データを表示しますが、古い一覧からの録画開始は無効になります。</p>
         </section>
 

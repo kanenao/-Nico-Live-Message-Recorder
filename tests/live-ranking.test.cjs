@@ -165,7 +165,8 @@ test("rank trend is bounded and only joins comparable continuous snapshots",()=>
 test("ranking artwork and trend render without rebuilding the list every five seconds",()=>{
   const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
   assert.match(renderer,/appendRankingImage\(picture,item\.thumbnailUrl/);
-  assert.match(renderer,/appendRankingImage\(picture,item\.iconUrl/);
+  assert.doesNotMatch(renderer,/appendRankingImage\(picture,item\.iconUrl/);
+  assert.match(renderer,/picture\.addEventListener\("click",openPicture\)/);
   assert.match(renderer,/appendRankingTrend\(rankCell,item\)/);
   assert.match(renderer,/rankingTimer=setInterval\(\(\)=>\{\s*refreshRankingActions\(\)/);
   assert.match(renderer,/img\.referrerPolicy="no-referrer"/);
@@ -608,4 +609,39 @@ test("official watch payload uses top-level supplier only for the matching decla
   const html='<script id="embedded-data" data-props="'+JSON.stringify(payload).replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'"></script>';
   assert.equal(parseOfficialRankingDetails(html,"lv123456").broadcasterId,"123456");
   assert.equal(parseOfficialRankingDetails(html,"lv999999"),null);
+});
+
+
+test("composite ranking uses all four indicators and distinguishes missing from measured zero",()=>{
+  const {applyCompositeScores}=require("../electron/live-ranking.cjs");
+  const rows=applyCompositeScores([
+    {points:100,visitors:100,comments:100,commentRate:10},
+    {points:100,visitors:0,comments:0,commentRate:0},
+    {points:100,visitors:null,comments:null,commentRate:null}
+  ]);
+  assert.ok(rows[0].compositeScore>rows[1].compositeScore);
+  assert.equal(rows[0].scoreCoverage,100);
+  assert.equal(rows[2].scoreCoverage,35);
+  assert.equal(rows[2].scoreParts.visitors,null);
+  assert.equal(rows[1].scoreParts.visitors,0);
+  for(const field of ["points","visitors","comments","commentRate"])assert.ok(rows[0].scoreParts[field]>0);
+});
+test("ranking activity counts unique live commenters only, expires samples and resets at disconnect",()=>{
+  const {createRankingActivityTracker}=require("../electron/live-ranking.cjs");
+  let now=1700000000000;
+  const tracker=createRankingActivityTracker(()=>now);
+  tracker.state("lv123456",true);
+  const event={liveId:"lv123456",type:"comment",userId:"a",isHistory:false};
+  tracker.observe(event);tracker.observe(event);
+  tracker.observe({...event,userId:"b",isHistory:true});
+  tracker.observe({...event,userId:"c",liveId:"lv234567"});
+  tracker.observe({...event,userId:"d"});
+  assert.equal(tracker.snapshot("lv123456").count,2);
+  assert.equal(tracker.snapshot("lv123456").complete,false);
+  assert.equal(tracker.snapshot("lv234567"),null);
+  now+=300001;
+  assert.equal(tracker.snapshot("lv123456").count,0);
+  assert.equal(tracker.snapshot("lv123456").complete,true);
+  tracker.state("lv123456",false);
+  assert.equal(tracker.snapshot("lv123456"),null);
 });

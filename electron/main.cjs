@@ -88,6 +88,7 @@ let liveArticleCaptureWindowLiveId = "";
 let livePreviewId = "";
 let provider = null;
 let commentSessionEpoch = 0;
+const rankingActivity = require("./live-ranking.cjs").createRankingActivityTracker();
 let captureStopPromise = null;
 let timeshiftCommentFetchActive = false;
 let currentLiveId = "";
@@ -1250,6 +1251,7 @@ function updateCurrentBroadcaster(metadata, liveId) {
 
 function appendEvent(type, item) {
   const record = normalizeEvent(type, item);
+  rankingActivity.observe(record);
   if (commentWriter) {
     void writeCommentLine(commentWriter, JSON.stringify(record)).catch((error) => {
       commentWriterError = error;
@@ -1808,6 +1810,7 @@ async function prepareCommentSession(liveId, displayName = "", broadcasterId = "
   if (chaseStartPending || chaseRecordingActive) throw new Error("追っかけ録画を終了してからコメントを取得してください。");
   recordingNamingSession = null;
   currentLiveId = liveId;
+  rankingActivity.reset(liveId);
   currentProgramInfo = {
     programTitle: String(programInfo.programTitle || programInfo.title || "").slice(0, 300),
     description: String(programInfo.description || "").slice(0, 3000),
@@ -1864,7 +1867,10 @@ async function connectPreparedCommentSession(liveId) {
       send("live:metadata", metadata);
     });
     activeProvider.on("stateChange", (state) => {
-      if (epoch === commentSessionEpoch) send("live:state", { state });
+      if (epoch === commentSessionEpoch) {
+        rankingActivity.state(liveId,state==="connected");
+        send("live:state", { state });
+      }
     });
     activeProvider.on("error", (error) => {
       send("app:error", error && error.message ? error.message : String(error));
@@ -1875,6 +1881,7 @@ async function connectPreparedCommentSession(liveId) {
       throw new Error("コメント接続は停止されました。");
     }
     updateCurrentBroadcaster(metadata, liveId);
+    rankingActivity.state(liveId,true);
     send("live:state", { state: "connected" });
     return { liveId, metadata, commentFile: commentFilePath };
   } catch (error) {
@@ -2954,7 +2961,13 @@ function stopMonitor() {
 
 const { createRankingService, resolveRankingMonitorTarget } = require("./live-ranking.cjs");
 const getIndependentLiveRanking = createRankingService({ enrichDetails: true });
-ipcMain.handle("ranking:list", () => getIndependentLiveRanking());
+ipcMain.handle("ranking:list", async () => {
+  const snapshot=await getIndependentLiveRanking();
+  return {...snapshot,rows:snapshot.rows.map(row=>{
+    const activity=provider&&commentWriter&&!timeshiftCommentFetchActive?rankingActivity.snapshot(row.liveId):null;
+    return {...row,activePeople:activity?.count??null,activePeopleComplete:activity?.complete??false};
+  })};
+});
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
   resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
     timeoutMs: 6500,

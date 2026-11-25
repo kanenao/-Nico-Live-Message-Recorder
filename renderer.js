@@ -2043,10 +2043,19 @@ function renderIndependentRanking() {
     const identity=document.createElement("div");identity.className="ranking-identity";
     const picture=document.createElement("div");picture.className="ranking-media";
     appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
-    appendRankingImage(picture,item.iconUrl,"ranking-icon","配信者アイコン");
+    picture.title="番組映像プレビューを開く";
+    picture.setAttribute("role","button");picture.tabIndex=0;
+    const openPicture=()=>Promise.resolve().then(()=>api.openLivePreview(item.liveId)).catch(error=>showToast(error.message||"プレビューを開けませんでした。",true));
+    picture.addEventListener("click",openPicture);
+    picture.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openPicture();}});
     if(!picture.children.length){const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";picture.appendChild(placeholder);}
     const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
     identity.append(picture,labels);info.appendChild(identity);
+    const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points");
+    const coverage=document.createElement("small");coverage.className="ranking-delta";
+    coverage.textContent="指標充足 "+rankingNumber(item.scoreCoverage)+"%";
+    score.appendChild(coverage);
+    score.title="勢い35%・来場者20%・コメント20%・増加/分25%。各指標の90パーセンタイルで対数正規化。未取得指標は加点なし。";
     appendRankingDelta(rankingCell(tr,rankingNumber(item.points),"ranking-points"),item.pointDelta,"pt");
     appendRankingDelta(rankingCell(tr,rankingNumber(item.visitors)),item.visitorDelta,"人");
     appendRankingDelta(rankingCell(tr,rankingNumber(item.comments)),item.commentDelta,"件");
@@ -2055,6 +2064,8 @@ function renderIndependentRanking() {
     rateCell.title=Number.isFinite(item.commentRate)&&sampleCount>0
       ?"同一取得元のコメント増加数 / 分（比較可能な取得元 "+sampleCount+" 件）"
       :"比較可能なコメント数が不足、または取得間隔が対象外です。";
+    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+(item.activePeopleComplete?"人":"人以上"):"未取得");
+    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。現在コメント接続中の番組のみ。";
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
     const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
@@ -2089,7 +2100,7 @@ function renderIndependentRanking() {
     });
     actions.append(record,watch,monitor,chase,preview);list.appendChild(tr);
   }
-  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;list.appendChild(tr);}
+  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=9;list.appendChild(tr);}
   rankingVisibleCount=rows.length;
   byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
 }
