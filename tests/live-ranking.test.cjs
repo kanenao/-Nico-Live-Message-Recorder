@@ -316,3 +316,31 @@ test("comment rate survives partial source failure without comparing unrelated c
   assert.equal(zero[0].commentRate,0);
   assert.equal(zero[0].commentRateSourceCount,1);
 });
+
+
+test("official ranking identity accepts explicit Nico user page links without guessing channel IDs",()=>{
+  const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+  const parse=supplier=>parseOfficialRankingDetails(officialPage({nicoliveProgramId:"lv123456",title:"番組",supplier}),"lv123456");
+  assert.equal(parse({name:"配信者",url:"https://www.nicovideo.jp/user/123456"}).broadcasterId,"123456");
+  assert.equal(parse({name:"配信者",type:"user",userPageUrl:"https://www.nicovideo.jp/user/123456"}).broadcasterId,"123456");
+  assert.equal(parse({id:123456}).broadcasterId,"");
+  assert.equal(parse({type:"channel",url:"https://www.nicovideo.jp/user/123456"}).broadcasterId,"");
+  assert.equal(parse({type:"user",id:654321,url:"https://www.nicovideo.jp/user/123456"}).broadcasterId,"");
+  assert.equal(parse({url:"https://www.nicovideo.jp.evil.example/user/123456"}).broadcasterId,"");
+  assert.equal(parse({url:"https://www.nicovideo.jp/user/123456",profileUrl:"https://www.nicovideo.jp/user/654321"}).broadcasterId,"");
+  assert.equal(parse({type:"user",id:123456,icons:{large:"https://cdn.nimg.jp/icon.jpg"}}).iconUrl,"https://cdn.nimg.jp/icon.jpg");
+});
+test("ranking profile falls back to bounded official user page and rejects generic OGP",async()=>{
+  const {fetchOfficialRankingProfileIcon}=require("../electron/live-ranking.cjs");
+  const icon="https://secure-dcdn.cdn.nimg.jp/usericon/123/123456.jpg";
+  const calls=[];
+  const fetcher=async(url,opts)=>{
+    calls.push(url);assert.equal(opts.redirect,"error");assert.equal(opts.headers.cookie,undefined);
+    if(url.includes("nvapi"))return {ok:false,status:503};
+    return {ok:true,text:async()=>'<meta property="og:image" content="'+icon+'">'};
+  };
+  assert.equal(await fetchOfficialRankingProfileIcon("123456",fetcher),icon);
+  assert.deepEqual(calls,["https://nvapi.nicovideo.jp/v1/users/123456","https://www.nicovideo.jp/user/123456"]);
+  const generic=async(url)=>url.includes("nvapi")?{ok:false}:{ok:true,text:async()=>'<meta property="og:image" content="https://cdn.nimg.jp/generic.jpg">'};
+  assert.equal(await fetchOfficialRankingProfileIcon("123456",generic),"");
+});
