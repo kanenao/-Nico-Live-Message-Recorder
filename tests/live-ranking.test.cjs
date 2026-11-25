@@ -167,3 +167,41 @@ test("ranking artwork and trend render without rebuilding the list every five se
   assert.match(renderer,/rankingTimer=setInterval\(\(\)=>\{\s*refreshRankingActions\(\)/);
   assert.match(renderer,/img\.referrerPolicy="no-referrer"/);
 });
+
+const officialPage=program=>'<script data-props="'+JSON.stringify({program,site:{relive:{webSocketUrl:"wss://private.invalid/session"}}}).replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'" id="embedded-data"></script>';
+test("official watch enrichment extracts only bounded public metadata and trusted artwork",()=>{
+  const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+  const p={nicoliveProgramId:"lv123456",title:"公式番組",beginTime:1700000000,supplier:{name:"公式配信者",programProviderType:"user",programProviderId:"123456",iconUrl:"https://cdn.nimg.jp/icon.jpg"},thumbnail:{huge:"https://cdn.nimg.jp/large.jpg"}};
+  const row=parseOfficialRankingDetails(officialPage(p),"lv123456");
+  assert.equal(row.name,"公式配信者");
+  assert.equal(row.broadcasterId,"123456");
+  assert.equal(row.iconUrl,p.supplier.iconUrl);
+  assert.equal(row.thumbnailUrl,p.thumbnail.huge);
+  assert.equal(row.startedAt,new Date(1700000000000).toISOString());
+  assert.equal(JSON.stringify(row).includes("private.invalid"),false);
+  assert.equal(parseOfficialRankingDetails(officialPage(p),"lv654321"),null);
+  assert.equal(parseOfficialRankingDetails(officialPage({...p,supplier:{...p.supplier,programProviderType:"channel"}}),"lv123456").broadcasterId,"");
+  assert.equal(parseOfficialRankingDetails(officialPage({...p,thumbnail:{huge:"https://evil.example/a"}}),"lv123456").thumbnailUrl,"");
+});
+test("official enrichment limits each refresh to six requests and caches by program ID",async()=>{
+  const {createRankingDetailEnricher}=require("../electron/live-ranking.cjs");
+  let calls=0,active=0,maxActive=0,now=1700000000000;
+  const enrich=createRankingDetailEnricher(async(url,options)=>{
+    calls++;active++;maxActive=Math.max(active,maxActive);
+    assert.match(url,/^https:\/\/live\.nicovideo\.jp\/watch\/lv\d+$/);
+    assert.equal(options.redirect,"error");
+    assert.equal(options.headers.cookie,undefined);
+    const id=url.split("/").at(-1);
+    await new Promise(resolve=>setImmediate(resolve));active--;
+    return {ok:true,text:async()=>officialPage({nicoliveProgramId:id,title:"公式番組",supplier:{name:"確認名",programProviderType:"user",programProviderId:"123456"},thumbnail:{large:"https://cdn.nimg.jp/a.jpg"}})};
+  },()=>now);
+  const rows=Array.from({length:10},(_,i)=>({liveId:"lv"+(123456+i),title:"元の番組",points:100-i,rank:i+1}));
+  const first=await enrich(rows);
+  assert.equal(calls,6);assert.ok(maxActive<=2);
+  assert.equal(first.filter(r=>r.thumbnailUrl).length,6);
+  assert.equal(first[0].rank,1);assert.equal(first[0].points,100);
+  const second=await enrich(rows);
+  assert.equal(calls,10);assert.equal(second.filter(r=>r.thumbnailUrl).length,10);
+  await enrich(rows);assert.equal(calls,10);
+  now+=1800001;await enrich(rows);assert.equal(calls,16);
+});

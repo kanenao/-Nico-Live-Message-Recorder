@@ -172,7 +172,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       const d=cache.get(row.liveId)?.details;
       if(!d)return row;
       return {...row,title:d.title||row.title,name:d.name||row.name,
-        broadcasterId:d.broadcasterId||row.broadcasterId,startedAt:d.startedAt||row.startedAt,
+        broadcasterId:d.broadcasterId,startedAt:d.startedAt||row.startedAt,
         iconUrl:d.iconUrl||row.iconUrl,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl};
     });
   };
