@@ -520,3 +520,32 @@ test("ranking movement distinguishes new, unchanged and incomparable snapshots",
   assert.match(label({rankChange:2,previousRank:3}),/UP 2/);
   assert.match(label({rankChange:-1,previousRank:3}),/DOWN 1/);
 });
+
+
+test("point difference requires the same actual comparison sources, not just equal source counts",()=>{
+  const now=1700000000000;
+  const sample=(a,b)=>[
+    {id:"a",ok:true,rows:[{liveId:"lv123456",title:"番組",comments:a,visitors:100}]},
+    {id:"b",ok:true,rows:[{liveId:"lv123456",title:"番組",comments:b,visitors:100}]}
+  ];
+  const first=buildRanking(sample(10,null),[],now,0);
+  const second=buildRanking(sample(20,100),first,now+30000,now);
+  assert.deepEqual(second[0].commentRateSourceIds,["a"]);
+  const third=buildRanking(sample(null,150),second,now+60000,now+30000);
+  assert.deepEqual(third[0].commentRateSourceIds,["b"]);
+  assert.equal(third[0].commentRateSourceCount,1);
+  assert.equal(third[0].pointDelta,null);
+  const fourth=buildRanking(sample(null,160),third,now+90000,now+60000);
+  assert.ok(Number.isFinite(fourth[0].pointDelta));
+});
+test("ranking elapsed time uses the existing per-second clock and hidden rows are not mislabeled NEW",()=>{
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const block=source.slice(source.indexOf("function renderIndependentRanking("),source.indexOf("async function refreshIndependentRanking("));
+  assert.match(block,/elapsed\.className="live-broadcast-elapsed"/);
+  assert.match(block,/elapsed\.dataset\.startedAt=item\.startedAt/);
+  const now=1700000000000;
+  const rows=Array.from({length:200},(_,i)=>({liveId:"lv"+(100000+i),title:"番組"}));
+  const first=buildRanking([{id:"a",ok:true,rows}],[],now,0);
+  const next=buildRanking([{id:"a",ok:true,rows:[{liveId:"lv999999",title:"番組"},...rows.slice(0,199)]}],first,now+30000,now);
+  assert.equal(next.find(x=>x.liveId==="lv999999").rankNew,false);
+});

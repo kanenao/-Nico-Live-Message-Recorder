@@ -283,14 +283,15 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
 // Compare matching source counters only. Median avoids adding duplicated
 // cumulative counts or trusting a single unusually delayed source.
 function rankingGrowth(samples,prior,elapsed){
-  const deltas=prior&&elapsed>=1/3&&elapsed<=15?Object.entries(samples||{}).flatMap(([id,value])=>{
+  const pairs=prior&&elapsed>=1/3&&elapsed<=15?Object.entries(samples||{}).flatMap(([id,value])=>{
     const old=prior[id];
-    return Number.isFinite(old)&&Number.isFinite(value)&&value>=old?[value-old]:[];
+    return Number.isFinite(old)&&Number.isFinite(value)&&value>=old?[{id,delta:value-old}]:[];
   }):[];
-  deltas.sort((a,b)=>a-b);
+  const sourceIds=pairs.map(p=>p.id).sort();
+  const deltas=pairs.map(p=>p.delta).sort((a,b)=>a-b);
   const middle=Math.floor(deltas.length/2);
   const median=deltas.length?(deltas.length%2?deltas[middle]:(deltas[middle-1]+deltas[middle])/2):null;
-  return {delta:median,rate:median===null?null:Math.round(median/elapsed*10)/10,count:deltas.length};
+  return {delta:median,rate:median===null?null:Math.round(median/elapsed*10)/10,count:deltas.length,sourceIds};
 }
 function momentumPoints(ranks,commentRate,visitorRate){
   const reference=ranks.reduce((sum,r)=>sum+200*10/(9+r),0);
@@ -328,15 +329,20 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
     const visitors=rankingGrowth(row.visitorSamples,oldSamples?.visitorSamples,elapsed);
     row.commentRate=comments.rate;
     row.commentRateSourceCount=comments.count;
+    row.commentRateSourceIds=comments.sourceIds;
     row.commentDelta=comments.delta;
     row.visitorRate=visitors.rate;
     row.visitorRateSourceCount=visitors.count;
+    row.visitorRateSourceIds=visitors.sourceIds;
     row.visitorDelta=visitors.delta;
     row.points=momentumPoints(ranks,row.commentRate,row.visitorRate);
     row.previousRank=old&&elapsed>0&&elapsed<=3?old.rank??null:null;
     row.pointDelta=old&&elapsed>0&&elapsed<=3&&Number.isFinite(old.points)&&
-      old.commentRateSourceCount===comments.count&&old.visitorRateSourceCount===visitors.count?row.points-old.points:null;
-    row.rankNew=Boolean(!old&&comparable&&previous.length&&elapsed>0&&elapsed<=3);
+      Array.isArray(old.commentRateSourceIds)&&Array.isArray(old.visitorRateSourceIds)&&
+      old.commentRateSourceIds.join(",")===comments.sourceIds.join(",")&&
+      old.visitorRateSourceIds.join(",")===visitors.sourceIds.join(",")?row.points-old.points:null;
+    // A previous top-200 snapshot cannot establish that an omitted program is new.
+    row.rankNew=Boolean(!old&&comparable&&previous.length&&previous.length<LIMIT&&elapsed>0&&elapsed<=3);
     return row;
   }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
   return rows.map((row,i)=>{
