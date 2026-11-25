@@ -1884,6 +1884,19 @@ function rankingCell(row, value, className = "") {
 function rankingNumber(value) {
   return Number.isFinite(value) ? value.toLocaleString("ja-JP") : "—";
 }
+function rankingMovement(item) {
+  if(item.rankNew)return "NEW";
+  if(!Number.isInteger(item.rankChange)||!Number.isInteger(item.previousRank))return "—";
+  const change=item.rankChange;
+  return (change>0?"▲ UP "+change:change<0?"▼ DOWN "+Math.abs(change):"→ KEEP")+"（前回"+item.previousRank+"位）";
+}
+function appendRankingDelta(cell,value,unit="") {
+  const delta=document.createElement("small");
+  delta.className="ranking-delta";
+  delta.textContent=Number.isFinite(value)?"前回比 "+(value>0?"+":"")+rankingNumber(value)+unit:"前回比 —";
+  if(Number.isFinite(value)&&value!==0)delta.classList.add(value>0?"ranking-up":"ranking-down");
+  cell.appendChild(delta);
+}
 function isRankingFresh(snapshot, now=Date.now()) {
   const at=Date.parse(snapshot?.dataAt);
   return Boolean(snapshot&&!snapshot.stale&&Number.isFinite(at)&&now>=at&&now-at<=180000);
@@ -1891,7 +1904,7 @@ function isRankingFresh(snapshot, now=Date.now()) {
 function isRankingRefreshDue(lastRequestAt,now=Date.now()) {
   if(!Number.isFinite(lastRequestAt))return true;
   const age=now-lastRequestAt;
-  return age<0||age>=90000;
+  return age<0||age>=30000;
 }
 function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
   if(!snapshot)return "ランキング未取得";
@@ -2009,7 +2022,12 @@ function renderIndependentRanking() {
     videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
   for (const item of rows) {
     const tr = document.createElement("tr");
-    const rankCell=rankingCell(tr, item.rank + (item.rankChange>0?" ↑"+item.rankChange:item.rankChange<0?" ↓"+Math.abs(item.rankChange):""), "ranking-rank");
+    const rankCell=rankingCell(tr, item.rank+"位", "ranking-rank");
+    const movement=document.createElement("small");movement.className="ranking-movement";
+    movement.textContent=rankingMovement(item);
+    if(item.rankChange>0)movement.classList.add("ranking-up");
+    if(item.rankChange<0)movement.classList.add("ranking-down");
+    rankCell.appendChild(movement);
     appendRankingTrend(rankCell,item);
     const info = rankingCell(tr,null,"ranking-program");
     const title=document.createElement("strong");title.textContent=item.title||item.liveId;
@@ -2021,9 +2039,9 @@ function renderIndependentRanking() {
     if(!picture.children.length){const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";picture.appendChild(placeholder);}
     const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
     identity.append(picture,labels);info.appendChild(identity);
-    rankingCell(tr,rankingNumber(item.points),"ranking-points");
-    rankingCell(tr,rankingNumber(item.visitors));
-    rankingCell(tr,rankingNumber(item.comments));
+    appendRankingDelta(rankingCell(tr,rankingNumber(item.points),"ranking-points"),item.pointDelta,"pt");
+    appendRankingDelta(rankingCell(tr,rankingNumber(item.visitors)),item.visitorDelta,"人");
+    appendRankingDelta(rankingCell(tr,rankingNumber(item.comments)),item.commentDelta,"件");
     const rateCell=rankingCell(tr,rankingNumber(item.commentRate));
     const sampleCount=Number.isInteger(item.commentRateSourceCount)?item.commentRateSourceCount:0;
     rateCell.title=Number.isFinite(item.commentRate)&&sampleCount>0
@@ -2042,6 +2060,8 @@ function renderIndependentRanking() {
     });
     const watch=document.createElement("button");watch.type="button";watch.className="button button-quiet button-small";watch.textContent="視聴";
     watch.addEventListener("click",()=>api.openWatch(item.liveId).catch(error=>showToast(error.message||"視聴ページを開けませんでした。",true)));
+    const preview=document.createElement("button");preview.type="button";preview.className="button button-quiet button-small";preview.textContent="プレビュー";
+    preview.addEventListener("click",()=>api.openLivePreview(item.liveId).catch(error=>showToast(error.message||"プレビューを開けませんでした。",true)));
     const monitor=document.createElement("button");monitor.type="button";monitor.className="button button-outline button-small";
     const pending=rankingMonitorPending.has(item.liveId);
     monitor.dataset.rankingMonitor=item.liveId;monitor.textContent=pending?"確認中…":"＋監視";
@@ -2059,7 +2079,7 @@ function renderIndependentRanking() {
       setActivePage("record");
       await startVideoRecording({liveId:item.liveId,chase:true});
     });
-    actions.append(record,watch,monitor,chase);list.appendChild(tr);
+    actions.append(record,watch,monitor,chase,preview);list.appendChild(tr);
   }
   if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;list.appendChild(tr);}
   rankingVisibleCount=rows.length;

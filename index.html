@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v1.1.0-beta.148</span>
+        <span class="version" id="version">v1.2.0-beta.149</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -78,7 +78,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">1.1.0-beta.148</span></div>
+          <div class="small-version">BUILD <span id="build-version">1.2.0-beta.149</span></div>
         </div>
       </aside>
 
@@ -280,14 +280,14 @@
             <div><div class="eyebrow">NICO LIVE / RANKING</div><h2>ニコニコ生放送ランキング</h2></div>
             <button class="button button-primary button-small" id="ranking-refresh" type="button">更新</button>
           </div>
-          <p class="hint">独自ポイントは取得した各サイトの掲載順を統合して算出します。公式ポイントではありません。掲載範囲・取得状況によって順位は変動します。順位グラフは同じ取得条件で連続した最大約1時間の履歴（アプリ実行中）です。画像と配信者情報は取得可能な公式番組情報から順次補完します。</p>
+          <p class="hint">勢いポイントはコメント・来場者の1分あたりの伸びを重視し、取得した参考順位を加味する独自計算です。初回は参考順位のみ。公式ポイントではありません。順位グラフは同じ取得条件で連続した最大約1時間の履歴（アプリ実行中）です。画像と配信者情報は取得可能な公式番組情報から順次補完します。</p>
           <div class="ranking-toolbar">
             <label>検索 <input id="ranking-search" type="search" placeholder="配信者・タイトル・放送ID"></label>
-            <label>並び順 <select id="ranking-sort"><option value="points">独自ポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="startedAt">新着順</option></select></label>
-            <label><input id="ranking-auto" type="checkbox" checked> 自動更新（90秒）</label>
+            <label>並び順 <select id="ranking-sort"><option value="points">勢いポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="startedAt">新着順</option></select></label>
+            <label><input id="ranking-auto" type="checkbox" checked> 自動更新（30秒）</label>
           </div>
           <p class="hint" id="ranking-status" aria-live="polite">ランキング未取得</p>
-          <div class="ranking-scroll"><table class="ranking-table"><thead><tr><th>順位</th><th>番組 / 配信者</th><th>独自pt</th><th>来場者</th><th>コメント</th><th>増加/分</th><th>操作</th></tr></thead><tbody id="ranking-list"></tbody></table></div>
+          <div class="ranking-scroll"><table class="ranking-table"><thead><tr><th>順位</th><th>番組 / 配信者</th><th>勢いpt</th><th>来場者</th><th>コメント</th><th>増加/分</th><th>操作</th></tr></thead><tbody id="ranking-list"></tbody></table></div>
           <p class="hint">通常録画は映像・音声＋コメントです。「追っかけ（試験）」は映像・音声のみで、実際の開始位置は未保証です。「＋監視」は公式の番組情報で配信者を確認して登録します。視聴権限が必要です。取得失敗時は前回データを表示しますが、古い一覧からの録画開始は無効になります。</p>
         </section>
 
@@ -696,7 +696,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v1.1.0-beta.148</strong>
+              <strong id="app-current-version">v1.2.0-beta.149</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -845,7 +845,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v1.1.0-beta.148</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.2.0-beta.149</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

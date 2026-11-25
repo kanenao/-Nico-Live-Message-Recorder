@@ -1622,3 +1622,6 @@ button, .button {
 
 /* Ranking artwork and time-aligned rank trends */
 .ranking-identity{display:flex;align-items:center;gap:9px}.ranking-media{flex:0 0 80px;width:80px;height:48px;position:relative;border-radius:6px;overflow:hidden;background:rgba(127,127,127,.16)}.ranking-thumbnail{width:100%;height:100%;object-fit:cover}.ranking-icon{width:26px;height:26px;object-fit:cover;border-radius:50%;position:absolute;right:2px;bottom:2px;border:1px solid rgba(255,255,255,.7)}.ranking-media:not(:has(.ranking-thumbnail)) .ranking-icon{width:42px;height:42px;left:19px;top:3px}.ranking-image-placeholder{display:grid;place-items:center;height:100%;font-size:11px;opacity:.6}.ranking-labels{min-width:0;flex:1}.ranking-trend{display:block;width:72px;height:26px;margin:4px 0 0 auto;color:#5da9eb}.ranking-program{min-width:260px!important}
+
+/* Momentum ranking: movement and comparable counter changes */
+.ranking-movement,.ranking-delta{display:block;font-size:11px;font-weight:500;opacity:.82;margin-top:5px;white-space:nowrap}.ranking-up{color:#46c79d}.ranking-down{color:#ef8a85}.ranking-media{flex-basis:112px;width:112px;height:63px}.ranking-table{min-width:900px}.ranking-actions{min-width:190px;white-space:normal}.ranking-actions button{margin:2px}

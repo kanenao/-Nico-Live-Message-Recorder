@@ -24,7 +24,7 @@ test("independent points merge live IDs and never add duplicated cumulative coun
   const results=[{id:"a",ok:true,rows:a},{id:"b",ok:true,rows:b}];
   const rows=buildRanking(results);
   assert.equal(rows.length,2);
-  assert.equal(rows[0].points,1909);
+  assert.equal(rows[0].points,382);
   assert.equal(rows.find(r=>r.liveId==="lv123456").comments,25);
   assert.equal(rows.find(r=>r.liveId==="lv234567").visitors,120);
   assert.equal(rows[0].commentRate,null);
@@ -45,14 +45,14 @@ test("ranking caches requests and marks previous results stale when every source
   };
   const get=createRankingService({fetchImpl,now:()=>now});
   const [first,other]=await Promise.all([get(),get()]);
-  assert.equal(requests,4);
+  assert.equal(requests,3);
   assert.equal(first.rows.length,1);
-  assert.equal(first.rows[0].points,4000);
+  assert.equal(first.rows[0].points,600);
   assert.deepEqual(first,other);
-  await get();assert.equal(requests,4);
+  await get();assert.equal(requests,3);
   now+=91000;fail=true;
   const stale=await get();
-  assert.equal(requests,8);assert.equal(stale.stale,true);
+  assert.equal(requests,6);assert.equal(stale.stale,true);
   assert.equal(stale.rows[0].liveId,"lv123456");assert.equal(stale.dataAt,first.dataAt);
 });
 test("ranking UI and IPC are wired to the existing recording pathway",()=>{
@@ -228,7 +228,7 @@ test("profile fallback rejects unverified IDs, mismatched identities and untrust
 test("ranking chase action is explicit, confirmed and uses the standalone chase mode",()=>{
   const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
   const start=renderer.indexOf('chase.addEventListener("click"');
-  const end=renderer.indexOf("actions.append(record,watch,monitor,chase)",start);
+  const end=renderer.indexOf("actions.append(record,watch,monitor,chase,preview)",start);
   assert.ok(start>=0&&end>start);
   const block=renderer.slice(start,end);
   assert.match(block,/if\(!window.confirm\(/);
@@ -352,13 +352,13 @@ test("ranking cache does not lock out updates when the system clock moves backwa
     calls++;
     return {ok:true,text:async()=>page([program("lv123456")])};
   }});
-  await get();assert.equal(calls,4);
+  await get();assert.equal(calls,3);
   now-=3600000;
-  const snapshot=await get();assert.equal(calls,8);
+  const snapshot=await get();assert.equal(calls,6);
   assert.equal(snapshot.dataAt,new Date(now).toISOString());
   assert.equal(snapshot.rows[0].rankChange,null);
   assert.equal(snapshot.rows[0].commentRate,null);
-  await get();assert.equal(calls,8);
+  await get();assert.equal(calls,6);
 });
 test("ranking poll retries respect the refresh interval and recover after clock changes",()=>{
   const vm=require("node:vm");
@@ -369,8 +369,8 @@ test("ranking poll retries respect the refresh interval and recover after clock 
   const now=1700000000000;
   assert.equal(due(null,now),true);
   assert.equal(due(now-5000,now),false);
-  assert.equal(due(now-89999,now),false);
-  assert.equal(due(now-90000,now),true);
+  assert.equal(due(now-29999,now),false);
+  assert.equal(due(now-30000,now),true);
   assert.equal(due(now+1000,now),true);
   const snapshot={dataAt:new Date(now).toISOString(),stale:false,partial:true,rows:[{}]};
   assert.match(status(snapshot,1,now+10000),/一部取得不可.*10秒前/);
@@ -467,7 +467,7 @@ test("rank trend compares actual source coverage even when a source falls outsid
 test("ranking service preserves full source coverage across refreshes",async()=>{
   let now=1700000000000,drop=false;
   const get=createRankingService({now:()=>now,fetchImpl:async(url)=>{
-    if(drop&&url===SOURCES[3].url)return {ok:false,status:503};
+    if(drop&&url===SOURCES[2].url)return {ok:false,status:503};
     return {ok:true,text:async()=>page([program("lv123456")])};
   }});
   await get();now+=90000;
@@ -489,5 +489,34 @@ test("ranking hides per-source badges without disabling collection or freshness 
   assert.match(html,/id="ranking-status"/);
   assert.match(renderer,/rankingStatusText\(rankingSnapshot,rankingVisibleCount/);
   assert.match(renderer,/api\.getLiveRanking\(\)/);
-  assert.equal(SOURCES.length,4);
+  assert.equal(SOURCES.length,3);
+});
+
+
+test("momentum ranking uses 30-second same-source growth and preserves unknown counters",()=>{
+  const now=1700000000000;
+  const rows=(a,b)=>[{id:"a",ok:true,rows:parseRankingPage(page([program("lv123456",a,100),program("lv234567",b,100)]))}];
+  const first=buildRanking(rows(100,100),[],now,0);
+  const next=buildRanking(rows(100,125),first,now+30000,now);
+  assert.equal(next[0].liveId,"lv234567");
+  assert.equal(next[0].commentRate,50);
+  assert.equal(next[0].commentDelta,25);
+  assert.equal(next[0].visitorDelta,0);
+  assert.equal(next[0].pointDelta,null);
+  const next2=buildRanking(rows(100,150),next,now+60000,now+30000);
+  assert.equal(next2[0].pointDelta,0);
+  const reset=buildRanking(rows(100,1),next2,now+90000,now+60000);
+  assert.equal(reset.find(x=>x.liveId==="lv234567").commentDelta,null);
+});
+test("ranking movement distinguishes new, unchanged and incomparable snapshots",()=>{
+  const vm=require("node:vm");
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=source.indexOf("function rankingMovement(");
+  const end=source.indexOf("function appendRankingDelta(",start);
+  const label=vm.runInNewContext(source.slice(start,end)+"\nrankingMovement;");
+  assert.equal(label({rankNew:true}),"NEW");
+  assert.equal(label({rankChange:null}),"—");
+  assert.match(label({rankChange:0,previousRank:3}),/KEEP.*3位/);
+  assert.match(label({rankChange:2,previousRank:3}),/UP 2/);
+  assert.match(label({rankChange:-1,previousRank:3}),/DOWN 1/);
 });

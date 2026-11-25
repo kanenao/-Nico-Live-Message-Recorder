@@ -3,12 +3,11 @@
 const SOURCES = Object.freeze([
   {id:"chikuwa",name:"ちくわちゃん",url:"https://www.chikuwachan.com/live/NCU/"},
   {id:"nicoran",name:"nico-ran.stream",url:"https://nico-ran.stream/"},
-  {id:"ikioi",name:"配信者勢いランキング",url:"https://ikioi-ranking.com/v/nico"},
   {id:"official",name:"ニコ生公式ランキング",url:"https://live.nicovideo.jp/ranking"}
 ].map(Object.freeze));
 const LIMIT=200;
 const MAX_BYTES=6*1024*1024;
-const REFRESH_MS=90000;
+const REFRESH_MS=30000;
 
 function clean(v,max=240) {
   return String(v??"").replace(/&(?:amp|lt|gt|quot|apos|nbsp);|&#(?:x[0-9a-f]{1,6}|\d{1,7});/gi,entity=>{
@@ -281,13 +280,32 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
     return {id:source.id,name:source.name,ok:false,message:clean(error?.message||"通信エラー",140),rows:[]};
   }
 }
+// Compare matching source counters only. Median avoids adding duplicated
+// cumulative counts or trusting a single unusually delayed source.
+function rankingGrowth(samples,prior,elapsed){
+  const deltas=prior&&elapsed>=1/3&&elapsed<=15?Object.entries(samples||{}).flatMap(([id,value])=>{
+    const old=prior[id];
+    return Number.isFinite(old)&&Number.isFinite(value)&&value>=old?[value-old]:[];
+  }):[];
+  deltas.sort((a,b)=>a-b);
+  const middle=Math.floor(deltas.length/2);
+  const median=deltas.length?(deltas.length%2?deltas[middle]:(deltas[middle-1]+deltas[middle])/2):null;
+  return {delta:median,rate:median===null?null:Math.round(median/elapsed*10)/10,count:deltas.length};
+}
+function momentumPoints(ranks,commentRate,visitorRate){
+  const reference=ranks.reduce((sum,r)=>sum+200*10/(9+r),0);
+  // Independent provisional formula, not any site's proprietary points.
+  // Square roots limit the impact of sudden spikes and very large channels.
+  return Math.round(reference+50*Math.sqrt(Math.max(0,commentRate??0))+20*Math.sqrt(Math.max(0,visitorRate??0)));
+}
 function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSourceIds=null) {
   const byId=new Map();
   for(const source of results.filter(s=>s.ok)){
     unique(source.rows).forEach((row,i)=>{
       let item=byId.get(row.liveId);
-      if(!item){item={...row,sourceRanks:{},commentSamples:{},points:0};byId.set(row.liveId,item);}
+      if(!item){item={...row,sourceRanks:{},commentSamples:{},visitorSamples:{},points:0};byId.set(row.liveId,item);}
       if(row.comments!=null)item.commentSamples[source.id]=row.comments;
+      if(row.visitors!=null)item.visitorSamples[source.id]=row.visitors;
       for(const field of ["name","broadcasterId","startedAt","iconUrl","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
@@ -304,23 +322,21 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
   const elapsed=(now-previousAt)/60000;
   const rows=[...byId.values()].map(row=>{
     const ranks=Object.values(row.sourceRanks);
-    // Original score: reciprocal rank fusion; source counts are never double-counted.
-    row.points=Math.round(ranks.reduce((sum,r)=>sum+1000*10/(9+r),0));
     const old=prior.get(row.liveId);
-    // A source can disappear or start returning a counter with a different
-    // delay. Only compare successive measurements from the same source.
-    // Rank comparability requires identical source coverage; a comment rate
-    // only needs two valid samples from the same source, even in partial coverage.
     const oldSamples=priorSamples.get(row.liveId);
-    const rates=oldSamples&&elapsed>=1&&elapsed<=15?Object.entries(row.commentSamples).flatMap(([id,value])=>{
-      const previousValue=oldSamples.commentSamples?.[id];
-      return Number.isFinite(previousValue)&&value>=previousValue?[(value-previousValue)/elapsed]:[];
-    }):[];
-    rates.sort((a,b)=>a-b);
-    const middle=Math.floor(rates.length/2);
-    row.commentRate=rates.length?Math.round((rates.length%2?rates[middle]:(rates[middle-1]+rates[middle])/2)*10)/10:null;
-    row.commentRateSourceCount=rates.length;
+    const comments=rankingGrowth(row.commentSamples,oldSamples?.commentSamples,elapsed);
+    const visitors=rankingGrowth(row.visitorSamples,oldSamples?.visitorSamples,elapsed);
+    row.commentRate=comments.rate;
+    row.commentRateSourceCount=comments.count;
+    row.commentDelta=comments.delta;
+    row.visitorRate=visitors.rate;
+    row.visitorRateSourceCount=visitors.count;
+    row.visitorDelta=visitors.delta;
+    row.points=momentumPoints(ranks,row.commentRate,row.visitorRate);
     row.previousRank=old&&elapsed>0&&elapsed<=3?old.rank??null:null;
+    row.pointDelta=old&&elapsed>0&&elapsed<=3&&Number.isFinite(old.points)&&
+      old.commentRateSourceCount===comments.count&&old.visitorRateSourceCount===visitors.count?row.points-old.points:null;
+    row.rankNew=Boolean(!old&&comparable&&previous.length&&elapsed>0&&elapsed<=3);
     return row;
   }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
   return rows.map((row,i)=>{
