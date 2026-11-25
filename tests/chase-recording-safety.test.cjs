@@ -43,8 +43,8 @@ test("unsupported chase plugin rejects with explicit guidance and no normal fall
 });
 
 const root = path.join(__dirname, "..");
-const main = fs.readFileSync(path.join(root, "electron/main.cjs"), "utf8");
-const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
+const main = fs.readFileSync(path.join(root, "electron/main.cjs"), "utf8").replace(/\r\n/g, "\n");
+const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8").replace(/\r\n/g, "\n");
 
 function handlerHarness() {
   const start = main.indexOf('ipcMain.handle("video:start"');
