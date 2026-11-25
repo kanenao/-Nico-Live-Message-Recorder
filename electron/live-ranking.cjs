@@ -319,8 +319,10 @@ function createRankingService(options={}) {
   let pending=null,lastAttempt=0,snapshot=null,previousAt=0,previous=[];
   return async function getRanking(){
     if(pending)return pending;
-    if(snapshot&&now()-lastAttempt<REFRESH_MS)return snapshot;
-    lastAttempt=now();
+    const at=now();
+    const elapsed=at-lastAttempt;
+    if(snapshot&&elapsed>=0&&elapsed<REFRESH_MS)return snapshot;
+    lastAttempt=at;
     pending=(async()=>{
       const results=await Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl)));
       const checkedAt=now();

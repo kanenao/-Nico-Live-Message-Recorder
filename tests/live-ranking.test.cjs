@@ -344,3 +344,37 @@ test("ranking profile falls back to bounded official user page and rejects gener
   const generic=async(url)=>url.includes("nvapi")?{ok:false}:{ok:true,text:async()=>'<meta property="og:image" content="https://cdn.nimg.jp/generic.jpg">'};
   assert.equal(await fetchOfficialRankingProfileIcon("123456",generic),"");
 });
+
+
+test("ranking cache does not lock out updates when the system clock moves backwards",async()=>{
+  let now=1700000000000,calls=0;
+  const get=createRankingService({now:()=>now,fetchImpl:async()=>{
+    calls++;
+    return {ok:true,text:async()=>page([program("lv123456")])};
+  }});
+  await get();assert.equal(calls,4);
+  now-=3600000;
+  const snapshot=await get();assert.equal(calls,8);
+  assert.equal(snapshot.dataAt,new Date(now).toISOString());
+  assert.equal(snapshot.rows[0].rankChange,null);
+  assert.equal(snapshot.rows[0].commentRate,null);
+  await get();assert.equal(calls,8);
+});
+test("ranking poll retries respect the refresh interval and recover after clock changes",()=>{
+  const vm=require("node:vm");
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=source.indexOf("function isRankingFresh(");
+  const end=source.indexOf("function liveRankingLabel(",start);
+  const {due,status}=vm.runInNewContext(source.slice(start,end)+"\n({due:isRankingRefreshDue,status:rankingStatusText});");
+  const now=1700000000000;
+  assert.equal(due(null,now),true);
+  assert.equal(due(now-5000,now),false);
+  assert.equal(due(now-89999,now),false);
+  assert.equal(due(now-90000,now),true);
+  assert.equal(due(now+1000,now),true);
+  const snapshot={dataAt:new Date(now).toISOString(),stale:false,partial:true,rows:[{}]};
+  assert.match(status(snapshot,1,now+10000),/一部取得不可.*10秒前/);
+  assert.match(status(snapshot,1,now+180001),/古いデータ（録画無効）/);
+  assert.match(status({...snapshot,stale:true},1,now+10000),/更新失敗/);
+  assert.match(status(snapshot,1,now-1000),/古いデータ/);
+});

@@ -1854,6 +1854,8 @@ async function processMonitorAutoQueue() {
 let rankingSnapshot = null;
 let rankingLoading = false;
 let rankingTimer = null;
+let rankingLastRequestAt = null;
+let rankingVisibleCount = 0;
 const rankingMonitorPending = new Set();
 
 function rankingCell(row, value, className = "") {
@@ -1869,6 +1871,24 @@ function rankingNumber(value) {
 function isRankingFresh(snapshot, now=Date.now()) {
   const at=Date.parse(snapshot?.dataAt);
   return Boolean(snapshot&&!snapshot.stale&&Number.isFinite(at)&&now>=at&&now-at<=180000);
+}
+function isRankingRefreshDue(lastRequestAt,now=Date.now()) {
+  if(!Number.isFinite(lastRequestAt))return true;
+  const age=now-lastRequestAt;
+  return age<0||age>=90000;
+}
+function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
+  if(!snapshot)return "ランキング未取得";
+  const at=Date.parse(snapshot.dataAt);
+  const age=now-at;
+  const checked=Number.isFinite(at)?new Date(at).toLocaleString("ja-JP"):"未取得";
+  const fresh=isRankingFresh(snapshot,now);
+  const total=Array.isArray(snapshot.rows)?snapshot.rows.length:0;
+  const state=snapshot.stale?"更新失敗 / 前回データ（録画無効）":
+    !fresh?"更新待ち / 古いデータ（録画無効）":
+    (snapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+total+"番組";
+  const ageLabel=Number.isFinite(age)&&age>=0?" ／ "+Math.floor(age/1000)+"秒前":"";
+  return state+" ／ "+checked+ageLabel+" ／ 表示 "+visibleCount+"件";
 }
 function liveRankingLabel(snapshot, liveId, now=Date.now()) {
   const id=String(liveId||"").trim().toLowerCase();
@@ -2034,12 +2054,13 @@ function renderIndependentRanking() {
     status.textContent=source.name+"："+(source.ok?source.count+"件":"取得不可");
     if(source.message)status.title=source.message;sources.appendChild(status);
   }
-  const checked=rankingSnapshot.dataAt?new Date(rankingSnapshot.dataAt).toLocaleString("ja-JP"):"未取得";
-  byId("ranking-status").textContent=(rankingSnapshot.stale?"更新失敗 / 前回データ（録画無効）":(rankingSnapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+all.length+"番組")+" ／ "+checked+" ／ 表示 "+rows.length+"件";
+  rankingVisibleCount=rows.length;
+  byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
 }
 async function refreshIndependentRanking() {
   if(rankingLoading)return;
   rankingLoading=true;
+  rankingLastRequestAt=Date.now();
   const button=byId("ranking-refresh");button.disabled=true;
   byId("ranking-status").textContent="ランキングを取得しています…";
   try {
@@ -2062,8 +2083,11 @@ function configureRankingRefresh(active) {
   // dashboard/monitor entry needs it. Respect the existing auto-refresh toggle.
   rankingTimer=setInterval(()=>{
     refreshRankingActions();
+    if(active&&!rankingLoading&&rankingSnapshot){
+      byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
+    }
     if((active||(showLiveRanks&&hasLive()))&&byId("ranking-auto").checked&&!rankingLoading&&
-       (!rankingSnapshot||!Number.isFinite(Date.parse(rankingSnapshot.checkedAt))||Date.now()-Date.parse(rankingSnapshot.checkedAt)>=90000))void refreshIndependentRanking();
+       isRankingRefreshDue(rankingLastRequestAt))void refreshIndependentRanking();
   },5000);
 }
 const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates"]);
