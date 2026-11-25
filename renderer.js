@@ -1796,6 +1796,7 @@ async function processMonitorAutoQueue() {
 let rankingSnapshot = null;
 let rankingLoading = false;
 let rankingTimer = null;
+const rankingMonitorPending = new Set();
 
 function rankingCell(row, value, className = "") {
   const cell = document.createElement("td");
@@ -1810,6 +1811,29 @@ function rankingNumber(value) {
 function isRankingFresh(snapshot, now=Date.now()) {
   const at=Date.parse(snapshot?.dataAt);
   return Boolean(snapshot&&!snapshot.stale&&Number.isFinite(at)&&now>=at&&now-at<=180000);
+}
+async function registerRankingMonitor(item) {
+  if(rankingMonitorPending.has(item.liveId)||!isRankingFresh(rankingSnapshot))return;
+  rankingMonitorPending.add(item.liveId);
+  renderIndependentRanking();
+  try {
+    const target=await api.resolveRankingMonitorTarget(item.liveId);
+    if((monitorSettings.targets||[]).some(t=>String(t.userId)===target.userId)){
+      showToast("この配信者はすでに監視リストに登録されています。");return;
+    }
+    const note=monitorSettings.autoRecord
+      ?"現在の設定では、監視中に放送を検知すると自動録画される場合があります。"
+      :"監視の開始・自動録画設定は変更しません。";
+    if(!window.confirm(target.name+"（user/"+target.userId+"）を監視リストに登録しますか？\n"+note))return;
+    applyMonitorState(await api.addMonitorTarget(target));
+    addMonitorActivity(target.name+" をランキングから監視リストに追加しました。");
+    showToast("監視リストに登録しました。");
+  }catch(error){
+    showToast(error.message||"監視リストに登録できませんでした。",true);
+  }finally{
+    rankingMonitorPending.delete(item.liveId);
+    renderIndependentRanking();
+  }
 }
 function renderIndependentRanking() {
   const list = byId("ranking-list");
@@ -1847,7 +1871,13 @@ function renderIndependentRanking() {
     });
     const watch=document.createElement("button");watch.type="button";watch.className="button button-quiet button-small";watch.textContent="視聴";
     watch.addEventListener("click",()=>api.openWatch(item.liveId).catch(error=>showToast(error.message||"視聴ページを開けませんでした。",true)));
-    actions.append(record,watch);list.appendChild(tr);
+    const monitor=document.createElement("button");monitor.type="button";monitor.className="button button-outline button-small";
+    const pending=rankingMonitorPending.has(item.liveId);
+    monitor.textContent=pending?"確認中…":"＋監視";
+    monitor.disabled=pending||!isRankingFresh(rankingSnapshot);
+    monitor.title="公式の番組情報で配信者を確認して監視リストに登録";
+    monitor.addEventListener("click",()=>void registerRankingMonitor(item));
+    actions.append(record,watch,monitor);list.appendChild(tr);
   }
   if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;list.appendChild(tr);}
   const sources=byId("ranking-sources");sources.replaceChildren();

@@ -2946,8 +2946,15 @@ function stopMonitor() {
   return getMonitorState();
 }
 
-const getIndependentLiveRanking = require("./live-ranking.cjs").createRankingService();
+const { createRankingService, resolveRankingMonitorTarget } = require("./live-ranking.cjs");
+const getIndependentLiveRanking = createRankingService();
 ipcMain.handle("ranking:list", () => getIndependentLiveRanking());
+ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
+  resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
+    timeoutMs: 6500,
+    fetchImpl: (url, options) => fetch(url, { ...options, redirect: "error" })
+  }))
+);
 ipcMain.handle("monitor:get-state", () => getMonitorState());
 ipcMain.handle("ollama:get-status", () => getOllamaStatus());
 ipcMain.handle("ollama:download-installer", async () => {

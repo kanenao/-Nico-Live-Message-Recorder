@@ -181,4 +181,19 @@ function createRankingService(options={}) {
     return pending;
   };
 }
-module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService};
+// A ranking entry can contain a channel ID, stale metadata or a false
+// broadcaster ID. Resolve the official program supplier before registering.
+async function resolveRankingMonitorTarget(value, fetchProgram) {
+  const id=String(value??"").trim().toLowerCase();
+  if(!/^lv\d{5,15}$/.test(id))throw Error("正しい放送IDを指定してください。");
+  const page=await fetchProgram(id);
+  if(!page||String(page.liveId).toLowerCase()!==id||
+     String(page.broadcasterType||"").trim().toLowerCase()!=="user"){
+    throw Error("公式番組情報からユーザー配信者を確認できません。チャンネル・公式放送は登録対象外です。");
+  }
+  const userId=String(page.broadcasterId??"").trim();
+  const name=clean(page.broadcasterName,80);
+  if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
+  return {userId,name};
+}
+module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget};

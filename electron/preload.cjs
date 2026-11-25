@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   retryUpdateDownload: () => ipcRenderer.invoke("updates:retry-download"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   getLiveRanking: () => ipcRenderer.invoke("ranking:list"),
+  resolveRankingMonitorTarget: (liveId) => ipcRenderer.invoke("ranking:resolve-monitor", liveId),
   getMonitorState: () => ipcRenderer.invoke("monitor:get-state"),
   getOllamaStatus: () => ipcRenderer.invoke("ollama:get-status"),
   downloadOllamaInstaller: () => ipcRenderer.invoke("ollama:download-installer"),
