@@ -121,6 +121,62 @@ async function readBounded(response) {
   finally{reader.releaseLock();}
   return Buffer.concat(chunks).toString("utf8");
 }
+// Read only public metadata from a fixed official watch URL. Never return
+// the full embedded page (it can contain session and connection information).
+function parseOfficialRankingDetails(html,id) {
+  const tags=String(html||"").matchAll(/<[^>]+\bid\s*=\s*(["'])embedded-data\1[^>]*>/gi);
+  for(const tag of tags){
+    const raw=tag[0].match(/\bdata-props\s*=\s*(["'])([\s\S]*?)\1/i)?.[2];
+    if(!raw)continue;
+    try{
+      const data=JSON.parse(raw.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
+      const p=data?.program;
+      if(!p||typeof p!=="object"||!clean(p.title))continue;
+      const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id);
+      if(declared&&declared!==id)return null;
+      const supplier=p.supplier??p.programProvider??{};
+      return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
+        broadcasterId:String(supplier.programProviderType??supplier.type??"").toLowerCase()==="user"&&/^\d{5,15}$/.test(String(supplier.programProviderId??supplier.id??""))?String(supplier.programProviderId??supplier.id):"",
+        startedAt:time(p.beginTime??p.beginAt),
+        iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
+        thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnails?.large)};
+    }catch{}
+  }
+  return null;
+}
+async function fetchOfficialRankingDetails(id,fetchImpl) {
+  if(!/^lv\d{5,15}$/.test(id))return null;
+  try{
+    const response=await fetchImpl("https://live.nicovideo.jp/watch/"+id,{
+      redirect:"error",headers:{accept:"text/html","user-agent":"Nico-Live-Message-Recorder"},signal:AbortSignal.timeout(5000)});
+    if(!response?.ok)return null;
+    return parseOfficialRankingDetails(await readBounded(response),id);
+  }catch{return null;}
+}
+// Limit each actual refresh to six lookups, with two concurrent requests.
+// Cache successes and failures, and prefer uncached rows in rank order.
+function createRankingDetailEnricher(fetchImpl,now=Date.now) {
+  const cache=new Map();
+  return async function enrich(rows){
+    const at=now();
+    for(const [id,entry] of cache)if(entry.expiresAt<=at)cache.delete(id);
+    const wanted=rows.filter(row=>!cache.has(row.liveId)&&(!row.iconUrl||!row.thumbnailUrl||!row.name)).slice(0,6);
+    for(let i=0;i<wanted.length;i+=2){
+      await Promise.all(wanted.slice(i,i+2).map(async row=>{
+        const details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
+        cache.set(row.liveId,{details,expiresAt:now()+(details?1800000:300000)});
+      }));
+    }
+    while(cache.size>400)cache.delete(cache.keys().next().value);
+    return rows.map(row=>{
+      const d=cache.get(row.liveId)?.details;
+      if(!d)return row;
+      return {...row,title:d.title||row.title,name:d.name||row.name,
+        broadcasterId:d.broadcasterId||row.broadcasterId,startedAt:d.startedAt||row.startedAt,
+        iconUrl:d.iconUrl||row.iconUrl,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl};
+    });
+  };
+}
 async function fetchSource(source,fetchImpl=globalThis.fetch) {
   try {
     // No account cookies, tokens or custom URL input are used on third-party sites.
@@ -185,6 +241,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
 function createRankingService(options={}) {
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   const now=options.now||Date.now;
+  const enrich=options.enrichDetails===true?createRankingDetailEnricher(fetchImpl,now):null;
   let pending=null,lastAttempt=0,snapshot=null,previousAt=0,previous=[];
   return async function getRanking(){
     if(pending)return pending;
@@ -194,8 +251,11 @@ function createRankingService(options={}) {
       const results=await Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl)));
       const checkedAt=now();
       const healthy=results.filter(s=>s.ok);
-      const rows=buildRanking(results,previous,checkedAt,previousAt);
-      if(healthy.length){previous=rows;previousAt=checkedAt;}
+      let rows=buildRanking(results,previous,checkedAt,previousAt);
+      if(healthy.length){
+        if(enrich)rows=await enrich(rows);
+        previous=rows;previousAt=checkedAt;
+      }
       snapshot={checkedAt:new Date(checkedAt).toISOString(),stale:!healthy.length,partial:healthy.length>0&&healthy.length<results.length,
         dataAt:previousAt?new Date(previousAt).toISOString():"",
         rows:healthy.length?rows:previous,
@@ -220,4 +280,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl};
+module.exports={SOURCES,REFRESH_MS,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher};

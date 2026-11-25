@@ -2947,7 +2947,7 @@ function stopMonitor() {
 }
 
 const { createRankingService, resolveRankingMonitorTarget } = require("./live-ranking.cjs");
-const getIndependentLiveRanking = createRankingService();
+const getIndependentLiveRanking = createRankingService({ enrichDetails: true });
 ipcMain.handle("ranking:list", () => getIndependentLiveRanking());
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
   resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
