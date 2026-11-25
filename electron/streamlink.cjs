@@ -202,6 +202,12 @@ function buildStreamlinkArgs(options) {
     "--hls-live-edge", "3"
   ];
   if (options.ffmpegPath) args.push("--ffmpeg-ffmpeg", options.ffmpegPath);
+  if (options.chase === true) {
+    if (options.timeshift) throw new Error("追っかけ録画と過去配信録画は同時に指定できません。");
+    // Request chase playback, then read from the oldest available HLS segment.
+    // Never emulate this by switching back to the normal live edge.
+    args.push("--niconico-chase-play", "--hls-live-restart");
+  }
   if (options.timeshift) {
     // Streamlink's nicolive plugin supports VOD/timeshift URLs. Offset 0 starts at the archive beginning.
     args.push("--niconico-timeshift-offset", "0");
