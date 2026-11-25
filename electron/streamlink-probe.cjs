@@ -19,7 +19,12 @@ function verifyStreamlinkPlugin(executablePath, liveId, configPath, options = {}
       else resolve({ checked: true, url });
     };
     try {
-      child = spawnProcess(executablePath, ["--config", configPath, "--can-handle-url-no-redirect", url], {
+      const args = ["--config", configPath];
+      // CLI parsing must recognize the patched chase flag before any recording
+      // is started; the normal URL probe alone accepts unpatched binaries.
+      if (options.chase === true) args.push("--niconico-chase-play", "--hls-live-restart");
+      args.push("--can-handle-url-no-redirect", url);
+      child = spawnProcess(executablePath, args, {
         windowsHide: true,
         stdio: ["ignore", "ignore", "pipe"],
         env: options.env || process.env
@@ -44,7 +49,10 @@ function verifyStreamlinkPlugin(executablePath, liveId, configPath, options = {}
         return;
       }
       const detail = stderr.trim();
-      finish(new Error("Streamlinkがニコ生URLを処理できません（終了コード " + code + (signal ? " / " + signal : "") + "）。" +
+      const guidance = options.chase === true
+        ? "Streamlinkの追っかけ録画対応を確認できません。最新の同梱版または自動更新版を利用してください。通常録画へは切り替えません。"
+        : "Streamlinkがニコ生URLを処理できません";
+      finish(new Error(guidance + "（終了コード " + code + (signal ? " / " + signal : "") + "）。" +
         (detail ? "\nStreamlink詳細: " + detail : " ニコ生プラグインが含まれるStreamlinkか確認してください。")));
     });
   });
