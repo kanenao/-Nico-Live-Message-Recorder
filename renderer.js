@@ -1894,6 +1894,7 @@ function appendRankingDelta(cell,value,unit="") {
   const delta=document.createElement("small");
   delta.className="ranking-delta";
   delta.textContent=Number.isFinite(value)?"前回比 "+(value>0?"+":"")+rankingNumber(value)+unit:"前回比 —";
+  if(unit==="人"||unit==="件")delta.title="同じ取得元で比較できた累計カウンターの増加数の中央値。表示中の最大累計値の単純差ではありません。";
   if(Number.isFinite(value)&&value!==0)delta.classList.add(value>0?"ranking-up":"ranking-down");
   cell.appendChild(delta);
 }
@@ -2031,7 +2032,14 @@ function renderIndependentRanking() {
     appendRankingTrend(rankCell,item);
     const info = rankingCell(tr,null,"ranking-program");
     const title=document.createElement("strong");title.textContent=item.title||item.liveId;
-    const meta=document.createElement("small");meta.textContent=(item.name||"配信者未取得")+" · "+item.liveId+(item.startedAt?" · "+formatBroadcastElapsed(item.startedAt):"");
+    const meta=document.createElement("small");meta.textContent=(item.name||"配信者未取得")+" · "+item.liveId;
+    if(item.startedAt){
+      const elapsed=document.createElement("span");
+      elapsed.className="live-broadcast-elapsed";
+      elapsed.dataset.startedAt=item.startedAt;
+      elapsed.textContent=formatBroadcastElapsed(item.startedAt);
+      meta.append(" · ",elapsed);
+    }
     const identity=document.createElement("div");identity.className="ranking-identity";
     const picture=document.createElement("div");picture.className="ranking-media";
     appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
