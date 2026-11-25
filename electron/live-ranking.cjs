@@ -281,7 +281,7 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
     return {id:source.id,name:source.name,ok:false,message:clean(error?.message||"通信エラー",140),rows:[]};
   }
 }
-function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
+function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSourceIds=null) {
   const byId=new Map();
   for(const source of results.filter(s=>s.ok)){
     unique(source.rows).forEach((row,i)=>{
@@ -295,7 +295,9 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
     });
   }
   const currentSources=results.filter(s=>s.ok).map(s=>s.id).sort().join(",");
-  const priorSources=[...new Set(previous.flatMap(row=>Object.keys(row.sourceRanks||{})))].sort().join(",");
+  // The top-200 display can omit every program from a successful source.
+  // Compare actual source coverage, not only the sources visible in that slice.
+  const priorSources=[...new Set(previousSourceIds??previous.flatMap(row=>Object.keys(row.sourceRanks||{})))].sort().join(",");
   const comparable=currentSources===priorSources;
   const priorSamples=new Map(previous.map(r=>[r.liveId,r]));
   const prior=comparable?priorSamples:new Map();
@@ -336,7 +338,7 @@ function createRankingService(options={}) {
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   const now=options.now||Date.now;
   const enrich=options.enrichDetails===true?createRankingDetailEnricher(fetchImpl,now):null;
-  let pending=null,lastAttempt=0,snapshot=null,previousAt=0,previous=[];
+  let pending=null,lastAttempt=0,snapshot=null,previousAt=0,previous=[],previousSourceIds=[];
   return async function getRanking(){
     if(pending)return pending;
     const at=now();
@@ -347,10 +349,10 @@ function createRankingService(options={}) {
       const results=await Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl)));
       const checkedAt=now();
       const healthy=results.filter(s=>s.ok);
-      let rows=buildRanking(results,previous,checkedAt,previousAt);
+      let rows=buildRanking(results,previous,checkedAt,previousAt,previousSourceIds);
       if(healthy.length){
         if(enrich)rows=await enrich(rows);
-        previous=rows;previousAt=checkedAt;
+        previous=rows;previousAt=checkedAt;previousSourceIds=healthy.map(s=>s.id);
       }
       snapshot={checkedAt:new Date(checkedAt).toISOString(),stale:!healthy.length,partial:healthy.length>0&&healthy.length<results.length,
         dataAt:previousAt?new Date(previousAt).toISOString():"",

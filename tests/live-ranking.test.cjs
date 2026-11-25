@@ -443,3 +443,36 @@ test("explicit recording targets synchronize the mode selector without changing 
   assert.equal(changes,3);
   assert.match(source,/syncSelectedRecordingMode\(selectedTarget\);\s*if \(selectedTarget\?\.chase/);
 });
+
+
+test("rank trend compares actual source coverage even when a source falls outside the visible 200",()=>{
+  const shared=Array.from({length:200},(_,i)=>({liveId:"lv"+(100000+i),title:"番組",comments:10}));
+  const extra={liveId:"lv999999",title:"別サイト",comments:10};
+  const results=[{id:"a",ok:true,rows:shared},{id:"b",ok:true,rows:shared},{id:"c",ok:true,rows:[...shared.slice(0,199),extra]},{id:"d",ok:true,rows:[...shared.slice(0,199),shared[199]]}];
+  // A source can be entirely excluded when all its rows have a lower score.
+  const crowded=[{id:"a",ok:true,rows:shared},{id:"b",ok:true,rows:shared},{id:"c",ok:true,rows:shared},{id:"d",ok:true,rows:[...shared.slice(0,199),extra]}];
+  // Use a single low-ranking unique program at rank 200, with the earlier
+  // entries overlapping the other sources. Test explicit source coverage
+  // against a truncated historical list, including missing source keys.
+  const now=1700000000000;
+  const first=buildRanking(results,[],now,0);
+  const truncated=first.map(row=>({...row,sourceRanks:Object.fromEntries(Object.entries(row.sourceRanks).filter(([id])=>id!=="d"))}));
+  const next=buildRanking(crowded,truncated,now+90000,now,["a","b","c","d"]);
+  assert.equal(next[0].rankChange,0);
+  assert.equal(next[0].rankHistory.length,2);
+  const failed=buildRanking(crowded.slice(0,3),next,now+180000,now+90000,["a","b","c","d"]);
+  assert.equal(failed[0].rankChange,null);
+  assert.equal(failed[0].rankHistory.length,1);
+});
+test("ranking service preserves full source coverage across refreshes",async()=>{
+  let now=1700000000000,drop=false;
+  const get=createRankingService({now:()=>now,fetchImpl:async(url)=>{
+    if(drop&&url===SOURCES[3].url)return {ok:false,status:503};
+    return {ok:true,text:async()=>page([program("lv123456")])};
+  }});
+  await get();now+=90000;
+  const next=await get();assert.equal(next.rows[0].rankChange,0);
+  now+=90000;drop=true;
+  const partial=await get();assert.equal(partial.rows[0].rankChange,null);
+  assert.equal(partial.rows[0].rankHistory.length,1);
+});
