@@ -123,6 +123,29 @@ async function readBounded(response) {
 }
 // Read only public metadata from a fixed official watch URL. Never return
 // the full embedded page (it can contain session and connection information).
+function officialSupplierUserId(supplier) {
+  const type=String(supplier.programProviderType??supplier.type??"").trim().toLowerCase();
+  // Do not treat a channel or an official program as an individual user.
+  if(type&&type!=="user")return "";
+  const raw=String(supplier.programProviderId??supplier.id??"").trim();
+  const numeric=/^\d{5,15}$/.test(raw)?raw:"";
+  const urls=[supplier.url,supplier.pageUrl,supplier.userPageUrl,supplier.profileUrl];
+  const ids=new Set();
+  for(const value of urls){
+    if(typeof value!=="string")continue;
+    try{
+      const u=new URL(value);
+      if(u.protocol!=="https:"||u.username||u.password||u.port||
+         !["www.nicovideo.jp","nicovideo.jp"].includes(u.hostname))continue;
+      const match=/^\/user\/(\d{5,15})\/?$/.exec(u.pathname);
+      if(match)ids.add(match[1]);
+    }catch{}
+  }
+  if(ids.size>1)return "";
+  const linked=ids.values().next().value||"";
+  if(numeric&&linked&&numeric!==linked)return "";
+  return type==="user"?(numeric||linked):linked;
+}
 function parseOfficialRankingDetails(html,id) {
   const tags=String(html||"").matchAll(/<[^>]+\bid\s*=\s*(["'])embedded-data\1[^>]*>/gi);
   for(const tag of tags){
@@ -136,9 +159,9 @@ function parseOfficialRankingDetails(html,id) {
       if(declared&&declared!==id)return null;
       const supplier=p.supplier??p.programProvider??{};
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
-        broadcasterId:String(supplier.programProviderType??supplier.type??"").toLowerCase()==="user"&&/^\d{5,15}$/.test(String(supplier.programProviderId??supplier.id??""))?String(supplier.programProviderId??supplier.id):"",
+        broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
-        iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
+        iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
         thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnails?.large)};
     }catch{}
   }
@@ -160,13 +183,23 @@ async function fetchOfficialRankingProfileIcon(userId,fetchImpl) {
   try {
     const response=await fetchImpl("https://nvapi.nicovideo.jp/v1/users/"+userId,{
       redirect:"error",headers:{accept:"application/json","X-Frontend-Id":"6","X-Frontend-Version":"0"},signal:AbortSignal.timeout(4000)});
+    if(response?.ok){
+      const payload=JSON.parse(await readBounded(response));
+      const user=payload?.data?.user??payload?.data??payload?.user;
+      if(user&&typeof user==="object"){
+        const claimed=user.id??user.userId;
+        if(claimed!=null&&String(claimed)!==userId)return "";
+        const icon=rankingImageUrl(require("./nico-profile.cjs").extractApiProfileIcon(payload));
+        if(icon)return icon;
+      }
+    }
+  }catch{}
+  // Fixed public profile URL; only accept a user-icon CDN image, not generic OGP art.
+  try{
+    const response=await fetchImpl("https://www.nicovideo.jp/user/"+userId,{
+      redirect:"error",headers:{accept:"text/html"},signal:AbortSignal.timeout(4000)});
     if(!response?.ok)return "";
-    const payload=JSON.parse(await readBounded(response));
-    const user=payload?.data?.user??payload?.data??payload?.user;
-    if(!user||typeof user!=="object")return "";
-    const claimed=user.id??user.userId;
-    if(claimed!=null&&String(claimed)!==userId)return "";
-    return rankingImageUrl(require("./nico-profile.cjs").extractApiProfileIcon(payload));
+    return rankingImageUrl(require("./nico-profile.cjs").extractProfileImageUrl(await readBounded(response)));
   }catch{return "";}
 }
 function createRankingDetailEnricher(fetchImpl,now=Date.now) {
