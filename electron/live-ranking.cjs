@@ -361,7 +361,12 @@ function createRankingActivityTracker(now=Date.now){
   function prune(at){
     if(at<lastAt){reset(liveId);return false;}
     lastAt=at;
-    for(const [id,seen] of users)if(at-seen>=WINDOW)users.delete(id);
+    // Entries are ordered by most recent observation. Stop as soon as the
+    // oldest remaining entry is fresh, avoiding a full scan for every comment.
+    for(const [id,seen] of users){
+      if(at-seen<WINDOW)break;
+      users.delete(id);
+    }
     return true;
   }
   function observe(record){
@@ -369,6 +374,7 @@ function createRankingActivityTracker(now=Date.now){
     const at=now();if(!prune(at))return;
     const id=String(record.userId??"").trim();
     if(!id||id.length>160||(!users.has(id)&&users.size>=LIMIT_USERS)){uncertainAt=at;return;}
+    users.delete(id);
     users.set(id,at);
   }
   function snapshot(id){

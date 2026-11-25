@@ -2042,13 +2042,14 @@ function renderIndependentRanking() {
     }
     const identity=document.createElement("div");identity.className="ranking-identity";
     const picture=document.createElement("div");picture.className="ranking-media";
+    const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
+    picture.appendChild(placeholder);
     appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
     picture.title="番組映像プレビューを開く";
     picture.setAttribute("role","button");picture.tabIndex=0;
     const openPicture=()=>Promise.resolve().then(()=>api.openLivePreview(item.liveId)).catch(error=>showToast(error.message||"プレビューを開けませんでした。",true));
     picture.addEventListener("click",openPicture);
     picture.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openPicture();}});
-    if(!picture.children.length){const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";picture.appendChild(placeholder);}
     const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
     identity.append(picture,labels);info.appendChild(identity);
     const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points");

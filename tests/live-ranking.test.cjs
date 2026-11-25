@@ -645,3 +645,25 @@ test("ranking activity counts unique live commenters only, expires samples and r
   tracker.state("lv123456",false);
   assert.equal(tracker.snapshot("lv123456"),null);
 });
+
+
+test("active commenter expiry follows latest observation without scanning all active IDs",()=>{
+  const {createRankingActivityTracker}=require("../electron/live-ranking.cjs");
+  let now=1700000000000;
+  const tracker=createRankingActivityTracker(()=>now);
+  tracker.state("lv123456",true);
+  const observe=id=>tracker.observe({liveId:"lv123456",type:"comment",userId:id});
+  observe("a");now+=1000;observe("b");now+=1000;observe("a");
+  now+=299000;
+  assert.equal(tracker.snapshot("lv123456").count,1);
+  now+=1000;
+  assert.equal(tracker.snapshot("lv123456").count,0);
+  observe("c");now-=1000;
+  assert.equal(tracker.snapshot("lv123456"),null);
+  tracker.state("lv123456",true);
+  assert.equal(tracker.snapshot("lv123456").complete,false);
+});
+test("ranking activity is not exposed while recording or comment termination is underway",()=>{
+  const source=fs.readFileSync(path.join(__dirname,"..","electron/main.cjs"),"utf8");
+  assert.match(source,/provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive\?rankingActivity\.snapshot/);
+});
