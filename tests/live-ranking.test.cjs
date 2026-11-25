@@ -476,3 +476,18 @@ test("ranking service preserves full source coverage across refreshes",async()=>
   const partial=await get();assert.equal(partial.rows[0].rankChange,null);
   assert.equal(partial.rows[0].rankHistory.length,1);
 });
+
+
+test("ranking hides per-source badges without disabling collection or freshness status",()=>{
+  const root=path.join(__dirname,"..");
+  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
+  const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+  const css=fs.readFileSync(path.join(root,"styles.css"),"utf8");
+  assert.doesNotMatch(html,/id="ranking-sources"/);
+  assert.doesNotMatch(renderer,/ranking-sources|ranking-source/);
+  assert.doesNotMatch(css,/\.ranking-sources?\b/);
+  assert.match(html,/id="ranking-status"/);
+  assert.match(renderer,/rankingStatusText\(rankingSnapshot,rankingVisibleCount/);
+  assert.match(renderer,/api\.getLiveRanking\(\)/);
+  assert.equal(SOURCES.length,4);
+});

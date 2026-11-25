@@ -2062,12 +2062,6 @@ function renderIndependentRanking() {
     actions.append(record,watch,monitor,chase);list.appendChild(tr);
   }
   if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;list.appendChild(tr);}
-  const sources=byId("ranking-sources");sources.replaceChildren();
-  for(const source of rankingSnapshot.sources||[]){
-    const status=document.createElement("span");status.className="ranking-source";
-    status.textContent=source.name+"："+(source.ok?source.count+"件":"取得不可");
-    if(source.message)status.title=source.message;sources.appendChild(status);
-  }
   rankingVisibleCount=rows.length;
   byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
 }
