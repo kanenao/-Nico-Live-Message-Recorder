@@ -95,3 +95,43 @@ test("primary stop control, IPC bridge and late-connection cancellation are wire
   assert.ok(early > 0 && early < initialization, "stop must be bound before optional UI startup");
   assert.match(renderer, /if \(captureStopInProgress \|\| recordButton\.disabled \|\| recordStartedAt\) return/);
 });
+
+
+test("late normal recording start response cannot resurrect a finalized recording", async () => {
+  const start=renderer.indexOf("async function startVideoRecording(");
+  const end=renderer.indexOf("function startRecordClock(",start);
+  assert.ok(start>=0&&end>start);
+  let resolveStart;
+  let queueCalls=0, clocks=0;
+  const writes=[];
+  const context={
+    captureStopInProgress:false,recordStartInProgress:false,recordStartedAt:0,
+    videoCaptureState:"idle",monitorAutoProcessing:false,connected:false,
+    currentLiveId:"",currentProgramMetadata:{},currentCaptureTarget:null,currentRecordingIsTimeshift:false,
+    liveInput:{value:""},recordButton:{disabled:false},stopRecordButton:{},
+    normalizeId:v=>v,byId:()=>null,syncSelectedRecordingMode:()=>{},
+    setCaptureText:(id,value)=>writes.push([id,value]),setCaptureDetail:()=>{},
+    showToast:()=>{},renderSessionProgramInfo:()=>{},renderLiveBroadcasts:()=>{},
+    setConnection:()=>{},requireCaptureApi:()=>{},updateMetadata:()=>{},
+    setVideoState:recording=>{context.videoCaptureState=recording?"recording":"idle";},
+    startRecordClock:()=>{clocks++;},processMonitorAutoQueue:()=>{queueCalls++;},
+    api:{startCapture:()=>new Promise(resolve=>{resolveStart=resolve;})}
+  };
+  const begin=vm.runInNewContext(renderer.slice(start,end)+"\nstartVideoRecording;",context);
+  const pending=begin({liveId:"lv123456"});
+  assert.equal(context.recordStartInProgress,true);
+  // Simulate the completion event arriving before the IPC reply.
+  context.currentCaptureTarget=null;
+  context.videoCaptureState="idle";
+  context.recordStartedAt=0;
+  writes.push(["video-file","確定済み.mp4"]);
+  resolveStart({video:{path:"途中.ts"},commentsConnected:true});
+  await pending;
+  assert.equal(context.videoCaptureState,"idle");
+  assert.equal(context.recordStartedAt,0);
+  assert.equal(clocks,0);
+  assert.equal(context.recordStartInProgress,false);
+  assert.equal(context.recordButton.disabled,false);
+  assert.equal(queueCalls,1);
+  assert.deepEqual(writes.filter(([id])=>id==="video-file"),[["video-file","確定済み.mp4"]]);
+});
