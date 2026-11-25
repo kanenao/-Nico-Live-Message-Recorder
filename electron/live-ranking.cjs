@@ -349,6 +349,23 @@ function applyCompositeScores(rows){
     return {...row,compositeScore:Math.round(sum*1000),scoreCoverage:Math.round(coverage*100),scoreParts};
   });
 }
+// Only reuse frames from the same running Streamlink article session.
+function selectRankingVideoFrame(liveId,session,now=Date.now()){
+  if(!/^lv\d{5,15}$/.test(String(liveId))||!session?.active||
+      session.liveId!==liveId||session.source!=="streamlink"||!Array.isArray(session.frames))return null;
+  let latest=null;
+  for(const frame of session.frames){
+    const at=Date.parse(frame?.capturedAt);
+    if(!Number.isFinite(at)||at>now||now-at>90000||(latest&&at<=latest.at))continue;
+    const image=frame?.image;
+    if(typeof image!=="string"||image.length<100||image.length>420000||image.length%4!==0||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(image))continue;
+    const bytes=Buffer.from(image,"base64");
+    if(bytes[0]!==255||bytes[1]!==216||bytes[bytes.length-2]!==255||bytes[bytes.length-1]!==217)continue;
+    latest={at,image:"data:image/jpeg;base64,"+image};
+  }
+  return latest?{image:latest.image,capturedAt:new Date(latest.at).toISOString()}:null;
+}
 function createRankingActivityTracker(now=Date.now){
   let liveId="",connected=false,startedAt=0,lastAt=0,uncertainAt=null;
   const users=new Map();
@@ -490,4 +507,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon};

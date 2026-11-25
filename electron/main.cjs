@@ -1954,6 +1954,9 @@ function closeHiddenLiveArticleCapture() {
 
 async function collectLiveArticleStreamFrames(includeLatest = false) {
   const directory = liveArticleVideoFrameDirectory;
+  const captureEpoch = commentSessionEpoch;
+  const captureLiveId = currentLiveId;
+  const sameCapture = () => directory === liveArticleVideoFrameDirectory && captureEpoch === commentSessionEpoch && captureLiveId === currentLiveId;
   if (!directory || !fs.existsSync(directory)) return 0;
   const names = (await fs.promises.readdir(directory))
     .filter(name => /^frame-\d{6}\.jpg$/i.test(name)).sort();
@@ -1982,6 +1985,7 @@ async function collectLiveArticleStreamFrames(includeLatest = false) {
       if (!checked) continue;
       const sequence = Number((name.match(/(\d{6})/) || [])[1]) || 1;
       const baseTime = liveArticleCaptureStartedAt || Date.now();
+      if (!sameCapture()) return added;
       liveArticleFrames = selectLiveArticleFrameHistory([...liveArticleFrames, {
         image: data,
         capturedAt: new Date(baseTime + (sequence - 1) * LIVE_ARTICLE_FRAME_INTERVAL_MS).toISOString()
@@ -2959,13 +2963,15 @@ function stopMonitor() {
   return getMonitorState();
 }
 
-const { createRankingService, resolveRankingMonitorTarget } = require("./live-ranking.cjs");
+const { createRankingService, resolveRankingMonitorTarget, selectRankingVideoFrame } = require("./live-ranking.cjs");
 const getIndependentLiveRanking = createRankingService({ enrichDetails: true });
 ipcMain.handle("ranking:list", async () => {
   const snapshot=await getIndependentLiveRanking();
+  const frameSession={active:liveArticleSessionActive&&Boolean(provider&&commentWriter)&&!captureStopPromise&&!commentFinalizing,liveId:currentLiveId,source:liveArticleVideoSource,frames:liveArticleFrames};
   return {...snapshot,rows:snapshot.rows.map(row=>{
     const activity=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(row.liveId):null;
-    return {...row,activePeople:activity?.count??null,activePeopleComplete:activity?.complete??false};
+    const frame=selectRankingVideoFrame(row.liveId,frameSession);
+    return {...row,activePeople:activity?.count??null,activePeopleComplete:activity?.complete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
   })};
 });
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>

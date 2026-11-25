@@ -2045,6 +2045,15 @@ function renderIndependentRanking() {
     const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
     picture.appendChild(placeholder);
     appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
+    const frameAt=Date.parse(item.videoFrameAt);
+    if(typeof item.videoFrame==="string"&&item.videoFrame.length<=420023&&
+        /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(item.videoFrame)&&
+        Number.isFinite(frameAt)&&Date.now()>=frameAt&&Date.now()-frameAt<=90000){
+      const frame=document.createElement("img");
+      frame.className="ranking-video-frame";frame.alt="取得した番組映像";
+      frame.addEventListener("error",()=>frame.remove(),{once:true});
+      frame.src=item.videoFrame;picture.appendChild(frame);
+    }
     picture.title="番組映像プレビューを開く";
     picture.setAttribute("role","button");picture.tabIndex=0;
     const openPicture=()=>Promise.resolve().then(()=>api.openLivePreview(item.liveId)).catch(error=>showToast(error.message||"プレビューを開けませんでした。",true));

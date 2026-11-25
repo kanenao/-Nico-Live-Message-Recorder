@@ -667,3 +667,27 @@ test("ranking activity is not exposed while recording or comment termination is 
   const source=fs.readFileSync(path.join(__dirname,"..","electron/main.cjs"),"utf8");
   assert.match(source,/provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive\?rankingActivity\.snapshot/);
 });
+
+
+test("ranking uses only fresh JPEG frames from the matching active Streamlink session",()=>{
+  const {selectRankingVideoFrame}=require("../electron/live-ranking.cjs");
+  const now=1700000000000;
+  const bytes=Buffer.alloc(100);bytes[0]=255;bytes[1]=216;bytes[98]=255;bytes[99]=217;
+  const image=bytes.toString("base64");
+  const frame=age=>({image,capturedAt:new Date(now-age).toISOString()});
+  const session={active:true,liveId:"lv123456",source:"streamlink",frames:[frame(1000),frame(2000),frame(-100),frame(100000),{...frame(500),image:"A".repeat(136)}]};
+  assert.equal(selectRankingVideoFrame("lv123456",session,now).capturedAt,frame(1000).capturedAt);
+  assert.equal(selectRankingVideoFrame("lv123456",session,now).image,"data:image/jpeg;base64,"+image);
+  assert.equal(selectRankingVideoFrame("lv234567",session,now),null);
+  assert.equal(selectRankingVideoFrame("lv123456",{...session,active:false},now),null);
+  assert.equal(selectRankingVideoFrame("lv123456",{...session,source:"watch-page"},now),null);
+  assert.equal(selectRankingVideoFrame("lv123456",{...session,frames:[frame(100000)]},now),null);
+});
+test("ranking frame integration guards capture-session changes and keeps the CDN fallback",()=>{
+  const main=fs.readFileSync(path.join(__dirname,"..","electron/main.cjs"),"utf8");
+  const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  assert.match(main,/if \(!sameCapture\(\)\) return added;/);
+  assert.match(main,/selectRankingVideoFrame\(row\.liveId,frameSession\)/);
+  assert.match(renderer,/appendRankingImage\(picture,item\.thumbnailUrl/);
+  assert.match(renderer,/frame\.addEventListener\("error",\(\)=>frame\.remove\(\)/);
+});

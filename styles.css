@@ -1630,3 +1630,5 @@ button, .button {
 
 /* Keep a visible, clickable preview placeholder when CDN artwork is unavailable. */
 .ranking-media .ranking-image-placeholder{position:absolute;inset:0}.ranking-media .ranking-thumbnail{position:relative;display:block}
+
+.ranking-media .ranking-video-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
