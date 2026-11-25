@@ -821,6 +821,10 @@ async function startVideoRecording(target = null) {
       setConnection("error");
     }
 
+    // A video:state completion can arrive while the start IPC is still
+    // resolving (including a user stop). Do not resurrect the recording or
+    // overwrite the finalized path after that completion.
+    if (!timeshift && !currentCaptureTarget && videoCaptureState !== "recording") return;
     const video = result.video || {};
     setCaptureText("video-file", "保存先：" + (video.path || ""));
     setCaptureDetail("録画開始を確認しました。映像保存先：" + (video.path || "未取得") +
@@ -862,8 +866,8 @@ async function startVideoRecording(target = null) {
     recordStartInProgress = false;
     if (recordButton) recordButton.disabled = captureStopInProgress || videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
     renderLiveBroadcasts();
+    processMonitorAutoQueue();
   }
-  processMonitorAutoQueue();
 }
 
 function startRecordClock() {
