@@ -1114,6 +1114,7 @@ function updateLiveElapsedLabels() {
 }
 
 function renderLiveBroadcasts() {
+  if (document.querySelector(".content")?.dataset.activePage === "ranking") renderIndependentRanking();
   const list = byId("live-broadcast-list");
   if (!list) return;
   list.replaceChildren();
@@ -1792,7 +1793,86 @@ async function processMonitorAutoQueue() {
 }
 
 
-const APP_PAGES = new Set(["dashboard", "monitor", "record", "comments", "compose", "library", "articles", "updates"]);
+let rankingSnapshot = null;
+let rankingLoading = false;
+let rankingTimer = null;
+
+function rankingCell(row, value, className = "") {
+  const cell = document.createElement("td");
+  cell.className = className;
+  if (value != null) cell.textContent = String(value);
+  row.appendChild(cell);
+  return cell;
+}
+function rankingNumber(value) {
+  return Number.isFinite(value) ? value.toLocaleString("ja-JP") : "—";
+}
+function renderIndependentRanking() {
+  const list = byId("ranking-list");
+  if (!list || !rankingSnapshot) return;
+  list.replaceChildren();
+  const q = byId("ranking-search").value.trim().toLowerCase();
+  const sort = byId("ranking-sort").value;
+  const all = rankingSnapshot.rows || [];
+  const rows = all.filter(item => [item.title,item.name,item.liveId].some(v=>String(v||"").toLowerCase().includes(q)));
+  const key = item => sort === "startedAt" ? (Date.parse(item.startedAt)||null) : item[sort];
+  rows.sort((a,b)=>(key(b)??-1)-(key(a)??-1)||a.rank-b.rank);
+  const busy = captureStopInProgress || recordStartInProgress || Boolean(recordStartedAt) ||
+    videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
+  for (const item of rows) {
+    const tr = document.createElement("tr");
+    rankingCell(tr, item.rank + (item.rankChange>0?" ↑"+item.rankChange:item.rankChange<0?" ↓"+Math.abs(item.rankChange):""), "ranking-rank");
+    const info = rankingCell(tr,null,"ranking-program");
+    const title=document.createElement("strong");title.textContent=item.title||item.liveId;
+    const meta=document.createElement("small");meta.textContent=(item.name||"配信者未取得")+" · "+item.liveId+(item.startedAt?" · "+formatBroadcastElapsed(item.startedAt):"");
+    info.append(title,meta);
+    rankingCell(tr,rankingNumber(item.points),"ranking-points");
+    rankingCell(tr,rankingNumber(item.visitors));
+    rankingCell(tr,rankingNumber(item.comments));
+    rankingCell(tr,rankingNumber(item.commentRate));
+    const actions=rankingCell(tr,null,"ranking-actions");
+    const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
+    record.textContent="● 録画";record.disabled=busy||rankingSnapshot.stale||Date.now()-Date.parse(rankingSnapshot.dataAt)>180000;
+    record.addEventListener("click",async()=>{
+      if(record.disabled)return;
+      setActivePage("record");
+      await startVideoRecording({liveId:item.liveId,title:item.title,name:item.name,broadcasterId:item.broadcasterId,startedAt:item.startedAt});
+    });
+    const watch=document.createElement("button");watch.type="button";watch.className="button button-quiet button-small";watch.textContent="視聴";
+    watch.addEventListener("click",()=>api.openWatch(item.liveId).catch(error=>showToast(error.message||"視聴ページを開けませんでした。",true)));
+    actions.append(record,watch);list.appendChild(tr);
+  }
+  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;list.appendChild(tr);}
+  const sources=byId("ranking-sources");sources.replaceChildren();
+  for(const source of rankingSnapshot.sources||[]){
+    const status=document.createElement("span");status.className="ranking-source";
+    status.textContent=source.name+"："+(source.ok?source.count+"件":"取得不可");
+    if(source.message)status.title=source.message;sources.appendChild(status);
+  }
+  const checked=rankingSnapshot.dataAt?new Date(rankingSnapshot.dataAt).toLocaleString("ja-JP"):"未取得";
+  byId("ranking-status").textContent=(rankingSnapshot.stale?"更新失敗 / 前回データ（録画無効）":"取得範囲 "+all.length+"番組")+" ／ "+checked+" ／ 表示 "+rows.length+"件";
+}
+async function refreshIndependentRanking() {
+  if(rankingLoading)return;
+  rankingLoading=true;
+  const button=byId("ranking-refresh");button.disabled=true;
+  byId("ranking-status").textContent="ランキングを取得しています…";
+  try {
+    if(typeof api?.getLiveRanking!=="function")throw Error("ランキング機能に対応したアプリが必要です。");
+    rankingSnapshot=await api.getLiveRanking();
+    renderIndependentRanking();
+  }catch(error){
+    if(rankingSnapshot){rankingSnapshot={...rankingSnapshot,stale:true};renderIndependentRanking();}
+    else byId("ranking-status").textContent="取得エラー："+(error.message||String(error));
+  }finally{rankingLoading=false;button.disabled=false;}
+}
+function configureRankingRefresh(active) {
+  if(rankingTimer){clearInterval(rankingTimer);rankingTimer=null;}
+  if(!active)return;
+  void refreshIndependentRanking();
+  if(byId("ranking-auto").checked)rankingTimer=setInterval(()=>void refreshIndependentRanking(),90000);
+}
+const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates"]);
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -1812,6 +1892,7 @@ function setActivePage(page) {
     else button.removeAttribute("aria-current");
   });
 
+  configureRankingRefresh(activePage === "ranking");
   if (activePage === "updates") void refreshEditionReleaseHistory();
   if (activePage === "library") loadCaptureLibrary();
   if (activePage === "articles") loadBroadcastArticles();
@@ -3648,6 +3729,10 @@ byId("settings-open-updates-button").addEventListener("click", () => {
   closeSettings();
   setActivePage("updates");
 });
+byId("ranking-refresh").addEventListener("click", refreshIndependentRanking);
+byId("ranking-search").addEventListener("input", renderIndependentRanking);
+byId("ranking-sort").addEventListener("change", renderIndependentRanking);
+byId("ranking-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
 setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);

@@ -2946,6 +2946,8 @@ function stopMonitor() {
   return getMonitorState();
 }
 
+const getIndependentLiveRanking = require("./live-ranking.cjs").createRankingService();
+ipcMain.handle("ranking:list", () => getIndependentLiveRanking());
 ipcMain.handle("monitor:get-state", () => getMonitorState());
 ipcMain.handle("ollama:get-status", () => getOllamaStatus());
 ipcMain.handle("ollama:download-installer", async () => {
