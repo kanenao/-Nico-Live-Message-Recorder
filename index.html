@@ -283,7 +283,7 @@
           <p class="hint">独自ポイントは取得した各サイトの掲載順を統合して算出します。公式ポイントではありません。掲載範囲・取得状況によって順位は変動します。</p>
           <div class="ranking-toolbar">
             <label>検索 <input id="ranking-search" type="search" placeholder="配信者・タイトル・放送ID"></label>
-            <label>並び順 <select id="ranking-sort"><option value="points">独自ポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分</option><option value="startedAt">新着順</option></select></label>
+            <label>並び順 <select id="ranking-sort"><option value="points">独自ポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="startedAt">新着順</option></select></label>
             <label><input id="ranking-auto" type="checkbox" checked> 自動更新（90秒）</label>
           </div>
           <div class="ranking-sources" id="ranking-sources" aria-live="polite"></div>

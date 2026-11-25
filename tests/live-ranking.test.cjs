@@ -29,7 +29,7 @@ test("independent points merge live IDs and never add duplicated cumulative coun
   assert.equal(rows.find(r=>r.liveId==="lv234567").visitors,120);
   assert.equal(rows[0].commentRate,null);
   const next=buildRanking([{id:"a",ok:true,rows:parseRankingPage(page([program("lv123456",40)]))},{id:"b",ok:true,rows:b}],rows,120000,60000);
-  assert.equal(next.find(r=>r.liveId==="lv123456").commentRate,15);
+  assert.equal(next.find(r=>r.liveId==="lv123456").commentRate,10);
   const partial=buildRanking([results[0]],rows,120000,60000);
   assert.equal(partial[0].rankChange,null);
 });
@@ -65,7 +65,29 @@ test("ranking UI and IPC are wired to the existing recording pathway",()=>{
   assert.match(html,/id="ranking-list"/);
   assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId/);
   assert.match(renderer,/configureRankingRefresh\(activePage === "ranking"\)/);
-  assert.match(renderer,/rankingSnapshot.stale\|\|Date.now\(\)-Date.parse\(rankingSnapshot.dataAt\)>180000/);
+  assert.match(renderer,/record.disabled\|\|!isRankingFresh\(rankingSnapshot\)/);
   assert.match(preload,/ipcRenderer.invoke\("ranking:list"\)/);
   assert.match(main,/ipcMain.handle\("ranking:list",/);
+});
+
+test("comment velocity cannot jump when a different source supplies the counter",()=>{
+  const a=parseRankingPage(page([program("lv123456",100)]));
+  const b=parseRankingPage(page([program("lv123456",null)]));
+  const before=buildRanking([{id:"a",ok:true,rows:a},{id:"b",ok:true,rows:b}]);
+  const after=buildRanking([{id:"a",ok:true,rows:parseRankingPage(page([program("lv123456",105)]))},{id:"b",ok:true,rows:parseRankingPage(page([program("lv123456",900)]))}],before,120000,60000);
+  assert.equal(after[0].comments,900);
+  assert.equal(after[0].commentRate,5);
+});
+test("invalid timestamps and old snapshots cannot enable the record button",()=>{
+  const vm=require("node:vm");
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=source.indexOf("function isRankingFresh(");
+  const end=source.indexOf("function renderIndependentRanking(",start);
+  const fresh=vm.runInNewContext(source.slice(start,end)+"\nisRankingFresh;");
+  const now=1700000000000;
+  assert.equal(fresh({dataAt:new Date(now-10000).toISOString(),stale:false},now),true);
+  for(const value of ["",undefined,"not a date",new Date(now+5000).toISOString(),new Date(now-180001).toISOString()]){
+    assert.equal(fresh({dataAt:value,stale:false},now),false);
+  }
+  assert.equal(fresh({dataAt:new Date(now).toISOString(),stale:true},now),false);
 });

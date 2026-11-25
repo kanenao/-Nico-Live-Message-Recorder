@@ -1807,6 +1807,10 @@ function rankingCell(row, value, className = "") {
 function rankingNumber(value) {
   return Number.isFinite(value) ? value.toLocaleString("ja-JP") : "—";
 }
+function isRankingFresh(snapshot, now=Date.now()) {
+  const at=Date.parse(snapshot?.dataAt);
+  return Boolean(snapshot&&!snapshot.stale&&Number.isFinite(at)&&now>=at&&now-at<=180000);
+}
 function renderIndependentRanking() {
   const list = byId("ranking-list");
   if (!list || !rankingSnapshot) return;
@@ -1832,9 +1836,10 @@ function renderIndependentRanking() {
     rankingCell(tr,rankingNumber(item.commentRate));
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
-    record.textContent="● 録画";record.disabled=busy||rankingSnapshot.stale||Date.now()-Date.parse(rankingSnapshot.dataAt)>180000;
+    const isRecording=Boolean(currentCaptureTarget?.liveId===item.liveId&&recordStartedAt);
+    record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
     record.addEventListener("click",async()=>{
-      if(record.disabled||rankingSnapshot.stale||Date.now()-Date.parse(rankingSnapshot.dataAt)>180000){
+      if(record.disabled||!isRankingFresh(rankingSnapshot)){
         showToast("ランキングの情報が古くなりました。更新してください。",true);return;
       }
       setActivePage("record");
@@ -1852,7 +1857,7 @@ function renderIndependentRanking() {
     if(source.message)status.title=source.message;sources.appendChild(status);
   }
   const checked=rankingSnapshot.dataAt?new Date(rankingSnapshot.dataAt).toLocaleString("ja-JP"):"未取得";
-  byId("ranking-status").textContent=(rankingSnapshot.stale?"更新失敗 / 前回データ（録画無効）":"取得範囲 "+all.length+"番組")+" ／ "+checked+" ／ 表示 "+rows.length+"件";
+  byId("ranking-status").textContent=(rankingSnapshot.stale?"更新失敗 / 前回データ（録画無効）":(rankingSnapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+all.length+"番組")+" ／ "+checked+" ／ 表示 "+rows.length+"件";
 }
 async function refreshIndependentRanking() {
   if(rankingLoading)return;
@@ -1872,7 +1877,12 @@ function configureRankingRefresh(active) {
   if(rankingTimer){clearInterval(rankingTimer);rankingTimer=null;}
   if(!active)return;
   void refreshIndependentRanking();
-  if(byId("ranking-auto").checked)rankingTimer=setInterval(()=>void refreshIndependentRanking(),90000);
+  // Refresh the disabled/REC display even if auto-refresh is off.
+  rankingTimer=setInterval(()=>{
+    renderIndependentRanking();
+    if(byId("ranking-auto").checked&&!rankingLoading&&
+       (!rankingSnapshot||Date.now()-Date.parse(rankingSnapshot.checkedAt)>=90000))void refreshIndependentRanking();
+  },5000);
 }
 const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates"]);
 

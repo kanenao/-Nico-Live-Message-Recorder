@@ -126,7 +126,8 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
   for(const source of results.filter(s=>s.ok)){
     unique(source.rows).forEach((row,i)=>{
       let item=byId.get(row.liveId);
-      if(!item){item={...row,sourceRanks:{},points:0};byId.set(row.liveId,item);}
+      if(!item){item={...row,sourceRanks:{},commentSamples:{},points:0};byId.set(row.liveId,item);}
+      if(row.comments!=null)item.commentSamples[source.id]=row.comments;
       for(const field of ["name","broadcasterId","startedAt"])if(!item[field]&&row[field])item[field]=row[field];
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
@@ -143,8 +144,15 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0) {
     // Original score: reciprocal rank fusion; source counts are never double-counted.
     row.points=Math.round(ranks.reduce((sum,r)=>sum+1000*10/(9+r),0));
     const old=prior.get(row.liveId);
-    row.commentRate=old&&elapsed>=1&&elapsed<=15&&old.comments!=null&&row.comments!=null&&row.comments>=old.comments
-      ?Math.round((row.comments-old.comments)/elapsed*10)/10:null;
+    // A source can disappear or start returning a counter with a different
+    // delay. Only compare successive measurements from the same source.
+    const rates=old&&elapsed>=1&&elapsed<=15?Object.entries(row.commentSamples).flatMap(([id,value])=>{
+      const previousValue=old.commentSamples?.[id];
+      return Number.isFinite(previousValue)&&value>=previousValue?[(value-previousValue)/elapsed]:[];
+    }):[];
+    rates.sort((a,b)=>a-b);
+    const middle=Math.floor(rates.length/2);
+    row.commentRate=rates.length?Math.round((rates.length%2?rates[middle]:(rates[middle-1]+rates[middle])/2)*10)/10:null;
     row.previousRank=old?.rank??null;
     return row;
   }).sort((a,b)=>b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
@@ -164,7 +172,7 @@ function createRankingService(options={}) {
       const healthy=results.filter(s=>s.ok);
       const rows=buildRanking(results,previous,checkedAt,previousAt);
       if(healthy.length){previous=rows;previousAt=checkedAt;}
-      snapshot={checkedAt:new Date(checkedAt).toISOString(),stale:!healthy.length,
+      snapshot={checkedAt:new Date(checkedAt).toISOString(),stale:!healthy.length,partial:healthy.length>0&&healthy.length<results.length,
         dataAt:previousAt?new Date(previousAt).toISOString():"",
         rows:healthy.length?rows:previous,
         sources:results.map(({rows,...s})=>({...s,count:rows.length}))};
