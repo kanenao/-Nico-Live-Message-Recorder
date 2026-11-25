@@ -263,3 +263,30 @@ test("expired ranking detail entries do not starve unvisited lower-ranked progra
   await enrich(rows);
   assert.deepEqual(requested.slice(18),rows.slice(0,6).map(r=>r.liveId));
 });
+
+
+test("dashboard ranking labels use exact live IDs, distinguish partial and stale coverage",()=>{
+  const vm=require("node:vm");
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=source.indexOf("function isRankingFresh(");
+  const end=source.indexOf("function createLiveRankingLabel(",start);
+  assert.ok(start>=0&&end>start);
+  const label=vm.runInNewContext(source.slice(start,end)+"\nliveRankingLabel;");
+  const now=1700000000000;
+  const snapshot={dataAt:new Date(now).toISOString(),stale:false,partial:false,rows:[{liveId:"lv123456",rank:3,rankChange:2}]};
+  assert.equal(label(snapshot,"LV123456",now),"独自順位：3位 ↑2");
+  assert.equal(label({...snapshot,partial:true},"lv123456",now),"独自順位：3位 ↑2（一部取得）");
+  assert.equal(label(snapshot,"lv234567",now),"独自順位：取得範囲外");
+  assert.equal(label(snapshot,"123456",now),"独自順位：未確認");
+  assert.equal(label(snapshot,"lv123456",now+180001),"独自順位：更新待ち");
+  assert.equal(label({...snapshot,stale:true},"lv123456",now),"独自順位：更新待ち");
+  assert.equal(label(null,"lv123456",now),"独自順位：未取得");
+  assert.equal(label({...snapshot,rows:[{liveId:"lv123456",rank:0}]},"lv123456",now),"独自順位：取得範囲外");
+});
+test("live dashboard and monitor use shared ranking labels and only poll with live demand",()=>{
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  assert.match(source,/meta\.append\(liveId, elapsed, createLiveRankingLabel\(status\.liveId\)\)/);
+  assert.match(source,/if\(status\?\.isLive&&!status\.error&&status\.liveId\)main\.appendChild\(createLiveRankingLabel/);
+  assert.match(source,/const showLiveRanks=page==="dashboard"\|\|page==="monitor"/);
+  assert.match(source,/\(active\|\|\(showLiveRanks&&hasLive\(\)\)\)&&byId\("ranking-auto"\)\.checked/);
+});

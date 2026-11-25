@@ -1166,6 +1166,7 @@ function updateLiveElapsedLabels() {
   document.querySelectorAll(".live-broadcast-elapsed").forEach(element => {
     element.textContent = formatBroadcastElapsed(element.dataset.startedAt || "");
   });
+  refreshLiveRankingLabels();
 }
 
 function renderLiveBroadcasts() {
@@ -1216,7 +1217,7 @@ function renderLiveBroadcasts() {
     elapsed.className = "live-broadcast-elapsed";
     elapsed.dataset.startedAt = status.startedAt || "";
     elapsed.textContent = formatBroadcastElapsed(status.startedAt);
-    meta.append(liveId, elapsed);
+    meta.append(liveId, elapsed, createLiveRankingLabel(status.liveId));
 
     const footer = document.createElement("div");
     footer.className = "live-broadcast-footer";
@@ -1377,6 +1378,7 @@ function renderMonitorTargets() {
       ? (status.title || "番組タイトル未取得") + " · 開始 " + formatBroadcastStart(status.startedAt)
       : status && status.error ? status.error : (status && status.checkedAt ? "現在オフライン" : "配信状況を確認すると詳細を表示します");
     main.append(name, id, detail);
+    if(status?.isLive&&!status.error&&status.liveId)main.appendChild(createLiveRankingLabel(status.liveId));
 
     const statusLabel = document.createElement("span");
     statusLabel.className = "monitor-target-status";
@@ -1868,6 +1870,28 @@ function isRankingFresh(snapshot, now=Date.now()) {
   const at=Date.parse(snapshot?.dataAt);
   return Boolean(snapshot&&!snapshot.stale&&Number.isFinite(at)&&now>=at&&now-at<=180000);
 }
+function liveRankingLabel(snapshot, liveId, now=Date.now()) {
+  const id=String(liveId||"").trim().toLowerCase();
+  if(!/^lv\d{5,15}$/.test(id))return "独自順位：未確認";
+  if(!isRankingFresh(snapshot,now))return "独自順位："+(snapshot?"更新待ち":"未取得");
+  const row=Array.isArray(snapshot.rows)?snapshot.rows.find(item=>item.liveId===id):null;
+  if(!Number.isInteger(row?.rank)||row.rank<1)return "独自順位：取得範囲外";
+  return "独自順位："+row.rank+"位"+(row.rankChange>0?" ↑"+row.rankChange:row.rankChange<0?" ↓"+Math.abs(row.rankChange):"")+(snapshot.partial?"（一部取得）":"");
+}
+function createLiveRankingLabel(liveId) {
+  const label=document.createElement("span");
+  label.className="live-ranking-label";
+  label.dataset.liveRankingId=String(liveId||"").trim().toLowerCase();
+  label.textContent=liveRankingLabel(rankingSnapshot,label.dataset.liveRankingId);
+  label.title="取得できた公開ランキングから計算した独自順位。公式順位ではありません。";
+  return label;
+}
+function refreshLiveRankingLabels() {
+  for(const label of document.querySelectorAll("[data-live-ranking-id]")){
+    const next=liveRankingLabel(rankingSnapshot,label.dataset.liveRankingId);
+    if(label.textContent!==next)label.textContent=next;
+  }
+}
 async function registerRankingMonitor(item) {
   if(rankingMonitorPending.has(item.liveId)||!isRankingFresh(rankingSnapshot))return;
   rankingMonitorPending.add(item.liveId);
@@ -2021,17 +2045,21 @@ async function refreshIndependentRanking() {
   }catch(error){
     if(rankingSnapshot){rankingSnapshot={...rankingSnapshot,stale:true};renderIndependentRanking();}
     else byId("ranking-status").textContent="取得エラー："+(error.message||String(error));
-  }finally{rankingLoading=false;button.disabled=false;}
+  }finally{rankingLoading=false;button.disabled=false;refreshLiveRankingLabels();}
 }
 function configureRankingRefresh(active) {
   if(rankingTimer){clearInterval(rankingTimer);rankingTimer=null;}
-  if(!active)return;
-  void refreshIndependentRanking();
-  // Refresh the disabled/REC display even if auto-refresh is off.
+  const page=document.querySelector(".content")?.dataset.activePage;
+  const showLiveRanks=page==="dashboard"||page==="monitor";
+  if(!active&&!showLiveRanks)return;
+  const hasLive=()=>getLiveBroadcastItems().length>0;
+  if(active||(showLiveRanks&&hasLive()&&byId("ranking-auto").checked))void refreshIndependentRanking();
+  // Poll the shared ranking snapshot only when the ranking page or a LIVE
+  // dashboard/monitor entry needs it. Respect the existing auto-refresh toggle.
   rankingTimer=setInterval(()=>{
     refreshRankingActions();
-    if(byId("ranking-auto").checked&&!rankingLoading&&
-       (!rankingSnapshot||Date.now()-Date.parse(rankingSnapshot.checkedAt)>=90000))void refreshIndependentRanking();
+    if((active||(showLiveRanks&&hasLive()))&&byId("ranking-auto").checked&&!rankingLoading&&
+       (!rankingSnapshot||!Number.isFinite(Date.parse(rankingSnapshot.checkedAt))||Date.now()-Date.parse(rankingSnapshot.checkedAt)>=90000))void refreshIndependentRanking();
   },5000);
 }
 const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates"]);
