@@ -1905,7 +1905,7 @@ function isRankingFresh(snapshot, now=Date.now()) {
 function isRankingRefreshDue(lastRequestAt,now=Date.now()) {
   if(!Number.isFinite(lastRequestAt))return true;
   const age=now-lastRequestAt;
-  return age<0||age>=30000;
+  return age<0||age>=10000;
 }
 function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
   if(!snapshot)return "ランキング未取得";

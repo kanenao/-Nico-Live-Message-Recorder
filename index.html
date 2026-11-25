@@ -284,7 +284,7 @@
           <div class="ranking-toolbar">
             <label>検索 <input id="ranking-search" type="search" placeholder="配信者・タイトル・放送ID"></label>
             <label>並び順 <select id="ranking-sort"><option value="compositeScore">総合ポイント（独自モデル）</option><option value="points">勢いポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="startedAt">新着順</option></select></label>
-            <label><input id="ranking-auto" type="checkbox" checked> 自動更新（30秒）</label>
+            <label><input id="ranking-auto" type="checkbox" checked> 自動更新（10秒）</label>
           </div>
           <p class="hint" id="ranking-status" aria-live="polite">ランキング未取得</p>
           <div class="ranking-scroll"><table class="ranking-table"><thead><tr><th>順位</th><th>番組 / 配信者</th><th>総合pt</th><th>勢いpt</th><th>来場者</th><th>コメント</th><th>増加/分</th><th>アクティブ人数</th><th>操作</th></tr></thead><tbody id="ranking-list"></tbody></table></div>

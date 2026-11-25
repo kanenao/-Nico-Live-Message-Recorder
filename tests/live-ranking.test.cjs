@@ -309,7 +309,7 @@ test("comment rate survives partial source failure without comparing unrelated c
   const reset=buildRanking([source("a",5),source("b",1499)],restored,now+270000,now+180000);
   assert.equal(reset[0].commentRate,null);
   assert.equal(reset[0].commentRateSourceCount,0);
-  const short=buildRanking([source("a",140)],restored,now+190000,now+180000);
+  const short=buildRanking([source("a",140)],restored,now+184000,now+180000);
   assert.equal(short[0].commentRate,null);
   const expired=buildRanking([source("a",140)],restored,now+180000+16*60000,now+180000);
   assert.equal(expired[0].commentRate,null);
@@ -370,8 +370,8 @@ test("ranking poll retries respect the refresh interval and recover after clock 
   const now=1700000000000;
   assert.equal(due(null,now),true);
   assert.equal(due(now-5000,now),false);
-  assert.equal(due(now-29999,now),false);
-  assert.equal(due(now-30000,now),true);
+  assert.equal(due(now-9999,now),false);
+  assert.equal(due(now-10000,now),true);
   assert.equal(due(now+1000,now),true);
   const snapshot={dataAt:new Date(now).toISOString(),stale:false,partial:true,rows:[{}]};
   assert.match(status(snapshot,1,now+10000),/一部取得不可.*10秒前/);
@@ -690,4 +690,41 @@ test("ranking frame integration guards capture-session changes and keeps the CDN
   assert.match(main,/selectRankingVideoFrame\(row\.liveId,frameSession\)/);
   assert.match(renderer,/appendRankingImage\(picture,item\.thumbnailUrl/);
   assert.match(renderer,/frame\.addEventListener\("error",\(\)=>frame\.remove\(\)/);
+});
+
+
+test("10-second ranking refresh shares in-flight requests and computes per-minute growth",async()=>{
+  const {REFRESH_MS}=require("../electron/live-ranking.cjs");
+  assert.equal(REFRESH_MS,10000);
+  let now=1700000000000,calls=0,comments=100;
+  const get=createRankingService({now:()=>now,fetchImpl:async()=>{
+    calls++;
+    return {ok:true,text:async()=>page([program("lv123456",comments,200)])};
+  }});
+  const first=await get();
+  assert.equal(calls,SOURCES.length);
+  now+=9999;await get();assert.equal(calls,SOURCES.length);
+  now+=1;comments+=5;
+  const [a,b]=await Promise.all([get(),get()]);
+  assert.equal(calls,SOURCES.length*2);
+  assert.deepEqual(a,b);
+  assert.equal(a.rows[0].commentDelta,5);
+  assert.equal(a.rows[0].commentRate,30);
+  assert.equal(first.rows[0].commentRate,null);
+});
+test("fast ranking refresh reuses detail cache without new watch-page requests",async()=>{
+  const {createRankingDetailEnricher}=require("../electron/live-ranking.cjs");
+  let calls=0,now=1700000000000;
+  const enrich=createRankingDetailEnricher(async(url)=>{
+    calls++;
+    const id=url.split("/").at(-1);
+    return {ok:true,text:async()=>officialPage({nicoliveProgramId:id,title:"番組",supplier:{name:"配信者"},thumbnail:{large:"https://cdn.nimg.jp/a.jpg"}})};
+  },()=>now);
+  const rows=[{liveId:"lv123456",title:"番組"}];
+  await enrich(rows,true);assert.equal(calls,1);
+  now+=10000;
+  const next=await enrich([...rows,{liveId:"lv234567",title:"番組"}],false);
+  assert.equal(calls,1);
+  assert.equal(next[0].thumbnailUrl,"https://cdn.nimg.jp/a.jpg");
+  assert.equal(next[1].thumbnailUrl,undefined);
 });

@@ -7,7 +7,8 @@ const SOURCES = Object.freeze([
 ].map(Object.freeze));
 const LIMIT=200;
 const MAX_BYTES=6*1024*1024;
-const REFRESH_MS=30000;
+const REFRESH_MS=10000;
+const DETAIL_REFRESH_MS=30000;
 
 function clean(v,max=240) {
   return String(v??"").replace(/&(?:amp|lt|gt|quot|apos|nbsp);|&#(?:x[0-9a-f]{1,6}|\d{1,7});/gi,entity=>{
@@ -262,11 +263,11 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
     profileCache.set(id,entry);
     return entry.promise;
   }
-  return async function enrich(rows){
+  return async function enrich(rows,allowFetch=true){
     const at=now();
     // Retain expired entries to prioritize programs not yet checked.
     for(const [id,entry] of profileCache)if(entry.expiresAt<=at)profileCache.delete(id);
-    const wanted=rows.filter(row=>(cache.get(row.liveId)?.expiresAt??0)<=at&&(!row.iconUrl||!row.thumbnailUrl||!row.name))
+    const wanted=(allowFetch?rows:[]).filter(row=>(cache.get(row.liveId)?.expiresAt??0)<=at&&(!row.iconUrl||!row.thumbnailUrl||!row.name))
       .sort((a,b)=>{
         const left=cache.get(a.liveId),right=cache.get(b.liveId);
         if(!left||!right)return Number(Boolean(left))-Number(Boolean(right));
@@ -312,7 +313,7 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
 // Compare matching source counters only. Median avoids adding duplicated
 // cumulative counts or trusting a single unusually delayed source.
 function rankingGrowth(samples,prior,elapsed){
-  const pairs=prior&&elapsed>=1/3&&elapsed<=15?Object.entries(samples||{}).flatMap(([id,value])=>{
+  const pairs=prior&&elapsed>=5/60&&elapsed<=15?Object.entries(samples||{}).flatMap(([id,value])=>{
     const old=prior[id];
     return Number.isFinite(old)&&Number.isFinite(value)&&value>=old?[{id,delta:value-old}]:[];
   }):[];
@@ -467,7 +468,7 @@ function createRankingService(options={}) {
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   const now=options.now||Date.now;
   const enrich=options.enrichDetails===true?createRankingDetailEnricher(fetchImpl,now):null;
-  let pending=null,lastAttempt=0,snapshot=null,previousAt=0,previous=[],previousSourceIds=[];
+  let pending=null,lastAttempt=0,lastDetailAt=null,snapshot=null,previousAt=0,previous=[],previousSourceIds=[];
   return async function getRanking(){
     if(pending)return pending;
     const at=now();
@@ -480,7 +481,12 @@ function createRankingService(options={}) {
       const healthy=results.filter(s=>s.ok);
       let rows=buildRanking(results,previous,checkedAt,previousAt,previousSourceIds);
       if(healthy.length){
-        if(enrich)rows=await enrich(rows);
+        if(enrich){
+          // Keep the more expensive watch/profile lookup cadence unchanged.
+          const due=lastDetailAt===null||checkedAt<lastDetailAt||checkedAt-lastDetailAt>=DETAIL_REFRESH_MS;
+          if(due)lastDetailAt=checkedAt;
+          rows=await enrich(rows,due);
+        }
         previous=rows;previousAt=checkedAt;previousSourceIds=healthy.map(s=>s.id);
       }
       snapshot={checkedAt:new Date(checkedAt).toISOString(),stale:!healthy.length,partial:healthy.length>0&&healthy.length<results.length,
