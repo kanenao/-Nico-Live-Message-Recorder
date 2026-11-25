@@ -6,6 +6,7 @@ on:
       - main
       - beta
       - "feature/**"
+      - "fix/**"
     paths:
       - "electron/**"
       - "index.html"

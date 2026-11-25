@@ -70,3 +70,23 @@ test("previously joined comments remain usable for ASS and article summaries", (
   assert.equal(article.commentCount, 2);
   assert.equal(article.uniqueCommenters, 2);
 });
+
+test("finishing an already destroyed comment stream rejects instead of hanging", async () => {
+  const { Writable } = require("node:stream");
+  const writer = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  writer.destroy();
+  await assert.rejects(finishCommentWriter(writer), /終了前に閉じられました/);
+});
+
+test("premature close while finishing a comment stream rejects instead of hanging", async () => {
+  const { Writable } = require("node:stream");
+  const writer = new Writable({
+    write(_chunk, _encoding, _callback) {
+      // Simulate an interrupted disk write that never invokes its callback.
+    }
+  });
+  writer.write('{"type":"comment","content":"pending"}\\n');
+  const finishing = finishCommentWriter(writer);
+  writer.destroy();
+  await assert.rejects(finishing, /終了前に閉じられました/);
+});
