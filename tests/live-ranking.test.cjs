@@ -414,3 +414,32 @@ test("ranking wrappers can expose provider and statistics beside the program",()
   assert.equal(rows[0].comments,0);
   assert.equal(rows[0].visitors,42);
 });
+
+
+test("explicit recording targets synchronize the mode selector without changing manual selection",()=>{
+  const vm=require("node:vm");
+  const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=source.indexOf("function syncSelectedRecordingMode(");
+  const end=source.indexOf("async function startVideoRecording(",start);
+  assert.ok(start>=0&&end>start);
+  let changes=0;
+  const selector={value:"timeshift",dispatchEvent(event){assert.equal(event.type,"change");changes++;}};
+  const sync=vm.runInNewContext(source.slice(start,end)+"\nsyncSelectedRecordingMode;",{
+    byId:id=>id==="record-mode"?selector:null,Event:class {constructor(type){this.type=type;}}
+  });
+  sync(null);
+  assert.equal(selector.value,"timeshift");
+  assert.equal(changes,0);
+  sync({liveId:"lv123456"});
+  assert.equal(selector.value,"live");
+  assert.equal(changes,1);
+  sync({liveId:"lv123456",chase:true});
+  assert.equal(selector.value,"chase");
+  assert.equal(changes,2);
+  sync({liveId:"lv123456",chase:true});
+  assert.equal(changes,2);
+  sync({liveId:"lv234567",chase:false});
+  assert.equal(selector.value,"live");
+  assert.equal(changes,3);
+  assert.match(source,/syncSelectedRecordingMode\(selectedTarget\);\s*if \(selectedTarget\?\.chase/);
+});
