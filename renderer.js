@@ -736,7 +736,7 @@ async function startVideoRecording(target = null) {
     return;
   }
 
-  if (!selectedTarget && byId("record-mode")?.value === "chase") return startChaseRecording(liveId);
+  if (selectedTarget?.chase === true || (!selectedTarget && byId("record-mode")?.value === "chase")) return startChaseRecording(liveId);
   const timeshift = !selectedTarget && byId("record-mode")?.value === "timeshift";
   currentRecordingIsTimeshift = timeshift;
   if (stopRecordButton) stopRecordButton.textContent = timeshift ? "映像録画を停止" : "録画・コメントを停止";
@@ -1923,9 +1923,12 @@ function refreshRankingActions() {
   const busy=captureStopInProgress||recordStartInProgress||Boolean(recordStartedAt)||
     videoCaptureState==="recording"||videoCaptureState==="stopping"||monitorAutoProcessing;
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-record]")){
-    const active=Boolean(currentCaptureTarget?.liveId===button.dataset.rankingRecord&&recordStartedAt);
+    const active=Boolean((currentCaptureTarget?.liveId===button.dataset.rankingRecord||(currentRecordingIsChase&&currentLiveId===button.dataset.rankingRecord))&&recordStartedAt);
     button.textContent=active?"● 録画中":"● 録画";
     button.disabled=busy||!fresh;
+  }
+  for(const button of document.querySelectorAll("#ranking-list button[data-ranking-chase]")){
+    button.disabled=busy||!fresh||commentCaptureState==="connected"||commentCaptureState==="connecting";
   }
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-monitor]")){
     const pending=rankingMonitorPending.has(button.dataset.rankingMonitor);
@@ -1964,7 +1967,7 @@ function renderIndependentRanking() {
     rankingCell(tr,rankingNumber(item.commentRate));
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
-    const isRecording=Boolean(currentCaptureTarget?.liveId===item.liveId&&recordStartedAt);
+    const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
     record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
     record.addEventListener("click",async()=>{
       if(record.disabled||!isRankingFresh(rankingSnapshot)){
@@ -1981,7 +1984,20 @@ function renderIndependentRanking() {
     monitor.disabled=pending||!isRankingFresh(rankingSnapshot);
     monitor.title="公式の番組情報で配信者を確認して監視リストに登録";
     monitor.addEventListener("click",()=>void registerRankingMonitor(item));
-    actions.append(record,watch,monitor);list.appendChild(tr);
+    const chase=document.createElement("button");chase.type="button";chase.className="button button-outline button-small";
+    chase.dataset.rankingChase=item.liveId;chase.textContent="追っかけ（試験）";
+    chase.disabled=busy||!isRankingFresh(rankingSnapshot)||commentCaptureState==="connected"||commentCaptureState==="connecting";
+    chase.title="映像・音声のみ。実際の開始位置は未検証です。通常録画に自動切り替えしません。";
+    chase.addEventListener("click",async()=>{
+      if(chase.disabled||!isRankingFresh(rankingSnapshot))return;
+      if(!window.confirm("追っかけ録画（試験）を開始しますか？\n映像・音声のみ保存し、過去コメントは取得しません。放送の対応状況により開始できない場合があります。"))return;
+      if(!isRankingFresh(rankingSnapshot))return showToast("ランキングが古くなりました。更新してください。",true);
+      setActivePage("record");
+      byId("record-mode").value="chase";
+      byId("record-mode").dispatchEvent(new Event("change"));
+      await startVideoRecording({liveId:item.liveId,chase:true});
+    });
+    actions.append(record,watch,monitor,chase);list.appendChild(tr);
   }
   if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;list.appendChild(tr);}
   const sources=byId("ranking-sources");sources.replaceChildren();

@@ -221,3 +221,17 @@ test("profile fallback rejects unverified IDs, mismatched identities and untrust
   assert.equal(await fetchOfficialRankingProfileIcon("123456",response({data:{user:{id:123456,icons:{large:"https://evil.example/icon.jpg"}}}})), "");
   assert.equal(await fetchOfficialRankingProfileIcon("123456",response({data:{user:{id:123456,icons:{large:"https://cdn.nimg.jp/icon.jpg"}}}})), "https://cdn.nimg.jp/icon.jpg");
 });
+
+test("ranking chase action is explicit, confirmed and uses the standalone chase mode",()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=renderer.indexOf('chase.addEventListener("click"');
+  const end=renderer.indexOf("actions.append(record,watch,monitor,chase)",start);
+  assert.ok(start>=0&&end>start);
+  const block=renderer.slice(start,end);
+  assert.match(block,/if\(!window.confirm\(/);
+  assert.match(block,/!isRankingFresh\(rankingSnapshot\)/);
+  assert.match(block,/await startVideoRecording\(\{liveId:item.liveId,chase:true\}\)/);
+  assert.match(renderer,/selectedTarget\?\.chase === true \|\| \(!selectedTarget && byId\("record-mode"\)\?\.value === "chase"\)/);
+  assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId,title:item.title/);
+  assert.match(renderer,/api\.startVideo\(liveId, quality, \{ chase: true \}\)/);
+});
