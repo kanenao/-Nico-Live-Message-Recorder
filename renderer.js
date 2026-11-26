@@ -2112,6 +2112,14 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
     item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
     busy,fresh,pending,isRecording,commentState]);
 }
+function updateRankingCoverage(){
+  const rows=rankingSnapshot?.rows||[];
+  const list=byId("ranking-list");
+  const loaded=list?Array.from(list.querySelectorAll("tr[data-live-id]")).filter(row=>Array.from(row.querySelectorAll(".ranking-thumbnail,.ranking-video-frame")).some(img=>img.complete&&img.naturalWidth>0&&!img.hidden)).length:0;
+  const visible=list?list.querySelectorAll("tr[data-live-id]").length:0;
+  const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:loaded+" / "+visible};
+  for(const [key,value] of Object.entries(values)){const el=byId("ranking-coverage-"+key);if(el)el.textContent=value;}
+}
 function renderIndependentRanking() {
   const list = byId("ranking-list");
   if (!list || !rankingSnapshot) return;
@@ -2186,34 +2194,42 @@ function renderIndependentRanking() {
     identity.append(picture,labels);info.appendChild(identity);
     const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points");
     const coverage=document.createElement("small");coverage.className="ranking-delta";
-    coverage.textContent=(item.scoreMethod==="ollama"?"AI配点":"統計配点")+" / 指標充足 "+rankingNumber(item.scoreCoverage)+"%";
+    coverage.textContent=(item.scoreMethod==="ollama"?"AI":"統計")+" · "+rankingNumber(item.scoreCoverage)+"%";
     score.appendChild(coverage);
     const breakdown=rankingScoreBreakdown(item);
-    const summary=document.createElement("small");summary.className="ranking-delta";
-    summary.textContent=breakdown.summary;score.appendChild(summary);
-    score.title=breakdown.detail;
+    score.title=breakdown.summary+"\n"+breakdown.detail;
     score.setAttribute("aria-label","総合 "+rankingNumber(item.compositeScore)+"pt。"+breakdown.detail);
-    appendRankingDelta(rankingCell(tr,rankingNumber(item.points),"ranking-points"),item.pointDelta,"pt");
-    appendRankingDelta(rankingCell(tr,rankingNumber(item.visitors)),item.visitorDelta,"人");
-    appendRankingDelta(rankingCell(tr,rankingNumber(item.comments)),item.commentDelta,"件");
-    const rateCell=rankingCell(tr,rankingNumber(item.commentRate));
+    const stats=rankingCell(tr,null,"ranking-metric-group");
+    const addMetric=(parent,label,value,delta=null,unit="")=>{
+      const line=document.createElement("div");line.className="ranking-metric-line";
+      const name=document.createElement("span");name.textContent=label;
+      const number=document.createElement("strong");number.textContent=rankingNumber(value)+(Number.isFinite(value)?unit:"");
+      line.append(name,number);parent.appendChild(line);
+      if(Number.isFinite(delta))line.title="前回比 "+(delta>0?"+":"")+rankingNumber(delta)+unit;
+      return line;
+    };
+    addMetric(stats,"勢い",item.points,item.pointDelta,"pt");
+    addMetric(stats,"来場",item.visitors,item.visitorDelta,"人");
+    addMetric(stats,"コメント",item.comments,item.commentDelta,"件");
+    const rateCell=addMetric(stats,"増加/分",item.commentRate,null,"");
     const sampleCount=Number.isInteger(item.commentRateSourceCount)?item.commentRateSourceCount:0;
     rateCell.title=Number.isFinite(item.commentRate)&&sampleCount>0
       ?"同一取得元のコメント増加数 / 分（比較可能な取得元 "+sampleCount+" 件）"
       :"比較可能なコメント数が不足、または取得間隔が対象外です。";
     const activityLabel=item.activityStatus==="connecting"?"接続中…":item.activityStatus==="unavailable"?"接続不可":item.activityStatus==="outside"?"観測対象外":"未取得";
     const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+"人":activityLabel);
-    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位3番組の公開コメント観測。5分未満は観測開始後の人数であり、5分全体の人数ではありません。";
+    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位10番組の公開コメント観測。5分未満は観測開始後の人数であり、5分全体の人数ではありません。";
     if(Number.isFinite(item.activePeople)&&!item.activePeopleComplete){const note=document.createElement("small");note.className="ranking-delta";note.textContent="観測中";activeCell.appendChild(note);}
-    const adCell=rankingCell(tr,Number.isFinite(item.adPoints)?rankingNumber(item.adPoints)+"pt":"未取得");
+    const contribution=rankingCell(tr,null,"ranking-metric-group");
+    const adCell=addMetric(contribution,"広告",item.adPoints,null,"pt");
     adCell.title="視聴接続の統計通知または取得元に明示された累計広告ポイント。未取得を0とは扱いません。";
-    const giftCell=rankingCell(tr,Number.isFinite(item.giftPoints)?rankingNumber(item.giftPoints)+"pt":"未取得");
+    const giftCell=addMetric(contribution,"ギフト",item.giftPoints,null,"pt");
     giftCell.title="視聴接続の統計通知または取得元の累計ギフトポイント。受信イベントによる観測値とは別です。";
     if(Number.isFinite(item.giftObservedPoints)){
       const observed=document.createElement("small");observed.className="ranking-delta";
       observed.textContent="観測5分: "+rankingNumber(item.giftObservedPoints)+"pt"+(item.giftObservationComplete?"":"以上");
       observed.title="実際に受信したギフトイベントの直近5分の小計（重複除外）。番組累計ではありません。";
-      giftCell.appendChild(observed);
+      contribution.appendChild(observed);
     }
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
@@ -2249,7 +2265,7 @@ function renderIndependentRanking() {
     actions.append(record,watch,monitor,chase,preview);
     desired.push(tr);
   }
-  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=11;desired.push(tr);}
+  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;desired.push(tr);}
   // Remove obsolete rows first, then move only rows whose position changed.
   const keep=new Set(desired);
   for(const row of Array.from(list.children))if(!keep.has(row))row.remove();
@@ -2265,6 +2281,7 @@ function renderIndependentRanking() {
     if(target&&!target.disabled&&document.activeElement!==target)target.focus({preventScroll:true});
   }
   rankingVisibleCount=rows.length;
+  updateRankingCoverage();
   byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
 }
 async function refreshIndependentRanking() {
@@ -2296,6 +2313,7 @@ function configureRankingRefresh(active) {
   rankingTimer=setInterval(()=>{
     refreshRankingActions();
     if(active&&!rankingLoading&&rankingSnapshot){
+      updateRankingCoverage();
       byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
     }
     if((active||(showLiveRanks&&hasLive()))&&byId("ranking-auto").checked&&!rankingLoading&&
