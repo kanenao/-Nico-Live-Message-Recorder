@@ -3,10 +3,12 @@
 // No GitHub credential is distributed in the desktop application.
 const http=require("node:http");
 const crypto=require("node:crypto");
+const {openReceiptStore}=require("./feedback-receipts.cjs");
 const {buildFeedbackIssueUrl}=require("../electron/feedback-url.cjs");
 const ISSUE_API="https://api.github.com/repos/kanenao/-Nico-Live-Message-Recorder/issues";
-function createRelay({token,fetchImpl=globalThis.fetch,now=Date.now}={}) {
+function createRelay({token,fetchImpl=globalThis.fetch,now=Date.now,stateDir}={}) {
   if(!token)throw Error("FEEDBACK_GITHUB_TOKEN is required");
+  const store=openReceiptStore(stateDir);
   const accepted=new Map(), pending=new Map(), recent=[];
   function reply(res,status,body){res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"});res.end(JSON.stringify(body));}
   return http.createServer(async(req,res)=>{
@@ -30,6 +32,10 @@ function createRelay({token,fetchImpl=globalThis.fetch,now=Date.now}={}) {
       let task=pending.get(key);
       if(!task){
         if(pending.size>=5||accepted.size>=10000)return reply(res,429,{error:"busy"});
+        const previous=store.get(key);
+        if(previous?.number)return reply(res,200,{number:previous.number});
+        if(previous)return reply(res,409,{error:"receipt_pending"});
+        if(!store.reserve(key))return reply(res,409,{error:"receipt_pending"});
         task=(async()=>{
           const response=await fetchImpl(ISSUE_API,{method:"POST",redirect:"error",signal:AbortSignal.timeout(10000),
             headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json","Content-Type":"application/json","User-Agent":"NicoLiveFeedbackRelay"},
@@ -37,6 +43,7 @@ function createRelay({token,fetchImpl=globalThis.fetch,now=Date.now}={}) {
           if(!response.ok)throw Error("upstream");
           const result=await response.json();
           if(!Number.isSafeInteger(result.number)||result.number<1)throw Error("upstream");
+          store.confirm(key,result.number);
           accepted.set(key,{number:result.number,time:now()});return result.number;
         })();
         pending.set(key,task);
@@ -47,5 +54,5 @@ function createRelay({token,fetchImpl=globalThis.fetch,now=Date.now}={}) {
     }catch{if(!res.headersSent)reply(res,400,{error:"invalid_report"});}
   });
 }
-if(require.main===module){const server=createRelay({token:process.env.FEEDBACK_GITHUB_TOKEN});server.requestTimeout=15000;server.headersTimeout=10000;server.listen(Number(process.env.PORT||8787),"127.0.0.1");}
+if(require.main===module){if(!process.env.FEEDBACK_STATE_DIR)throw Error("FEEDBACK_STATE_DIR is required");const server=createRelay({token:process.env.FEEDBACK_GITHUB_TOKEN,stateDir:process.env.FEEDBACK_STATE_DIR});server.requestTimeout=15000;server.headersTimeout=10000;server.listen(Number(process.env.PORT||8787),"127.0.0.1");}
 module.exports={createRelay};

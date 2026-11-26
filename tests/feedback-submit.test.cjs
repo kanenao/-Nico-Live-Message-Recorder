@@ -33,3 +33,24 @@ test("relay creates one issue, returns same receipt for retries, rejects credent
   assert.equal((await send({...report,details:"user_session=secret"})).status,400);
   assert.equal((await send({...report,details:"test@example.com"})).status,400);assert.equal(calls,1);
 });
+
+test("receipt survives a relay restart; ambiguous POST is never repeated",async(t)=>{
+  const fs=require("node:fs"),os=require("node:os"),path=require("node:path");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"nico-feedback-"));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  let calls=0;
+  const fetchImpl=async()=>{calls++;if(calls===2)throw Error("ambiguous timeout");return new Response(JSON.stringify({number:31}),{status:201});};
+  async function run(inputs){
+    const server=createRelay({token:"test-only",stateDir:dir,fetchImpl});
+    await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+    try{const out=[];for(const input of inputs){const response=await fetch("http://127.0.0.1:"+server.address().port+"/feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});out.push([response.status,await response.json()]);}return out;}
+    finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+  }
+  const uncertain={...report,details:"別の録画エラー"};
+  assert.deepEqual(await run([report,uncertain]),[[200,{number:31}],[502,{error:"upstream"}]]);
+  assert.deepEqual(await run([report,uncertain]),[[200,{number:31}],[409,{error:"receipt_pending"}]]);
+  assert.equal(calls,2);
+});
+test("client explains an ambiguous receipt without claiming submission",async()=>{
+  await assert.rejects(submitFeedback(report,{endpoint:"https://example.test/feedback",fetchImpl:async()=>new Response("{}",{status:409})}),/確認中/);
+});
