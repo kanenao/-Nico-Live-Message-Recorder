@@ -2968,7 +2968,7 @@ function stopMonitor() {
 
 const { createRankingService, resolveRankingMonitorTarget, selectRankingVideoFrame } = require("./live-ranking.cjs");
 const rankingAiAdvisor=require('./ranking-ai-score.cjs').createAiWeightAdvisor();
-const getIndependentLiveRanking = createRankingService({ enrichDetails: true,backgroundDetails:true,advisor:rankingAiAdvisor,activity:liveId=>{
+const getIndependentLiveRanking = createRankingService({ enrichDetails: true,backgroundDetails:true,feedImages:true,advisor:rankingAiAdvisor,activity:liveId=>{
   const active=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(liveId):null;
   return active??rankingObserver.snapshot(liveId)?.activity??null;
 } });
@@ -2976,6 +2976,8 @@ const rankingObserver=require("./ranking-observer.cjs").createRankingObserver({c
   const {NiconicoProvider}=await import("nicomget");
   return new NiconicoProvider({liveId,fetchBacklog:false,maxRetries:0});
 }});
+const rankingImageProxy=require("./ranking-image-proxy.cjs").createRankingImageProxy();
+ipcMain.handle("ranking:thumbnail",(_event,id,url)=>rankingImageProxy.get(id,url));
 let rankingObserverEpoch=0;
 function stopRankingObservation(){rankingObserverEpoch++;rankingObserver.stop();}
 ipcMain.handle("ranking:stop-activity",()=>{stopRankingObservation();return true;});
@@ -2988,13 +2990,15 @@ ipcMain.handle("ranking:list", async (_event,options={}) => {
   if(observing)rankingObserver.sync(snapshot.rows,provider&&commentWriter?currentLiveId:"");
   else if(epoch===rankingObserverEpoch)rankingObserver.stop();
   const frameSession={active:liveArticleSessionActive&&Boolean(provider&&commentWriter)&&!captureStopPromise&&!commentFinalizing,liveId:currentLiveId,source:liveArticleVideoSource,frames:liveArticleFrames};
-  return {...snapshot,rows:snapshot.rows.map(row=>{
+  const rows=snapshot.rows.map(row=>{
     const activity=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(row.liveId):null;
     const observed=observing?rankingObserver.snapshot(row.liveId):null;
     const measured=activity??observed?.activity;
     const frame=selectRankingVideoFrame(row.liveId,frameSession);
     return {...row,adPoints:measured?.adPoints??row.adPoints??null,giftPoints:measured?.giftPoints??row.giftPoints??null,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),giftObservedPoints:measured?.giftObservedPoints??null,giftObservedCount:measured?.giftObservedCount??null,giftObservationComplete:measured?.giftObservationComplete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
-  })};
+  });
+  rankingImageProxy.update(rows);
+  return {...snapshot,rows};
 });
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
   resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
