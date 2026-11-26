@@ -79,7 +79,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
       if(!allowed.has(id))return null;
       if(details){
-        data=await attempt([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean).slice(0,2));
+        data=await attempt([...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
         if(data)return data;
       }
       // A temporary watch-page failure must not block exact-ID history lookup.
