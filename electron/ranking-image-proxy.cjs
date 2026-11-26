@@ -40,7 +40,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
   }
   function update(rows){
     allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))]));
-    users=new Map(rows.filter(r=>/^\d{5,15}$/.test(String(r.broadcasterId??""))).map(r=>[r.liveId,String(r.broadcasterId)]));
+    users=new Map(rows.map(r=>[r.liveId,String(r.broadcasterId||r.thumbnailHistoryUserId||"")]).filter(([,id])=>/^\d{5,15}$/.test(id)));
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
