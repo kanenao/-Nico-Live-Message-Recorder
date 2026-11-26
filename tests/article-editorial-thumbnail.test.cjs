@@ -52,16 +52,9 @@ test("newspaper HTML includes JPEG cover and safe editorial chapters", () => {
   assert.doesNotMatch(result, /fallback paragraph/);
 });
 
-test("rendering gets the article's actual image via a bounded, dedicated IPC", () => {
-  assert.match(main, /ipcMain\.handle\("articles:thumbnail"/);
-  assert.match(main, /findArticleVideoCandidate\(article, articleVideoIndex\.items/);
-  assert.match(main, /extractArticleThumbnailFrame\(videoPath, ffmpegPath, "00:00:00"\)/);
-  assert.match(preload, /getArticleThumbnail:.*ipcRenderer\.invoke\("articles:thumbnail"/);
-  assert.match(renderer, /scheduleArticleThumbnail\(thumbnail, mediaPlaceholder, article\)/);
-  assert.match(renderer, /articleThumbnailRequests < 2/);
-  assert.match(renderer, /article\.coverImage = imageUrl/);
-  assert.match(renderer, /broadcast-article-chapter/);
-  assert.match(renderer, /article\.aiSections/);
+test("retired article image API is not available to the renderer",()=>{
+ assert.doesNotMatch(preload,/getArticleThumbnail:.*ipcRenderer\.invoke\("articles:thumbnail"/);
+ assert.doesNotMatch(renderer,/scheduleArticleThumbnail|api\.getArticleThumbnail\(/);
 });
 
 test("Ollama accepts evidence-labelled sections without legacy paragraphs", async () => {

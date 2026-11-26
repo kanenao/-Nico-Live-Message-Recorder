@@ -1721,3 +1721,49 @@ button, .button {
 .ranking-panel .ranking-media:has(.ranking-previous-image) .ranking-thumbnail{visibility:hidden}
 .ranking-panel .ranking-scroll{overflow-anchor:none}
 .ranking-panel #ranking-refresh[aria-busy="true"]{cursor:progress}
+
+/* Ranking: compact information hierarchy, with an explicit detailed table mode. */
+.ranking-panel .ranking-view-controls{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0 8px}
+.ranking-panel .ranking-quick-sort,.ranking-panel .ranking-view-switch{display:flex;flex-wrap:wrap;gap:4px}
+.ranking-panel .ranking-quick-sort button,.ranking-panel .ranking-view-switch button{font-size:12px;border:1px solid var(--line);border-radius:6px;color:#b8c6df;background:var(--panel-2);padding:7px 10px}
+.ranking-panel .ranking-quick-sort button[aria-pressed="true"],.ranking-panel .ranking-view-switch button[aria-pressed="true"]{background:#354773;color:#fff;border-color:#7697e6;font-weight:700}
+.ranking-panel .ranking-view-controls button:focus-visible{outline:2px solid #8ab6e5;outline-offset:2px}
+.ranking-panel .ranking-coverage-details{margin:6px 0 10px;font-size:12px;color:#b8c6df}
+.ranking-panel .ranking-coverage-details summary{cursor:pointer;line-height:1.7}
+.ranking-panel #ranking-coverage-brief{margin-left:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ranking-panel[data-ranking-view="compact"] .ranking-table,.ranking-panel[data-ranking-view="compact"] .ranking-table tbody{display:block;width:100%;min-width:0}
+.ranking-panel[data-ranking-view="compact"] .ranking-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ranking-panel[data-ranking-view="compact"] .ranking-table tbody tr[data-live-id]{display:grid;grid-template-columns:58px minmax(0,1fr) 104px minmax(120px,160px);grid-template-areas:"rank program score actions" "rank stats stats actions" "rank active support actions";gap:7px 14px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.ranking-panel[data-ranking-view="compact"] .ranking-table tbody td{display:block;min-width:0!important;max-width:none;padding:0;border:0;white-space:normal}
+.ranking-panel[data-ranking-view="compact"] td.ranking-rank{grid-area:rank;text-align:center;font-size:22px}
+.ranking-panel[data-ranking-view="compact"] td.ranking-program{grid-area:program}
+.ranking-panel[data-ranking-view="compact"] td.ranking-total-score{grid-area:score;text-align:right;font-size:25px}
+.ranking-panel[data-ranking-view="compact"] td.ranking-total-score::before{content:"総合pt";display:block;color:var(--muted);font-size:11px;font-weight:400}
+.ranking-panel[data-ranking-view="compact"] td.ranking-view-metrics{grid-area:stats;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 12px}
+.ranking-panel[data-ranking-view="compact"] td.ranking-view-metrics .ranking-metric-line{display:block;text-align:left;white-space:normal}
+.ranking-panel[data-ranking-view="compact"] td.ranking-view-metrics .ranking-metric-line span,.ranking-panel[data-ranking-view="compact"] td.ranking-view-metrics .ranking-metric-line strong{display:block}
+.ranking-panel[data-ranking-view="compact"] td.ranking-active-metric{grid-area:active;text-align:left;font-size:15px}
+.ranking-panel[data-ranking-view="compact"] td.ranking-active-metric::before{content:"アクティブ人数";display:block;color:var(--muted);font-size:11px;font-weight:400}
+.ranking-panel[data-ranking-view="compact"] td.ranking-support-metrics{grid-area:support;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.ranking-panel[data-ranking-view="compact"] td.ranking-support-metrics .ranking-metric-line{display:block;text-align:left;white-space:normal}
+.ranking-panel[data-ranking-view="compact"] td.ranking-support-metrics .ranking-metric-line span,.ranking-panel[data-ranking-view="compact"] td.ranking-support-metrics .ranking-metric-line strong{display:block}
+.ranking-panel[data-ranking-view="compact"] td.ranking-support-metrics .ranking-delta{grid-column:1/-1}
+.ranking-panel[data-ranking-view="compact"] td.ranking-actions{grid-area:actions;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;border:0;padding:0}
+.ranking-panel[data-ranking-view="compact"] .ranking-actions button{margin:0!important;min-height:28px;font-size:11px;white-space:normal}
+.ranking-panel[data-ranking-view="compact"] .ranking-actions button[data-ranking-record]{grid-column:1/-1;width:100%;font-size:12px}
+.ranking-panel[data-ranking-view="compact"] .ranking-media{width:128px;height:72px;flex-basis:128px}
+.ranking-panel[data-ranking-view="compact"] .ranking-labels strong{font-size:15px;font-weight:700;line-height:1.45}
+.ranking-panel[data-ranking-view="compact"] .ranking-table tbody tr:not([data-live-id]){display:block;padding:16px}
+@container (max-width: 800px){
+ .ranking-panel[data-ranking-view="compact"] .ranking-table tbody tr[data-live-id]{grid-template-columns:48px minmax(0,1fr) 90px;grid-template-areas:"rank program score" "stats stats stats" "active active support" "actions actions actions";gap:8px}
+ .ranking-panel[data-ranking-view="compact"] td.ranking-actions{display:flex;flex-wrap:wrap;gap:5px;padding-top:6px;border-top:1px solid var(--line)}
+ .ranking-panel[data-ranking-view="compact"] .ranking-actions button[data-ranking-record]{width:auto}
+ .ranking-panel[data-ranking-view="compact"] .ranking-media{width:104px;height:59px;flex-basis:104px}
+ .ranking-panel[data-ranking-view="compact"] td.ranking-total-score{font-size:20px}
+}
+@container (max-width: 540px){
+ .ranking-panel[data-ranking-view="compact"] td.ranking-view-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .ranking-panel[data-ranking-view="compact"] .ranking-table tbody tr[data-live-id]{grid-template-columns:42px minmax(0,1fr) 78px;grid-template-areas:"rank program score" "stats stats stats" "active support support" "actions actions actions"}
+ .ranking-panel[data-ranking-view="compact"] .ranking-media{width:80px;height:45px;flex-basis:80px}
+ .ranking-panel[data-ranking-view="compact"] .ranking-labels strong{font-size:13px}
+}

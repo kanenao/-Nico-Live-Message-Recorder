@@ -67,10 +67,6 @@ let monitorSettings = {
   targets: []
 };
 const monitorStatuses = new Map();
-const liveArticlePreviews = new Map();
-let liveArticlePreviewSignature = "";
-let liveArticlePreviewFetchedAt = 0;
-let liveArticlePreviewRequestId = 0;
 const monitorHandledDetections = new Set();
 let monitorIsRunning = false;
 const monitorAutoQueue = [];
@@ -252,11 +248,6 @@ function makeLibraryVideoScenesPanel(item) {
   return makeVideoStoryboardPanel(() => api.getLibraryVideoPreview(item.path),
     item.fileName + " ／ 動画の場面一覧");
 }
-function makeArticleVideoScenesPanel(article) {
-  return makeVideoStoryboardPanel(() => api.getArticleVideoPreview(article.articlePath),
-    (article.programTitle || article.title || "放送") + " ／ 場面一覧");
-}
-
 function requireCaptureApi(method) {
   if (!api || typeof api[method] !== "function") {
     throw new Error("Electron連携API「" + method + "」を利用できません。アプリを完全終了して最新版を再起動してください。");
@@ -1113,61 +1104,6 @@ function getLiveBroadcastItems() {
     .sort((a, b) => parseBroadcastTimestamp(b.startedAt) - parseBroadcastTimestamp(a.startedAt));
 }
 
-// Load only articles for LIVE IDs. The reply has no embedded JPEGs, transcripts,
-// or full article bodies, so a monitor heartbeat stays lightweight.
-async function refreshLiveArticlePreviews(force = false) {
-  if (!api || typeof api.getLiveArticlePreviews !== "function") return;
-  const ids = [...new Set(getLiveBroadcastItems()
-    .map(item => String(item.liveId || "").trim().toLowerCase())
-    .filter(id => /^lv\d{5,}$/.test(id)))].slice(0, 100);
-  const signature = ids.slice().sort().join(",");
-  if (!ids.length) {
-    liveArticlePreviewRequestId += 1;
-    liveArticlePreviewSignature = "";
-    liveArticlePreviewFetchedAt = 0;
-    if (liveArticlePreviews.size) {
-      liveArticlePreviews.clear();
-      renderLiveBroadcasts();
-    }
-    return;
-  }
-  if (!force && signature === liveArticlePreviewSignature &&
-      Date.now() - liveArticlePreviewFetchedAt < 45 * 1000) return;
-  liveArticlePreviewSignature = signature;
-  liveArticlePreviewFetchedAt = Date.now();
-  const requestId = ++liveArticlePreviewRequestId;
-  try {
-    const result = await api.getLiveArticlePreviews(ids);
-    if (requestId !== liveArticlePreviewRequestId) return;
-    liveArticlePreviews.clear();
-    for (const preview of Array.isArray(result && result.items) ? result.items : []) {
-      if (preview && ids.includes(preview.liveId)) liveArticlePreviews.set(preview.liveId, preview);
-    }
-    renderLiveBroadcasts();
-  } catch (error) {
-    if (requestId !== liveArticlePreviewRequestId) return;
-    liveArticlePreviewFetchedAt = 0;
-    console.warn("LIVE AI article previews unavailable:", error);
-  }
-}
-
-function openLiveArticleFromDashboard(status, hasArticle) {
-  if (!hasArticle) {
-    byId("manual-article-live-id").value = status.liveId || "";
-    byId("manual-article-broadcaster").value = status.name || "";
-    byId("manual-article-title").value = status.title || "";
-    byId("manual-article-description").value = status.description || "";
-  }
-  byId("articles-search").value = hasArticle ? status.liveId : "";
-  setActivePage("articles");
-  if (hasArticle) {
-    // Skip the large article-generation form and show the selected article.
-    window.requestAnimationFrame(() => {
-      byId("articles-list")?.scrollIntoView({ block: "start", behavior: "smooth" });
-    });
-  }
-}
-
 function renderDashboardStats() {
   const targets = Array.isArray(monitorSettings.targets) ? monitorSettings.targets : [];
   const liveCount = getLiveBroadcastItems().length;
@@ -1279,55 +1215,7 @@ function renderLiveBroadcasts() {
     actions.append(record, watch);
     footer.append(source, actions);
 
-    const articlePreview = document.createElement("section");
-    articlePreview.className = "live-broadcast-ai-article";
-    const articleHeader = document.createElement("div");
-    articleHeader.className = "live-broadcast-article-header";
-    const articleLabel = document.createElement("strong");
-    articleLabel.textContent = "AI放送記事";
-    const preview = liveArticlePreviews.get(String(status.liveId || "").toLowerCase());
-    const articleType = document.createElement("span");
-    articleType.textContent = preview
-      ? (preview.aiProvider ? "Ollama記事" : "記事保存済み・AI未生成")
-      : (status.isRecording ? "記事を作成中" : "記事未作成");
-    articleHeader.append(articleLabel, articleType);
-    articlePreview.appendChild(articleHeader);
-
-    const articleTitle = document.createElement("strong");
-    articleTitle.className = "live-broadcast-article-title";
-    articleTitle.textContent = preview
-      ? (preview.title || "放送記事")
-      : (status.isRecording
-        ? "コメントの受信・記事生成を準備しています…"
-        : "この放送のAI記事はまだありません");
-    articlePreview.appendChild(articleTitle);
-    const articleSummary = document.createElement("p");
-    articleSummary.className = "live-broadcast-article-summary";
-    articleSummary.textContent = preview
-      ? (preview.summary || "記事本文は記事一覧から確認できます。")
-      : (status.isRecording
-        ? "記事が保存されると、見出し・要約が自動的に表示されます。"
-        : "記事生成画面から生放送の映像・音声・コメントを分析できます。");
-    articlePreview.appendChild(articleSummary);
-    const articleFooter = document.createElement("div");
-    articleFooter.className = "live-broadcast-article-footer";
-    const articleMeta = document.createElement("span");
-    articleMeta.className = "live-broadcast-article-meta";
-    articleMeta.textContent = preview
-      ? "コメント " + (Number(preview.commentCount) || 0).toLocaleString("ja-JP") + "件" +
-        (preview.videoFrameCount ? " · 映像 " + preview.videoFrameCount + "枚" : "") +
-        (preview.hasAudio ? " · 音声解析あり" : "") +
-        (preview.generatedAt ? " · 更新 " + new Date(preview.generatedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "")
-      : "配信ID：" + (status.liveId || "未取得");
-    const articleButton = document.createElement("button");
-    articleButton.type = "button";
-    articleButton.className = "button button-outline button-small live-broadcast-article-button";
-    articleButton.textContent = preview ? "記事を読む" : "記事を作成";
-    articleButton.addEventListener("click", () => openLiveArticleFromDashboard(status, Boolean(preview)));
-    articleFooter.append(articleMeta, articleButton);
-    articlePreview.appendChild(articleFooter);
-
-    card.append(top, broadcaster, title, meta, articlePreview, footer);
+    card.append(top, broadcaster, title, meta, footer);
     list.appendChild(card);
   }
   renderDashboardStats();
@@ -1507,7 +1395,6 @@ function applyMonitorState(result) {
   if (Array.isArray(result.pendingDetections)) {
     result.pendingDetections.forEach(handleMonitorLiveDetected);
   }
-  void refreshLiveArticlePreviews();
 }
 
 function addMonitorActivity(message, kind = "") {
@@ -1656,32 +1543,6 @@ function updateCompositionEditorLabels() {
   }
 }
 
-async function checkOllamaStatus() {
-  const badge = byId("ollama-status-badge");
-  const message = byId("ollama-status-message");
-  const button = byId("ollama-check-button");
-  if (badge) { badge.textContent = "確認中…"; badge.dataset.state = "checking"; }
-  if (message) message.textContent = "Ollamaへ接続しています…";
-  if (button) button.disabled = true;
-  try {
-    const status = await api.getOllamaStatus();
-    if (badge) {
-      badge.textContent = status.connected ? "接続済み" : "未接続";
-      badge.dataset.state = status.connected ? "downloaded" : "error";
-    }
-    if (message) {
-      message.textContent = status.connected
-        ? "接続先：" + status.baseUrl + " ／ インストール済みモデル：" + (status.models.length ? status.models.map(item => item.name).join("、") : "なし")
-        : (status.message || "Ollamaに接続できません。");
-    }
-  } catch (error) {
-    if (badge) { badge.textContent = "未接続"; badge.dataset.state = "error"; }
-    if (message) message.textContent = error.message || "Ollamaに接続できません。";
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
 function openSettings() {
   byId("setting-monitor-interval").value = String(monitorSettings.intervalSeconds || 10);
   byId("setting-monitor-quality").value = monitorSettings.quality === "worst" ? "worst" : "best";
@@ -1695,9 +1556,6 @@ function openSettings() {
   byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("setting-notify-on-live").checked = monitorSettings.notifyOnLive !== false;
-  byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
-  byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
-  void checkOllamaStatus();
   void refreshAuthStatus();
   byId("settings-modal").hidden = false;
 }
@@ -1719,8 +1577,7 @@ async function saveSettings() {
     keepAwake: byId("setting-keep-awake").checked,
     autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked,
     notifyOnLive: byId("setting-notify-on-live").checked,
-    aiArticleEnabled: byId("setting-ai-article-enabled").checked,
-    aiArticleModel: byId("setting-ai-article-model").value.trim() || "qwen2.5:3b"
+    aiArticleEnabled: false
   };
   Object.assign(values, readAssMotionInputs("setting-ass-"));
   const button = byId("save-settings-button");
@@ -1915,8 +1772,8 @@ function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
   const fresh=isRankingFresh(snapshot,now);
   const total=Array.isArray(snapshot.rows)?snapshot.rows.length:0;
   const topCount=Array.isArray(snapshot.rows)?snapshot.rows.filter(row=>Number.isInteger(row.rank)&&row.rank>=1&&row.rank<=100).length:0;
-  const state=snapshot.stale?"更新失敗 / 前回データ（録画無効）":
-    !fresh?"更新待ち / 古いデータ（録画無効）":
+  const state=snapshot.stale?"更新失敗 / 前回データ（録画時に放送確認）":
+    !fresh?"更新待ち / 古いデータ（録画時に放送確認）":
     (snapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+total+"番組";
   const ageLabel=Number.isFinite(age)&&age>=0?" ／ "+Math.floor(age/1000)+"秒前":"";
   return state+" ／ "+checked+ageLabel+" ／ 上位 "+topCount+"/100件 ／ 表示 "+visibleCount+"件";
@@ -1944,7 +1801,7 @@ function refreshLiveRankingLabels() {
   }
 }
 async function registerRankingMonitor(item) {
-  if(rankingMonitorPending.has(item.liveId)||!isRankingFresh(rankingSnapshot))return;
+  if(rankingMonitorPending.has(item.liveId))return;
   rankingMonitorPending.add(item.liveId);
   renderIndependentRanking();
   try {
@@ -2080,6 +1937,25 @@ function appendRankingTrend(cell,item) {
   line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");
   svg.appendChild(line);cell.appendChild(svg);
 }
+let rankingRecordingPending=false;
+async function startRankingRecording(item,chase=false){
+  if(rankingRecordingPending)return;
+  rankingRecordingPending=true;
+  refreshRankingActions();
+  try{
+    let target=item;
+    if(!isRankingFresh(rankingSnapshot)){
+      if(typeof api.verifyRankingRecording!=="function")throw Error("放送確認に対応したアプリへ更新してください。");
+      showToast("対象番組が放送中か確認しています…");
+      target=await api.verifyRankingRecording(item.liveId);
+      if(target?.liveId!==item.liveId)throw Error("放送IDを確認できませんでした。");
+    }
+    if(captureStopInProgress||recordStartInProgress||recordStartedAt||videoCaptureState==="recording"||videoCaptureState==="stopping"||monitorAutoProcessing)throw Error("別の録画処理が動作中です。終了後に開始してください。");
+    setActivePage("record");
+    await startVideoRecording({...target,chase});
+  }catch(error){showToast(error.message||"ランキングから録画を開始できませんでした。",true);}
+  finally{rankingRecordingPending=false;refreshRankingActions();}
+}
 function refreshRankingActions() {
   const fresh=isRankingFresh(rankingSnapshot);
   const busy=captureStopInProgress||recordStartInProgress||Boolean(recordStartedAt)||
@@ -2087,14 +1963,15 @@ function refreshRankingActions() {
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-record]")){
     const active=Boolean((currentCaptureTarget?.liveId===button.dataset.rankingRecord||(currentRecordingIsChase&&currentLiveId===button.dataset.rankingRecord))&&recordStartedAt);
     button.textContent=active?"● 録画中":"● 録画";
-    button.disabled=busy||!fresh;
+    button.disabled=busy||rankingRecordingPending;
+    button.title=busy?"他の録画処理中":rankingRecordingPending?"放送を確認中":fresh?"録画を開始":"公式番組情報で放送中か確認して録画";
   }
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-chase]")){
-    button.disabled=busy||!fresh||commentCaptureState==="connected"||commentCaptureState==="connecting";
+    button.disabled=busy||rankingRecordingPending||commentCaptureState==="connected"||commentCaptureState==="connecting";
   }
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-monitor]")){
     const pending=rankingMonitorPending.has(button.dataset.rankingMonitor);
-    button.textContent=pending?"確認中…":"＋監視";button.disabled=pending||!fresh;
+    button.textContent=pending?"確認中…":"＋監視";button.disabled=pending;
   }
 }
 // Only replace rows whose displayed data changed. Reuse the media cell
@@ -2123,6 +2000,15 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
 function rankingTopRows(rows){
   return (Array.isArray(rows)?rows:[]).filter(row=>Number.isInteger(row.rank)&&row.rank>=1&&row.rank<=100).sort((a,b)=>a.rank-b.rank);
 }
+function syncRankingQuickSort(){
+  const key=byId("ranking-sort").value;
+  for(const button of document.querySelectorAll("[data-ranking-sort-key]"))button.setAttribute("aria-pressed",String(button.dataset.rankingSortKey===key));
+}
+function setRankingView(view){
+  if(!["compact","table"].includes(view))return;
+  byId("ranking-panel").dataset.rankingView=view;
+  for(const button of document.querySelectorAll("[data-ranking-view-key]"))button.setAttribute("aria-pressed",String(button.dataset.rankingViewKey===view));
+}
 function updateRankingCoverage(){
   const rows=rankingTopRows(rankingSnapshot?.rows);
   const list=byId("ranking-list");
@@ -2130,6 +2016,8 @@ function updateRankingCoverage(){
   const visible=list?list.querySelectorAll("tr[data-live-id]").length:0;
   const attempted=rows.filter(x=>x.thumbnailAttempted).length;
   const ready=rows.filter(x=>x.thumbnailRevision>0).length;
+  const brief=byId("ranking-coverage-brief");
+  if(brief){const value=rows.length+"番組 · 画像 "+ready+"/"+rows.length;if(brief.textContent!==value)brief.textContent=value;}
   const progress=byId("ranking-image-progress");
   if(progress)progress.textContent="画像取得：試行 "+attempted+" / "+rows.length+"番組 · 取得済み "+ready+"番組 · 一覧で表示確認 "+loaded+" / "+visible+"番組";
   const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
@@ -2182,6 +2070,7 @@ function renderIndependentRanking() {
   const focusedMedia=Boolean(focusedId&&activeElement.matches(".ranking-media"));
   const q = byId("ranking-search").value.trim().toLowerCase();
   const sort = byId("ranking-sort").value;
+  syncRankingQuickSort();
   const all = rankingTopRows(rankingSnapshot.rows);
   const rows = all.filter(item => [item.title,item.name,item.liveId].some(v=>String(v||"").toLowerCase().includes(q)));
   const key = item => sort === "startedAt" ? (Date.parse(item.startedAt)||null) : item[sort];
@@ -2308,13 +2197,11 @@ function renderIndependentRanking() {
     }
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
-    record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
+    record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||rankingRecordingPending;
+    record.title=busy?"他の録画処理中":isRankingFresh(rankingSnapshot)?"録画を開始":"公式番組情報で放送中か確認して録画";
     record.addEventListener("click",async()=>{
-      if(record.disabled||!isRankingFresh(rankingSnapshot)){
-        showToast("ランキングの情報が古くなりました。更新してください。",true);return;
-      }
-      setActivePage("record");
-      await startVideoRecording({liveId:item.liveId,title:item.title,name:item.name,broadcasterId:item.broadcasterId,startedAt:item.startedAt});
+      if(record.disabled)return;
+      await startRankingRecording(item);
     });
     const watch=document.createElement("button");watch.type="button";watch.className="button button-quiet button-small";watch.textContent="視聴";
     watch.addEventListener("click",()=>api.openWatch(item.liveId).catch(error=>showToast(error.message||"視聴ページを開けませんでした。",true)));
@@ -2323,19 +2210,17 @@ function renderIndependentRanking() {
     const monitor=document.createElement("button");monitor.type="button";monitor.className="button button-outline button-small";
     const pending=rankingMonitorPending.has(item.liveId);
     monitor.dataset.rankingMonitor=item.liveId;monitor.textContent=pending?"確認中…":"＋監視";
-    monitor.disabled=pending||!isRankingFresh(rankingSnapshot);
+    monitor.disabled=pending;
     monitor.title="公式の番組情報で配信者を確認して監視リストに登録";
     monitor.addEventListener("click",()=>void registerRankingMonitor(item));
     const chase=document.createElement("button");chase.type="button";chase.className="button button-outline button-small";
     chase.dataset.rankingChase=item.liveId;chase.textContent="追っかけ（試験）";
-    chase.disabled=busy||!isRankingFresh(rankingSnapshot)||commentCaptureState==="connected"||commentCaptureState==="connecting";
+    chase.disabled=busy||rankingRecordingPending||commentCaptureState==="connected"||commentCaptureState==="connecting";
     chase.title="映像・音声のみ。実際の開始位置は未検証です。通常録画に自動切り替えしません。";
     chase.addEventListener("click",async()=>{
-      if(chase.disabled||!isRankingFresh(rankingSnapshot))return;
+      if(chase.disabled)return;
       if(!window.confirm("追っかけ録画（試験）を開始しますか？\n映像・音声のみ保存し、過去コメントは取得しません。放送の対応状況により開始できない場合があります。"))return;
-      if(!isRankingFresh(rankingSnapshot))return showToast("ランキングが古くなりました。更新してください。",true);
-      setActivePage("record");
-      await startVideoRecording({liveId:item.liveId,chase:true});
+      await startRankingRecording(item,true);
     });
     actions.append(record,watch,monitor,chase,preview);
     desired.push(old?patchRankingRow(old,tr,actionKey):tr);
@@ -2398,7 +2283,7 @@ function configureRankingRefresh(active) {
        isRankingRefreshDue(rankingLastRequestAt))void refreshIndependentRanking();
   },5000);
 }
-const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates", "feedback-bug", "feedback-feature"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "updates", "feedback-bug", "feedback-feature"]);
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -2408,7 +2293,7 @@ function setActivePage(page) {
   content.querySelectorAll(":scope > [data-page]").forEach((view) => {
     const isActive = view.dataset.page === activePage;
     view.classList.toggle("page-hidden", !isActive);
-    if (view.id === "library-panel" || view.id === "articles-panel") view.hidden = !isActive;
+    if (view.id === "library-panel") view.hidden = !isActive;
   });
 
   document.querySelectorAll("[data-page-target]").forEach((button) => {
@@ -2421,8 +2306,6 @@ function setActivePage(page) {
   configureRankingRefresh(activePage === "ranking");
   if (activePage === "updates") void refreshEditionReleaseHistory();
   if (activePage === "library") loadCaptureLibrary();
-  if (activePage === "articles") loadBroadcastArticles();
-  if (activePage === "dashboard") void refreshLiveArticlePreviews();
 }
 
 function formatLibraryBytes(value) {
@@ -2612,15 +2495,6 @@ function renderCaptureLibrary() {
       if (expanded) scheduleLibraryThumbnail(image, placeholder, item);
     }
     row.appendChild(file);
-    if (item.type === "video" && item.article) {
-      const articleSummary = document.createElement("div"); articleSummary.className = "library-article-summary";
-      const articleTitle = document.createElement("strong"); articleTitle.textContent = "放送記事：" + item.article.title; articleSummary.appendChild(articleTitle);
-      if (item.article.summary) { const summary = document.createElement("p"); summary.textContent = item.article.summary; articleSummary.appendChild(summary); }
-      if (item.article.topics && item.article.topics.length) { const topics = document.createElement("small"); topics.textContent = "話題：" + item.article.topics.join("・"); articleSummary.appendChild(topics); }
-      const openArticle = document.createElement("button"); openArticle.type = "button"; openArticle.className = "button button-outline button-small"; openArticle.textContent = "記事を見る";
-      openArticle.addEventListener("click", async () => { await loadBroadcastArticles(); byId("articles-search").value = item.liveId || item.article.title; setActivePage("articles"); renderBroadcastArticles(); });
-      articleSummary.appendChild(openArticle); file.appendChild(articleSummary);
-    }
     row.appendChild(createLibraryText("library-broadcaster", item.broadcaster));
     const type = createLibraryText("library-type", item.type === "video" ? "録画動画 · " + item.extension : "コメント · " + item.extension);
     type.classList.toggle("is-video", item.type === "video");
@@ -2646,29 +2520,6 @@ function renderCaptureLibrary() {
       catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
     });
     actions.append(openButton, showButton);
-    if (item.type === "comment" && item.extension === "JSONL") {
-      const articleButton = document.createElement("button");
-      articleButton.type = "button";
-      articleButton.className = "button button-outline button-small";
-      articleButton.textContent = "記事を生成";
-      articleButton.addEventListener("click", async () => {
-        articleButton.disabled = true;
-        try {
-          const result = await api.generateBroadcastArticle(item.path);
-          if (result && result.status === "generated") {
-            showToast("放送記事を生成しました: " + (result.title || item.liveId));
-            await loadBroadcastArticles();
-          } else {
-            showToast((result && result.reason) || "記事を生成できませんでした。", true);
-          }
-        } catch (error) {
-          showToast(error.message || "放送記事を生成できませんでした。", true);
-        } finally {
-          articleButton.disabled = false;
-        }
-      });
-      actions.appendChild(articleButton);
-    }
     if (item.type === "video") {
       const scenesButton = document.createElement("button");
       scenesButton.type = "button";
@@ -2733,8 +2584,7 @@ async function loadCaptureLibrary() {
     list.textContent = "録画ファイルを検索しています…";
   }
   try {
-    const [result, articleResult] = await Promise.all([api.getCaptureLibrary(), api.getBroadcastArticles()]);
-    broadcastArticles = Array.isArray(articleResult.items) ? articleResult.items : [];
+    const result = await api.getCaptureLibrary();
     captureLibraryItems = Array.isArray(result.items) ? result.items : [];
     byId("library-total").textContent = String(result.total || 0);
     byId("library-video-count").textContent = String(result.videoCount || 0);
@@ -2742,627 +2592,6 @@ async function loadCaptureLibrary() {
     renderCaptureLibrary();
   } catch (error) {
     if (list) list.textContent = error.message || "ライブラリを読み込めませんでした。";
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
-const articleThumbnailQueue = [];
-let articleThumbnailRequests = 0;
-function scheduleArticleThumbnail(thumbnail, placeholder, article) {
-  articleThumbnailQueue.push(async () => {
-    if (!thumbnail.isConnected) return;
-    try {
-      const imageUrl = await api.getArticleThumbnail(article.articlePath);
-      if (!thumbnail.isConnected || !placeholder.isConnected) return;
-      if (typeof imageUrl === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(imageUrl)) {
-        thumbnail.addEventListener("error", () => {
-          thumbnail.remove();
-          placeholder.hidden = false;
-          placeholder.textContent = "画像を表示できません";
-        }, { once: true });
-        thumbnail.src = imageUrl;
-        article.coverImage = imageUrl;
-        thumbnail.hidden = false;
-        placeholder.hidden = true;
-      } else {
-        thumbnail.remove();
-        placeholder.textContent = "放送映像が保存されていません";
-      }
-    } catch (_) {
-      if (!thumbnail.isConnected) return;
-      thumbnail.remove();
-      placeholder.textContent = "サムネイルを取得できません";
-    }
-  });
-  pumpArticleThumbnailQueue();
-}
-function pumpArticleThumbnailQueue() {
-  while (articleThumbnailRequests < 2 && articleThumbnailQueue.length) {
-    const job = articleThumbnailQueue.shift();
-    articleThumbnailRequests++;
-    // Delay until the new card has been added to the document.
-    Promise.resolve().then(job).catch(() => {}).finally(() => {
-      articleThumbnailRequests--;
-      pumpArticleThumbnailQueue();
-    });
-  }
-}
-
-function renderBroadcastArticles() {
-  const list = byId("articles-list");
-  if (!list) return;
-  list.replaceChildren();
-  const query = String(byId("articles-search").value || "").trim().toLowerCase();
-  const statusFilter = byId("articles-status-filter")?.value || "all";
-  const sortMode = byId("articles-sort")?.value || "newest";
-  const items = broadcastArticles.filter((article) => {
-    const isLive = article.liveStatus === "live" || article.isLive === true;
-    if (statusFilter === "live" && !isLive) return false;
-    if (statusFilter === "ended" && isLive) return false;
-    if (statusFilter === "manual" && article.articleSource !== "manual") return false;
-    if (statusFilter === "ai" && !article.aiProvider) return false;
-    const topics = (article.topics || []).map((topic) => typeof topic === "string" ? topic : topic.term);
-    const timeline = (article.aiTimeline || []).map((item) => item && item.detail || "");
-    const searchable = [
-      article.broadcasterName, article.programTitle, article.title, article.liveId,
-      article.summary, article.note, article.aiAudienceReaction, article.videoAnalysis,
-      article.audioAnalysis, article.audioTranscript,
-      ...(article.paragraphs || []), ...(article.aiHighlights || []), ...timeline, ...topics
-    ].join(" ").toLowerCase();
-    return !query || searchable.includes(query);
-  }).sort((a, b) => {
-    const aTime = Date.parse(a.generatedAt || a.startedAt || 0) || 0;
-    const bTime = Date.parse(b.generatedAt || b.startedAt || 0) || 0;
-    if (sortMode === "oldest") return aTime - bTime;
-    if (sortMode === "comments") return Number(b.commentCount || 0) - Number(a.commentCount || 0);
-    return bTime - aTime;
-  });
-  const countLabel = byId("articles-filter-count");
-  if (countLabel) countLabel.textContent = items.length.toLocaleString("ja-JP") + " 件表示 / 全 " + broadcastArticles.length.toLocaleString("ja-JP") + " 件";
-
-  if (!items.length) {
-    const empty = document.createElement("div");
-    empty.className = "article-empty";
-    empty.textContent = broadcastArticles.length
-      ? "検索条件に一致する記事がありません。"
-      : "まだ放送記事がありません。配信の録画終了またはコメント切断時に自動生成されます。過去のJSONLログは録画ライブラリから記事化できます。";
-    list.appendChild(empty);
-    return;
-  }
-
-  const dayGroups = new Map();
-  const dayFormatter = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric", weekday: "short" });
-  for (const item of items) {
-    const parsed = new Date(item.startedAt || item.generatedAt || "");
-    const day = Number.isNaN(parsed.getTime()) ? "日時未取得" : dayFormatter.format(parsed);
-    if (!dayGroups.has(day)) dayGroups.set(day, []);
-    dayGroups.get(day).push(item);
-  }
-  for (const [day, dayItems] of dayGroups) {
-    const dayHeading = document.createElement("div");
-    dayHeading.className = "broadcast-article-day-heading";
-    const dateLabel = document.createElement("strong"); dateLabel.textContent = day;
-    const countLabel = document.createElement("span"); countLabel.textContent = dayItems.length.toLocaleString("ja-JP") + "本";
-    dayHeading.append(dateLabel, countLabel);
-    list.appendChild(dayHeading);
-    for (const article of dayItems) {
-    const card = document.createElement("article");
-    card.className = "broadcast-article-card";
-    const masthead = document.createElement("div");
-    masthead.className = "broadcast-article-masthead";
-    const byline = document.createElement("span");
-    byline.textContent = "配信者：" + (article.broadcasterName || "未取得") + " · " + formatLibraryDate(article.startedAt || article.generatedAt);
-    masthead.appendChild(byline);
-    const stateBadge = document.createElement("span");
-    const articleIsLive = article.liveStatus === "live" || article.isLive === true;
-    stateBadge.className = "broadcast-article-status-badge" + (articleIsLive ? " is-live" : "");
-    stateBadge.textContent = articleIsLive ? "● 配信中" : "配信終了";
-    masthead.appendChild(stateBadge);
-    const hero = document.createElement("div");
-    hero.className = "broadcast-article-hero";
-    const heroCopy = document.createElement("div");
-    heroCopy.className = "broadcast-article-hero-copy";
-    const media = document.createElement("div");
-    media.className = "broadcast-article-media";
-    const mediaPlaceholder = document.createElement("div");
-    mediaPlaceholder.className = "broadcast-article-media-placeholder";
-    mediaPlaceholder.textContent = article.liveStatus === "live" || article.isLive
-      ? "● LIVE 配信中"
-      : "放送映像プレビュー";
-    media.appendChild(mediaPlaceholder);
-    const coverImage = typeof article.coverImage === "string" && article.coverImage.length < 420100 &&
-      /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(article.coverImage) ? article.coverImage : "";
-    if (coverImage) {
-      const cover = document.createElement("img");
-      cover.className = "broadcast-article-thumbnail";
-      cover.alt = (article.programTitle || article.title || "放送") + " の放送画面";
-      cover.loading = "lazy";
-      cover.src = coverImage;
-      cover.addEventListener("error", () => {
-        cover.remove();
-        mediaPlaceholder.hidden = false;
-        mediaPlaceholder.textContent = "保存画像を表示できません";
-      }, { once: true });
-      mediaPlaceholder.hidden = true;
-      media.appendChild(cover);
-    } else if (article.articlePath && typeof api.getArticleThumbnail === "function") {
-      const thumbnail = document.createElement("img");
-      thumbnail.className = "broadcast-article-thumbnail";
-      thumbnail.alt = (article.programTitle || article.title || "放送") + " の録画サムネイル";
-      thumbnail.loading = "lazy";
-      thumbnail.hidden = true;
-      mediaPlaceholder.textContent = "サムネイルを確認中…";
-      media.appendChild(thumbnail);
-      scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article);
-    } else {
-      mediaPlaceholder.textContent = "放送映像が保存されていません";
-    }
-    const heading = document.createElement("div");
-    heading.className = "broadcast-article-heading";
-    const title = document.createElement("h3");
-    title.textContent = (article.aiProvider && article.title) || article.programTitle || article.title || article.liveId || "放送記事";
-    const meta = document.createElement("p");
-    meta.className = "broadcast-article-meta";
-    meta.textContent = ["ニコニコ生放送", article.liveId || ""].filter(Boolean).join(" · ");
-    if (article.liveStatus === "live" || article.isLive) {
-      const liveBadge = document.createElement("span");
-      liveBadge.className = "broadcast-article-live-badge";
-      liveBadge.textContent = "● LIVE 配信中・記事更新中";
-      heading.append(liveBadge);
-    }
-    heading.append(title, meta);
-    const tags = document.createElement("div");
-    tags.className = "broadcast-article-tags";
-    const addTag = (label, kind = "") => {
-      const tag = document.createElement("span");
-      tag.className = "broadcast-article-tag" + (kind ? " " + kind : "");
-      tag.textContent = label;
-      tags.appendChild(tag);
-    };
-    if (article.aiProvider) addTag("AI生成 · " + article.aiProvider + (article.aiModel ? " / " + article.aiModel : ""), "ai");
-    else addTag("統計・コメント整理記事", "local");
-    if (article.aiGenerationStatus === "recovered") addTag("本文を短縮再生成済み", "ai");
-    if (article.aiGenerationStatus === "stale") addTag("前回の完成記事を保持（今回のAI更新失敗）", "local");
-    if (article.aiGenerationStatus === "fallback") addTag("AI本文未完了・標準記事を表示中", "local");
-    if (article.articleSource === "manual") addTag("登録なし・手動生成");
-    if (article.videoFrameCount) addTag("映像 " + article.videoFrameCount + "枚" + (article.videoAiAnalyzed ? "・AI解析済み" : "・フレーム取得済み"), "video");
-    if (article.mediaAnalysis && article.mediaAnalysis.audio === "unavailable") addTag("音声未解析", "local");
-    if (article.mediaAnalysis && article.mediaAnalysis.comments === "unavailable") addTag("コメント未取得", "local");
-    if (article.audioAnalysis || article.audioTranscriptSegmentCount) addTag("音声文字起こし済み", "audio");
-    if (article.liveStatus === "live" || article.isLive) addTag("ライブ更新中", "live");
-    if (tags.childElementCount) heading.appendChild(tags);
-    heroCopy.appendChild(heading);
-    if (article.title && article.programTitle && article.title !== article.programTitle) {
-      const editorialTitle = document.createElement("p");
-      editorialTitle.className = "broadcast-article-editorial-title";
-      editorialTitle.textContent = article.aiProvider
-        ? "元の番組タイトル：" + article.programTitle
-        : "記事見出し：" + article.title;
-      heroCopy.appendChild(editorialTitle);
-    }
-    const commentSignal = document.createElement("div");
-    commentSignal.className = "broadcast-article-comment-signal";
-    commentSignal.textContent = Number(article.commentCount || 0) > 0
-      ? "コメント " + Number(article.commentCount).toLocaleString("ja-JP") + "件を取得・記事に反映しています。"
-      : (articleIsLive ? "コメントの受信を待っています。" : "取得できたコメントはありません。");
-    heroCopy.appendChild(commentSignal);
-    const sources = document.createElement("div");
-    sources.className = "broadcast-article-evidence";
-    const sourceLabels = [];
-    if (Number(article.videoFrameCount) > 0 || article.videoAnalysis) sourceLabels.push("映像フレーム");
-    if (article.audioTranscript || article.audioAnalysis) sourceLabels.push("音声・文字起こし");
-    if (Number(article.commentCount) > 0) sourceLabels.push("保存コメント");
-    if (article.programTitle || article.description) sourceLabels.push("番組情報");
-    if (sourceLabels.length) {
-      const label = document.createElement("strong");
-      label.textContent = "記事の参照資料";
-      sources.appendChild(label);
-      for (const source of sourceLabels) {
-        const pill = document.createElement("span");
-        pill.textContent = source;
-        sources.appendChild(pill);
-      }
-      heroCopy.appendChild(sources);
-    }
-    hero.append(media, heroCopy);
-
-    const stats = document.createElement("div");
-    stats.className = "broadcast-article-stats";
-    const stat = (label, value) => {
-      const item = document.createElement("div");
-      item.className = "broadcast-article-stat";
-      const caption = document.createElement("span");
-      caption.textContent = label;
-      const amount = document.createElement("strong");
-      amount.textContent = value;
-      item.append(caption, amount);
-      return item;
-    };
-    stats.append(
-      stat("来場者", article.visitorCount == null ? "未取得" : Number(article.visitorCount).toLocaleString("ja-JP")),
-      stat("投稿者", Number(article.uniqueCommenters || 0).toLocaleString("ja-JP") + "人"),
-      stat("コメント", Number(article.commentCount || 0).toLocaleString("ja-JP") + "件"),
-      stat("配信時間", article.durationMinutes == null ? "未取得" :
-        (article.liveStatus === "live" || article.isLive ? "約" + article.durationMinutes + "分経過" : "約" + article.durationMinutes + "分"))
-    );
-
-    const body = document.createElement("div");
-    body.className = "broadcast-article-body";
-    if (article.summary) {
-      const lead = document.createElement("p");
-      lead.className = "broadcast-article-lead";
-      lead.textContent = article.summary;
-      body.appendChild(lead);
-    }
-    if (Array.isArray(article.aiHighlights) && article.aiHighlights.length) {
-      const highlights = document.createElement("section");
-      highlights.className = "broadcast-article-highlights";
-      const heading = document.createElement("h4");
-      heading.textContent = "この記事の注目点";
-      const list = document.createElement("ul");
-      for (const item of article.aiHighlights) {
-        const row = document.createElement("li"); row.textContent = item; list.appendChild(row);
-      }
-      highlights.append(heading, list); body.appendChild(highlights);
-    }
-    const articleSections = Array.isArray(article.aiSections)
-      ? article.aiSections.filter(item => item && item.heading && item.body).slice(0, 6)
-      : [];
-    if (articleSections.length) {
-      const sectionLabel = document.createElement("div");
-      sectionLabel.className = "broadcast-article-story-label";
-      sectionLabel.textContent = "放送の詳しい内容";
-      body.appendChild(sectionLabel);
-      for (const chapter of articleSections) {
-        const section = document.createElement("section");
-        section.className = "broadcast-article-chapter";
-        const heading = document.createElement("h4");
-        heading.textContent = String(chapter.heading).slice(0, 90);
-        const text = document.createElement("p");
-        text.textContent = String(chapter.body).slice(0, 2000);
-        section.append(heading, text);
-        body.appendChild(section);
-      }
-    } else {
-      for (const paragraph of Array.isArray(article.paragraphs) ? article.paragraphs : []) {
-        const p = document.createElement("p");
-        p.textContent = paragraph;
-        body.appendChild(p);
-      }
-    }
-    if (Array.isArray(article.aiTimeline) && article.aiTimeline.length) {
-      const timeline = document.createElement("section");
-      timeline.className = "broadcast-article-timeline";
-      const heading = document.createElement("h4"); heading.textContent = "放送の流れ"; timeline.appendChild(heading);
-      for (const item of article.aiTimeline) {
-        const row = document.createElement("p"); row.textContent = [item.time, item.detail].filter(Boolean).join("　"); timeline.appendChild(row);
-      }
-      body.appendChild(timeline);
-    }
-    if (article.aiAudienceReaction) {
-      const reaction = document.createElement("p"); reaction.className = "broadcast-article-reaction";
-      reaction.textContent = "コメント欄の反応：" + article.aiAudienceReaction; body.appendChild(reaction);
-    }
-    const note = document.createElement("p");
-    note.className = "broadcast-article-note";
-    note.textContent = article.note || "番組情報と保存済みコメントから自動生成された記事です。";
-    const topicValues = (article.topics || []).map((topic) => typeof topic === "string" ? topic : topic.term).filter(Boolean);
-    if (topicValues.length) {
-      const topics = document.createElement("div");
-      topics.className = "broadcast-article-topics";
-      const label = document.createElement("strong");
-      label.textContent = "注目トピック";
-      topics.appendChild(label);
-      for (const topic of topicValues.slice(0, 10)) {
-        const chip = document.createElement("span");
-        chip.textContent = topic;
-        topics.appendChild(chip);
-      }
-      body.appendChild(topics);
-    }
-    const sourceDetails = [];
-    if (article.videoAnalysis) sourceDetails.push("映像：" + article.videoAnalysis);
-    if (article.audioAnalysis) sourceDetails.push("音声：" + article.audioAnalysis);
-    if (Number(article.aiCommentTotalCount) > 0) {
-      sourceDetails.push("AI参照コメント：" + Number(article.aiCommentSampleCount || 0).toLocaleString("ja-JP") + " / " + Number(article.aiCommentTotalCount).toLocaleString("ja-JP") + "件");
-    }
-    if (article.aiSourceCoverage && article.aiProvider) {
-      const coverage = article.aiSourceCoverage;
-      sourceDetails.push("映像AI：" + (coverage.video === "analyzed" ? "解析あり" : "未解析"));
-      sourceDetails.push("音声AI：" + (coverage.audio === "transcribed" ? "文字起こしを参照" : "未解析"));
-    }
-    if (article.aiEvidence && Number(article.aiEvidence.timestampedCount) > 0) {
-      sourceDetails.push("時刻付きコメント：" + Number(article.aiEvidence.timestampedCount).toLocaleString("ja-JP") + "件");
-    }
-    if (sourceDetails.length) {
-      const sources = document.createElement("p");
-      sources.className = "broadcast-article-sources";
-      sources.textContent = sourceDetails.join("　｜　");
-      body.appendChild(sources);
-    }
-    if (Array.isArray(article.aiQualityNotes) && article.aiQualityNotes.length) {
-      const quality = document.createElement("p");
-      quality.className = "broadcast-article-sources";
-      quality.textContent = "記事の取得状況：" + article.aiQualityNotes.slice(0, 4).join(" ／ ");
-      body.appendChild(quality);
-    }
-    body.appendChild(note);
-
-    const actions = document.createElement("div");
-    actions.className = "broadcast-article-actions";
-    if (article.liveId) {
-      const watch = document.createElement("button");
-      watch.type = "button";
-      watch.className = "button button-quiet button-small";
-      watch.textContent = "元の放送を開く";
-      watch.addEventListener("click", async () => {
-        try { await api.openWatch(article.liveId); }
-        catch (error) { showToast(error.message || "放送ページを開けませんでした。", true); }
-      });
-      actions.appendChild(watch);
-    }
-    if (article.videoFile) {
-      const video = document.createElement("button");
-      video.type = "button";
-      video.className = "button button-outline button-small";
-      video.textContent = "録画を再生";
-      video.addEventListener("click", async () => {
-        try { await api.openLibraryItem(article.videoFile); }
-        catch (error) { showToast(error.message || "録画ファイルを開けませんでした。", true); }
-      });
-      actions.appendChild(video);
-    }
-    if (article.articlePath && !(article.liveStatus === "live" || article.isLive)) {
-      const reanalyze = document.createElement("button");
-      reanalyze.type = "button";
-      reanalyze.className = "button button-primary button-small";
-      reanalyze.textContent = "映像・音声・コメントを再解析";
-      reanalyze.title = "録画から映像を抽出し、音声を文字起こしして保存コメントと照合します。";
-      reanalyze.addEventListener("click", async () => {
-        reanalyze.disabled = true;
-        reanalyze.textContent = "再解析中…";
-        try {
-          const updated = await api.reanalyzeBroadcastArticle(article.articlePath);
-          showToast("映像・音声・コメントの再解析が完了しました：" + (updated.title || updated.programTitle || "放送記事"));
-          await loadBroadcastArticles();
-        } catch (error) {
-          showToast(error.message || "録画の再解析に失敗しました。", true);
-        } finally {
-          reanalyze.disabled = false;
-          reanalyze.textContent = "映像・音声・コメントを再解析";
-        }
-      });
-      actions.appendChild(reanalyze);
-    }
-    const exportArticle = document.createElement("button");
-    exportArticle.type = "button";
-    exportArticle.className = "button button-outline button-small";
-    exportArticle.textContent = "HTMLで保存";
-    exportArticle.addEventListener("click", async () => {
-      exportArticle.disabled = true;
-      try {
-        const result = await api.exportBroadcastArticleHtml(article);
-        if (result && result.saved) showToast("放送記事をHTMLで保存しました。");
-      } catch (error) { showToast(error.message || "HTMLを書き出せませんでした。", true); }
-      finally { exportArticle.disabled = false; }
-    });
-    actions.appendChild(exportArticle);
-    const deleteArticle = document.createElement("button"); deleteArticle.type = "button"; deleteArticle.className = "button button-danger button-small"; deleteArticle.textContent = "記事を削除";
-    deleteArticle.title = "記事JSONだけを削除します。録画動画とコメントログは残ります。";
-    deleteArticle.addEventListener("click", async () => {
-      deleteArticle.disabled = true;
-      try { const result = await api.deleteBroadcastArticle(article.articlePath); if (result && result.cancelled) return;
-        showToast("放送記事を削除しました。録画動画とコメントログは残っています。"); await loadBroadcastArticles(); await loadCaptureLibrary(); void refreshLiveArticlePreviews(true);
-      } catch (error) { showToast(error.message || "放送記事を削除できませんでした。", true); }
-      finally { deleteArticle.disabled = false; }
-    });
-    actions.appendChild(deleteArticle);
-    if (article.generatedAt) {
-      const updated = document.createElement("p");
-      updated.className = "broadcast-article-updated";
-      updated.textContent = "最終更新：" + formatLibraryDate(article.generatedAt);
-      body.appendChild(updated);
-    }
-    const articleStoryboard = article.articlePath && !articleIsLive &&
-      typeof api.getArticleVideoPreview === "function"
-      ? makeArticleVideoScenesPanel(article) : null;
-    if (articleStoryboard) {
-      const scenesButton = document.createElement("button");
-      scenesButton.type = "button";
-      scenesButton.className = "button button-outline button-small broadcast-article-scenes-button";
-      scenesButton.textContent = "動画内の場面一覧を見る";
-      scenesButton.setAttribute("aria-expanded", "false");
-      scenesButton.addEventListener("click", () => {
-        void articleStoryboard.expand();
-        scenesButton.setAttribute("aria-expanded", String(!articleStoryboard.panel.hidden));
-        scenesButton.textContent = articleStoryboard.panel.hidden
-          ? "動画内の場面一覧を見る" : "動画内の場面一覧を閉じる";
-      });
-      media.appendChild(scenesButton);
-    }
-    card.append(masthead, hero, stats);
-    if (articleStoryboard) card.appendChild(articleStoryboard.panel);
-    if (article.audioTranscript || article.audioAnalysis) {
-      const audio = document.createElement("section");
-      audio.className = "broadcast-article-audio";
-      const audioTitle = document.createElement("strong");
-      audioTitle.textContent = "音声から確認した内容";
-      const audioStatus = document.createElement("p");
-      audioStatus.textContent = article.audioAnalysis || "Whisper.cppで音声を文字起こししました。";
-      audio.append(audioTitle, audioStatus);
-      if (article.audioTranscript) {
-        const details = document.createElement("details");
-        details.className = "broadcast-article-transcript";
-        const summary = document.createElement("summary");
-        summary.textContent = "音声文字起こしを表示（" + Number(article.audioTranscriptSegmentCount || 0).toLocaleString("ja-JP") + "区間）";
-        const transcript = document.createElement("p");
-        transcript.textContent = String(article.audioTranscript).slice(0, 30000);
-        details.append(summary, transcript);
-        audio.appendChild(details);
-      }
-      card.appendChild(audio);
-    }
-    card.appendChild(body);
-    if (article.aiFallbackReason) {
-      const error = document.createElement("p");
-      error.className = "broadcast-article-ai-warning";
-      error.textContent = "AI更新エラー：" + article.aiFallbackReason;
-      card.appendChild(error);
-    }
-    const footer = document.createElement("div");
-    footer.className = "broadcast-article-footer";
-    const summary = document.createElement("p");
-    summary.textContent = [
-      article.durationMinutes != null ? "配信時間 " + article.durationMinutes + "分" : "",
-      "コメント " + Number(article.commentCount || 0).toLocaleString("ja-JP") + "件",
-      article.visitorCount != null ? "来場者 " + Number(article.visitorCount).toLocaleString("ja-JP") + "人" : "来場者未取得",
-      article.aiProvider ? "AI分析済み" : "AI未分析"
-    ].filter(Boolean).join(" · ");
-    footer.appendChild(summary);
-    card.append(footer, actions);
-    list.appendChild(card);
-    }
-  }
-}
-
-let broadcastArticles = [];
-let selectedManualArticleVideoPath = "";
-let liveArticleSessionActive = false;
-
-async function selectManualArticleVideo() {
-  const status = byId("manual-article-video-name");
-  try { const result = await api.selectArticleVideo(); if (result?.canceled) return; selectedManualArticleVideoPath = result.path || ""; status.textContent = result.name || "動画を選択しました"; }
-  catch (error) { status.textContent = error.message || "動画を選択できませんでした。"; showToast(status.textContent, true); }
-}
-
-async function startLiveArticleSession() {
-  const button = byId("manual-article-live-start-button");
-  const status = byId("manual-article-live-status");
-  const liveId = byId("manual-article-live-id").value.trim();
-  if (!liveId) { status.textContent = "生放送の放送IDを入力してください。"; showToast(status.textContent, true); return; }
-  button.disabled = true;
-  status.textContent = "視聴ページを表示せず、非表示の映像取得とコメント接続を開始しています…";
-  try {
-    const result = await api.startLiveArticleSession({
-      liveId,
-      broadcasterName: byId("manual-article-broadcaster").value,
-      programTitle: byId("manual-article-title").value,
-      description: byId("manual-article-description").value
-    });
-    liveArticleSessionActive = true;
-    button.hidden = true;
-    byId("manual-article-live-stop-button").hidden = false;
-    status.textContent = "生放送の記事生成を開始しました。実際の配信映像をStreamlink経由でサンプリングし、放送音声とコメントを照合して記事を更新します。録画ファイルは残しません。";
-    showToast("生放送の記事生成を開始しました。");
-  } catch (error) {
-    status.textContent = error.message || "生放送記事を開始できませんでした。";
-    showToast(status.textContent, true);
-  } finally { button.disabled = false; }
-}
-
-async function stopLiveArticleSession() {
-  const button = byId("manual-article-live-stop-button");
-  const status = byId("manual-article-live-status");
-  button.disabled = true;
-  status.textContent = "記事を最終保存して生放送との接続を終了しています…";
-  try {
-    await api.stopLiveArticleSession();
-    liveArticleSessionActive = false;
-    button.hidden = true;
-    byId("manual-article-live-start-button").hidden = false;
-    status.textContent = "生放送の記事生成を終了しました。取得したコメント・映像・音声を使って記事を保存しました。";
-    await loadBroadcastArticles();
-    showToast("生放送記事を保存しました。");
-  } catch (error) {
-    status.textContent = error.message || "生放送記事を停止できませんでした。";
-    showToast(status.textContent, true);
-  } finally { button.disabled = false; }
-}
-
-async function loadArticleWhisperSettings() {
-  try {
-    const settings = await api.getArticleWhisperSettings();
-    if (settings.cliPath) byId("manual-article-whisper-cli-name").textContent = settings.cliPath;
-    if (settings.modelPath) byId("manual-article-whisper-model-name").textContent = settings.modelPath;
-    if (settings.managed) byId("manual-article-whisper-download-status").textContent = "自動セットアップ済み。録画動画・生放送の記事生成で利用できます。";
-  } catch (_) {}
-}
-void loadArticleWhisperSettings();
-async function downloadArticleWhisper() {
-  const button = byId("manual-article-whisper-auto-button");
-  const status = byId("manual-article-whisper-download-status");
-  button.disabled = true; status.textContent = "Whisper.cppの準備を開始しています…";
-  try {
-    const result = await api.downloadArticleWhisper();
-    byId("manual-article-whisper-cli-name").textContent = result.cliPath;
-    byId("manual-article-whisper-model-name").textContent = result.modelPath;
-    status.textContent = "自動セットアップ完了。音声文字起こしを利用できます。";
-    showToast("Whisper.cppと日本語モデルを設定しました。");
-  } catch (error) {
-    status.textContent = error.message || "Whisper.cppの自動セットアップに失敗しました。";
-    showToast(status.textContent, true);
-  } finally { button.disabled = false; }
-}
-
-async function selectArticleWhisperCli() {
-  try { const result = await api.selectArticleWhisperCli(); if (result && !result.canceled) { byId("manual-article-whisper-cli-name").textContent = result.name; showToast("Whisper実行ファイルを設定しました。"); } }
-  catch (error) { showToast(error.message || "実行ファイルを選択できませんでした。", true); }
-}
-
-async function selectArticleWhisperModel() {
-  try { const result = await api.selectArticleWhisperModel(); if (result && !result.canceled) { byId("manual-article-whisper-model-name").textContent = result.name; showToast("Whisper日本語モデルを設定しました。"); } }
-  catch (error) { showToast(error.message || "日本語モデルを選択できませんでした。", true); }
-}
-
-async function generateManualBroadcastArticle() {
-  const button = byId("manual-article-generate-button");
-  const status = byId("manual-article-status");
-  const file = byId("manual-article-file").files?.[0];
-  button.disabled = true;
-  status.textContent = selectedManualArticleVideoPath ? "動画の映像フレームと音声を解析し、コメントと照合しています…" : "記事を生成しています…";
-  try {
-    const result = await api.generateManualBroadcastArticle({
-      broadcasterName: byId("manual-article-broadcaster").value,
-      liveId: byId("manual-article-live-id").value,
-      programTitle: byId("manual-article-title").value,
-      description: byId("manual-article-description").value,
-      commentsText: file ? await file.text() : "",
-      fileName: file ? file.name : "",
-      videoPath: selectedManualArticleVideoPath
-    });
-    if (!result || result.status !== "generated") {
-      status.textContent = result?.reason || "記事を生成できませんでした。";
-      showToast(status.textContent, true);
-      return;
-    }
-    status.textContent = result.aiProvider
-      ? "Ollama（" + result.aiModel + "）で記事を生成・保存しました。" + (result.videoFrameCount ? " 映像" + result.videoFrameCount + "枚を分析。" : "") + (result.audioAnalysis ? " 音声文字起こし" + (result.audioTranscriptSegmentCount || 0) + "区間を反映。" : "")
-      : "記事を保存しました。" + (result.aiFallbackReason ? " AIは利用できないため標準方式で生成しました。 " + result.aiFallbackReason : "");
-    if (result.audioTranscriptionError) status.textContent += " 音声解析: " + result.audioTranscriptionError;
-    else if (result.audioTranscriptionStatus) status.textContent += " " + result.audioTranscriptionStatus;
-    showToast("記事を生成しました: " + (result.title || "放送記事"));
-    await loadBroadcastArticles();
-  } catch (error) {
-    status.textContent = error.message || "記事を生成できませんでした。";
-    showToast(status.textContent, true);
-  } finally { button.disabled = false; }
-}
-
-async function loadBroadcastArticles() {
-  const button = byId("articles-refresh-button");
-  if (button) button.disabled = true;
-  const list = byId("articles-list");
-  if (list && !broadcastArticles.length) list.textContent = "放送記事を読み込んでいます…";
-  try {
-    const result = await api.getBroadcastArticles();
-    broadcastArticles = Array.isArray(result.items) ? result.items : [];
-    byId("articles-total").textContent = String(result.total || 0);
-    byId("articles-broadcaster-count").textContent = String(result.broadcasterCount || 0);
-    byId("articles-comment-total").textContent = Number(result.commentCount || 0).toLocaleString("ja-JP");
-    renderBroadcastArticles();
-  } catch (error) {
-    if (list) list.textContent = error.message || "放送記事を読み込めませんでした。";
   } finally {
     if (button) button.disabled = false;
   }
@@ -3840,7 +3069,7 @@ async function openPublicEditionInstaller(edition) {
   const latest = (editionReleaseState[edition] || [])[0];
   if (!latest || typeof api.openEditionInstaller !== "function") return;
   if (edition === "stable" && !window.confirm(
-    "製品版を取得しますか？\n\n製品版には放送記事・無料AI記事生成が含まれません。" +
+    "製品版を取得しますか？\n\n製品版は安定した機能を提供します。" +
     "\n製品版のアプリ内からβ版へ戻す機能はありません。\n\n公式インストーラーのダウンロードページを開きます。"
   )) return;
   const button = byId("edition-" + edition + "-download");
@@ -3878,7 +3107,7 @@ async function refreshUpdateChannelSettings() {
     select.disabled = !state.autoUpdateSupported;
     button.disabled = !state.autoUpdateSupported;
     note.textContent = state.autoUpdateSupported
-      ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版を利用していたユーザーだけは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。"
+      ? "製品版へ切り替えると、β版専用機能は利用できなくなります。元々β版を利用していたユーザーだけは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。"
       : "ZIP版ではアプリ内の自動切り替えを利用できません。希望する版のGitHub Releasesからインストーラーを手動でインストールしてください。製品版からβ版へ戻す機能はありません。";
     button.textContent = select.value === "latest" ? "製品版へ切り替えて再起動" : "β版へ切り替えて再起動";
   } catch (error) {
@@ -3902,7 +3131,7 @@ async function switchUpdateChannel() {
     }
   } catch (_) {}
   const detail = nextChannel === "latest"
-    ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版ユーザーだった場合は製品版から戻すこともできます。"
+    ? "製品版へ切り替えると、β版専用機能は利用できなくなります。元々β版ユーザーだった場合は製品版から戻すこともできます。"
     : "β版へ切り替えると、開発中の機能と更新を受け取ります。";
   if (!window.confirm(targetLabel + "へ切り替えますか？\n\n" + detail + "\n\n録画・コメント取得を終了してアプリを再起動します。")) return;
   button.disabled = true;
@@ -4002,105 +3231,14 @@ try {
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
     addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
   }
-  if (channel === "ollama:setup-progress" && payload) {
-    const message = byId("ollama-status-message");
-    if (message) {
-      if (payload.stage === "installer") {
-        const received = (Number(payload.received) || 0) / 1024 / 1024;
-        const total = (Number(payload.total) || 0) / 1024 / 1024;
-        message.textContent = "Ollamaインストーラーをダウンロード中… " + received.toFixed(1) + " MB" + (total ? " / " + total.toFixed(1) + " MB（" + (Number(payload.percent) || 0) + "%）" : "");
-      } else if (payload.stage === "model") {
-        const completed = Number(payload.completed) || 0;
-        const total = Number(payload.total) || 0;
-        message.textContent = "モデル " + payload.model + " を取得中… " + (payload.status || "準備中") + (total ? "（" + Math.round(completed / total * 100) + "%）" : "");
-      }
-    }
-  }
-  if (channel === "whisper:download-progress" && payload) {
-    const status = byId("manual-article-whisper-download-status");
-    const stage = payload.stage === "runtime" ? "Whisper.cpp実行ファイル" : payload.stage === "model" ? "日本語モデル（ggml-base.bin）" : "セットアップ";
-    if (payload.stage === "complete") status.textContent = "ダウンロード・検証・配置が完了しました。";
-    else {
-      const received = (Number(payload.received) || 0) / 1024 / 1024;
-      const total = (Number(payload.total) || 0) / 1024 / 1024;
-      status.textContent = stage + "をダウンロード中… " + received.toFixed(1) + " MB" + (total ? " / " + total.toFixed(1) + " MB（" + (Number(payload.percent) || 0) + "%）" : "");
-    }
-  }
   if (channel === "update:state") renderUpdateState(payload);
   if (channel === "streamlink:update-state") renderStreamlinkUpdateState(payload);
   if (channel === "monitor:state") renderMonitorState(payload);
   if (channel === "monitor:target-status") {
     monitorStatuses.set(payload.userId, payload);
     renderMonitorTargets();
-    void refreshLiveArticlePreviews();
-  }
+    }
   if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
-  if (channel === "articles:live-state" && payload) {
-    const status = byId("manual-article-live-status");
-    const frameCount = Number(payload.frameCount) || 0;
-    if (payload.state === "capturing") {
-      status.textContent = "生放送中：映像フレーム " + frameCount + "枚を保持中（" + (payload.videoSource === "streamlink" ? "配信ストリーム直接取得" : "視聴ページから取得") + "）。" + (payload.audioCapturing ? " Whisper.cppで音声も逐次解析中。" : "");
-    } else if (payload.state === "generating") {
-      status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…" + (payload.audioCapturing ? " 音声も取得中です。" : "");
-    } else if (payload.state === "updated") {
-      status.textContent = payload.generated
-        ? "生放送中：記事を更新しました。映像フレーム " + frameCount + " 枚を保持中。次回も約2分後に更新します。"
-        : "生放送中：記事の材料を取得中です。コメント・番組情報が揃うと記事を生成します。";
-    } else if (payload.state === "capture-error") {
-      status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
-    } else if (payload.state === "video-capturing") {
-      status.textContent = "配信映像を直接取得中（15秒ごと）。" +
-        (payload.audioCapturing ? "音声もWhisper.cpp用に取り込み中。" : "Whisper未設定のため音声解析は省略。") +
-        "コメントも受信中です。";
-    } else if (payload.state === "video-error" || payload.state === "video-warning") {
-      status.textContent = "配信映像取得の注意：" + (payload.message || "ストリームを確認しています。");
-    } else if (payload.state === "audio-capturing") {
-      status.textContent = "生放送中：音声を約25秒ごとに分割し、Whisper.cppで逐次文字起こししています。";
-    } else if (payload.state === "audio-transcribing") {
-      status.textContent = "生放送の音声をWhisper.cppで日本語文字起こししています。完了した区間から記事へ反映します…";
-    } else if (payload.state === "audio-progress") {
-      status.textContent = "生放送中：音声をリアルタイム文字起こし中（" + (Number(payload.segmentCount) || 0) + "区間）。コメントも受信時に保存し、記事へ反映します。";
-    } else if (payload.state === "audio-finalizing") {
-      status.textContent = "音声の最後の区間を文字起こししています…";
-    } else if (payload.state === "audio-complete") {
-      status.textContent = "Whisper.cppの音声文字起こしが完了しました（" + (Number(payload.segmentCount) || 0) + "区間）。最終記事へ反映します。";
-    } else if (payload.state === "audio-disabled") {
-      status.textContent = payload.message || "Whisper.cpp未設定のため、生放送の音声解析はスキップします。映像とコメントの取得は継続します。";
-    } else if (payload.state === "audio-error") {
-      status.textContent = "生放送の音声解析に失敗しました：" + (payload.message || "不明なエラー") + "。映像とコメントの記事生成は継続します。";
-    } else if (payload.state === "error") {
-      status.textContent = "記事更新エラー：" + (payload.message || "不明なエラー") + "。次回更新時に再試行します。";
-    }
-  }
-  if (channel === "articles:analysis-state" && payload) {
-    const status = byId("manual-article-status");
-    const stages = {
-      starting: "録画の記事解析を準備中…",
-      video: "録画映像を全体から抽出しています…",
-      audio: "録画の音声を2分ごとに分割して文字起こししています…",
-      ai: "映像・音声・コメントをOllamaで照合して記事を生成中…",
-      complete: "録画の映像・音声・コメントを使った記事生成が完了しました。"
-    };
-    if (payload.state === "audio-progress") {
-      status.textContent = "録画音声を文字起こし中：" + (Number(payload.processed) || 0) +
-        " / " + (Number(payload.total) || 0) + "区間";
-    } else if (payload.state === "error") {
-      status.textContent = "録画記事の解析に失敗：" + (payload.message || "不明なエラー");
-      addMonitorActivity(status.textContent, "error");
-    } else if (stages[payload.state]) {
-      status.textContent = stages[payload.state];
-      if (payload.state === "complete" && !byId("articles-panel").hidden) loadBroadcastArticles();
-    }
-  }
-  if (channel === "articles:generated") {
-    void refreshLiveArticlePreviews(true);
-    if (!byId("articles-panel").hidden) loadBroadcastArticles();
-    const article = payload && payload.article;
-    addMonitorActivity("放送記事を生成しました：" + (article && (article.programTitle || article.liveId) || ""));
-  }
-  if (channel === "articles:skipped" && payload && payload.reason) {
-    addMonitorActivity("放送記事は生成対象外です：" + payload.reason);
-  }
   if (channel === "monitor:error") addMonitorActivity(
     (payload.name || payload.userId || "ユーザー") + " の状態確認エラー：" + (payload.error || ""),
     "error"
@@ -4211,37 +3349,6 @@ byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
 byId("save-settings-button").addEventListener("click", saveSettings);
-byId("ollama-check-button").addEventListener("click", () => void checkOllamaStatus());
-byId("ollama-install-button").addEventListener("click", async () => {
-  const button = byId("ollama-install-button");
-  const message = byId("ollama-status-message");
-  button.disabled = true;
-  if (message) message.textContent = "公式Ollamaインストーラーをダウンロードしています…";
-  try {
-    const result = await api.downloadOllamaInstaller();
-    if (message) message.textContent = "インストーラーを起動しました。画面の案内に沿ってインストールし、完了後に「Ollama接続を確認」を押してください。";
-    showToast("Ollamaインストーラーを起動しました。");
-  } catch (error) {
-    if (message) message.textContent = error.message || "Ollamaのダウンロードに失敗しました。";
-    showToast(message.textContent, true);
-  } finally { button.disabled = false; }
-});
-byId("ollama-pull-model-button").addEventListener("click", async () => {
-  const button = byId("ollama-pull-model-button");
-  const model = byId("setting-ai-article-model").value.trim() || "qwen2.5:3b";
-  const message = byId("ollama-status-message");
-  button.disabled = true;
-  if (message) message.textContent = model + " をダウンロードしています…";
-  try {
-    await api.pullOllamaModel(model);
-    if (message) message.textContent = model + " のダウンロードが完了しました。";
-    await checkOllamaStatus();
-    showToast(model + " をOllamaに追加しました。");
-  } catch (error) {
-    if (message) message.textContent = error.message || "モデルのダウンロードに失敗しました。";
-    showToast(message.textContent, true);
-  } finally { button.disabled = false; }
-});
 byId("settings-modal").addEventListener("click", (event) => {
   if (event.target === byId("settings-modal")) closeSettings();
 });
@@ -4288,27 +3395,14 @@ byId("settings-open-updates-button").addEventListener("click", () => {
 byId("ranking-refresh").addEventListener("click", refreshIndependentRanking);
 byId("ranking-search").addEventListener("input", renderIndependentRanking);
 byId("ranking-sort").addEventListener("change", renderIndependentRanking);
+for(const button of document.querySelectorAll("[data-ranking-sort-key]"))button.addEventListener("click",()=>{byId("ranking-sort").value=button.dataset.rankingSortKey;syncRankingQuickSort();renderIndependentRanking();});
+for(const button of document.querySelectorAll("[data-ranking-view-key]"))button.addEventListener("click",()=>setRankingView(button.dataset.rankingViewKey));
 byId("ranking-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
 byId("ranking-activity-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
 setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
 byId("library-filter").addEventListener("change", renderCaptureLibrary);
-byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
-byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
-byId("manual-article-video-select-button").addEventListener("click", selectManualArticleVideo);
-byId("manual-article-whisper-auto-button").addEventListener("click", downloadArticleWhisper);
-byId("manual-article-whisper-cli-button").addEventListener("click", selectArticleWhisperCli);
-byId("manual-article-whisper-model-button").addEventListener("click", selectArticleWhisperModel);
-byId("manual-article-live-start-button").addEventListener("click", startLiveArticleSession);
-byId("manual-article-live-stop-button").addEventListener("click", stopLiveArticleSession);
-byId("manual-article-file").addEventListener("change", () => {
-  const file = byId("manual-article-file").files?.[0];
-  byId("manual-article-file-name").textContent = file ? file.name + "（" + formatLibraryBytes(file.size) + "）" : "ファイル未選択。番組情報だけでも記事を生成できます。";
-});
-byId("articles-search").addEventListener("input", renderBroadcastArticles);
-byId("articles-status-filter").addEventListener("change", renderBroadcastArticles);
-byId("articles-sort").addEventListener("change", renderBroadcastArticles);
 byId("library-open-folder-button").addEventListener("click", async () => {
   try {
     const result = await api.openDataFolder();

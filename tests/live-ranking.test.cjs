@@ -63,9 +63,10 @@ test("ranking UI and IPC are wired to the existing recording pathway",()=>{
   const preload=fs.readFileSync(path.join(root,"electron/preload.cjs"),"utf8");
   assert.match(html,/data-page-target="ranking"/);
   assert.match(html,/id="ranking-list"/);
-  assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId/);
+  assert.match(renderer,/await startRankingRecording\(item\)/);
+   assert.match(renderer,/await startVideoRecording\(\{\.\.\.target,chase\}\)/);
   assert.match(renderer,/configureRankingRefresh\(activePage === "ranking"\)/);
-  assert.match(renderer,/record.disabled\|\|!isRankingFresh\(rankingSnapshot\)/);
+  assert.match(renderer,/target=await api\.verifyRankingRecording\(item\.liveId\)/);
   assert.match(preload,/ipcRenderer.invoke\("ranking:list",options\)/);
   assert.match(main,/ipcMain.handle\("ranking:list",/);
 });
@@ -78,7 +79,7 @@ test("comment velocity cannot jump when a different source supplies the counter"
   assert.equal(after[0].comments,900);
   assert.equal(after[0].commentRate,5);
 });
-test("invalid timestamps and old snapshots cannot enable the record button",()=>{
+test("invalid timestamps and old snapshots require official verification before recording",()=>{
   const vm=require("node:vm");
   const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
   const start=source.indexOf("function isRankingFresh(");
@@ -233,10 +234,10 @@ test("ranking chase action is explicit, confirmed and uses the standalone chase 
   assert.ok(start>=0&&end>start);
   const block=renderer.slice(start,end);
   assert.match(block,/if\(!window.confirm\(/);
-  assert.match(block,/!isRankingFresh\(rankingSnapshot\)/);
-  assert.match(block,/await startVideoRecording\(\{liveId:item.liveId,chase:true\}\)/);
+  assert.match(renderer,/if\(!isRankingFresh\(rankingSnapshot\)\)/);
+  assert.match(block,/await startRankingRecording\(item,true\)/);
   assert.match(renderer,/selectedTarget\?\.chase === true \|\| \(!selectedTarget && byId\("record-mode"\)\?\.value === "chase"\)/);
-  assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId,title:item.title/);
+  assert.match(renderer,/await startVideoRecording\(\{\.\.\.target,chase\}\)/);
   assert.match(renderer,/api\.startVideo\(liveId, quality, \{ chase: true \}\)/);
 });
 
@@ -375,7 +376,7 @@ test("ranking poll retries respect the refresh interval and recover after clock 
   assert.equal(due(now+1000,now),true);
   const snapshot={dataAt:new Date(now).toISOString(),stale:false,partial:true,rows:[{}]};
   assert.match(status(snapshot,1,now+10000),/一部取得不可.*10秒前/);
-  assert.match(status(snapshot,1,now+180001),/古いデータ（録画無効）/);
+  assert.match(status(snapshot,1,now+180001),/古いデータ（録画時に放送確認）/);
   assert.match(status({...snapshot,stale:true},1,now+10000),/更新失敗/);
   assert.match(status(snapshot,1,now-1000),/古いデータ/);
 });
@@ -920,4 +921,35 @@ test("ranking smooth update retains program row, existing image and prior status
  assert.match(source,/parent\.querySelector\?\.\("\.ranking-previous-image"\)\?\.remove\(\)/);
  assert.match(source,/if\(!rankingSnapshot\)byId\("ranking-status"\)\.textContent="ランキングを取得しています…"/);
  assert.match(source,/restoreRankingScroll\(scroll,list,scrollAnchor\)/);
+});
+
+test("ranking offers compact and detailed views and quick metric sorts without duplicate lists",()=>{
+ const html=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
+ const css=fs.readFileSync(path.join(__dirname,"..","styles.css"),"utf8");
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ assert.match(html,/id="ranking-panel" data-page="ranking" data-ranking-view="compact"/);
+ assert.match(html,/data-ranking-view-key="table"/);
+ for(const key of ["compositeScore","visitors","comments","activePeople","adPoints","giftPoints"])assert.ok(html.includes('data-ranking-sort-key="'+key+'"'));
+ assert.equal((html.match(/id="ranking-list"/g)||[]).length,1);
+ assert.match(renderer,/function setRankingView\(view\)/);
+ assert.match(renderer,/byId\("ranking-panel"\)\.dataset\.rankingView=view/);
+ assert.match(renderer,/button\.dataset\.rankingSortKey;syncRankingQuickSort\(\);renderIndependentRanking\(\)/);
+ assert.match(css,/data-ranking-view="compact"/);
+ assert.match(html,/id="ranking-coverage-brief"/);
+});
+
+test("stale ranking recording target requires exact official program and ON_AIR status",async()=>{
+ const {resolveRankingRecordingTarget,parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const id="lv123456";
+ const detail=parseOfficialRankingDetails(officialPage({nicoliveProgramId:id,title:"放送中",status:"ON_AIR",providerType:"user",supplier:{programProviderId:"123"}}),id);
+ assert.equal(detail.broadcasterId,"123");
+ assert.equal((await resolveRankingRecordingTarget(id,async()=>detail)).liveId,id);
+ for(const bad of [null,{...detail,liveId:"lv999999"},{...detail,verifiedLiveStatus:"ENDED"},{...detail,verifiedLiveStatus:""}])await assert.rejects(resolveRankingRecordingTarget(id,async()=>bad),/放送中/);
+});
+
+test("ranking listing program-level providerType preserves short user IDs but rejects channels",()=>{
+ const user=parseRankingPage(page([{...program("lv123456"),providerType:"user",supplier:{programProviderId:"123",name:"配信者"}}]))[0];
+ assert.equal(user.broadcasterId,"123");
+ const channel=parseRankingPage(page([{...program("lv234567"),providerType:"channel",supplier:{programProviderId:"123",name:"チャンネル"}}]))[0];
+ assert.equal(channel.broadcasterId,"");
 });

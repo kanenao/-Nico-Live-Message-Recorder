@@ -1,11 +1,12 @@
 "use strict";
-const {rankingImageUrl,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
+const {rankingImageUrl,rankingListingImage,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
 const MAX=1024*1024;
+const safeProgramImage=url=>rankingListingImage(url,"https://www.chikuwachan.com/live/NCU/");
 async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
-  const safe=rankingImageUrl(url);
+  const safe=safeProgramImage(url);
   if(!safe)return null;
   try{
-    const r=await fetchImpl(safe,{redirect:"error",signal:AbortSignal.timeout(7000),headers:{Referer:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
+    const r=await fetchImpl(safe,{redirect:"error",signal:AbortSignal.timeout(7000),headers:{Referer:new URL(safe).hostname==="www.chikuwachan.com"?"https://www.chikuwachan.com/live/NCU/":"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
     const type=(r.headers?.get("content-type")||"").split(";")[0].trim().toLowerCase();
     if(!r.ok||!/^image\/(?:jpeg|png|webp|gif|avif)$/.test(type)||Number(r.headers.get("content-length")||0)>MAX){await r.body?.cancel();return null;}
     if(!r.body?.getReader)return null;
@@ -24,7 +25,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   }catch{return null;}
 }
 function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
-  let allowed=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
+  let allowed=new Map(),knownUsers=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
   function storePoster(id,data){
@@ -35,7 +36,8 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     while(posterBytes>POSTER_BUDGET||posters.size>100)dropPoster(posters.keys().next().value);
   }
   function update(rows){
-    allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(rankingImageUrl).filter(Boolean))]));
+    allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(safeProgramImage).filter(Boolean))]));
+    knownUsers=new Map(rows.filter(r=>/^[1-9]\d{0,14}$/.test(String(r.broadcasterId||""))).map(r=>[r.liveId,String(r.broadcasterId)]));
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
@@ -46,7 +48,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     if(url==="poster")return topIds.has(id)?posters.get(id)?.data??null:null;
     const preview=url==="preview";
     const lookup=url===""||preview;
-    const safe=lookup?"":rankingImageUrl(url);
+    const safe=lookup?"":safeProgramImage(url);
     if(!/^lv\d{5,15}$/.test(String(id))||!allowed.has(id)||(!lookup&&(!safe||!allowed.get(id).has(safe))))return null;
     const key=id+" "+(preview?"preview":lookup?"official":safe),old=cache.get(key),at=now();
     if(old&&at>=old.at&&at-old.at<(preview?2000:30000)){if(!preview&&old.data)storePoster(id,old.data);return old.data;}
@@ -58,7 +60,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       const tried=new Set();
       async function attempt(values){
         for(const value of values){
-          const candidate=rankingImageUrl(value);
+          const candidate=safeProgramImage(value);
           if(!candidate||tried.has(candidate)||!allowed.has(id))continue;
           tried.add(candidate);
           const data=await fetchRankingImage(candidate,fetchImpl);
@@ -70,11 +72,12 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       let data=null;
       if(!preview){data=await attempt([...allowed.get(id)||[]].slice(0,2));if(data)return data;}
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
-      if(!details||!allowed.has(id))return null;
-      data=await attempt([...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
-      if(!data&&details.broadcasterId&&allowed.has(id)){
-        const history=await fetchUserRankingThumbnails(details.broadcasterId,id,fetchImpl);
-        data=await attempt(history.slice(0,1));
+      if(!allowed.has(id))return null;
+      data=await attempt([...new Set([details?.thumbnailUrl,...(details?.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
+      const userId=details?.broadcasterId||((!details?.providerType||details.providerType==="user")?knownUsers.get(id):"");
+      if(!data&&userId&&allowed.has(id)){
+        const history=await fetchUserRankingThumbnails(userId,id,fetchImpl);
+        data=await attempt(history.slice(0,2));
       }
       return data;
     };
