@@ -765,3 +765,18 @@ test("ranking captures focus before moving media and restores by live ID after o
   assert.match(block,/target&&!target\.disabled&&document\.activeElement!==target/);
   assert.match(block,/target\.focus\(\{preventScroll:true\}\)/);
 });
+
+
+test("official screenshot urlSet is preferred over static artwork and supplierType is recognized",()=>{
+  const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+  const screenshot="https://cdn.nimg.jp/live/screenshot.jpg";
+  const p={nicoliveProgramId:"lv123456",title:"番組",supplier:{supplierType:"user",programProviderId:"123456",name:"配信者",icons:{uri150x150:"https://cdn.nimg.jp/icon.jpg"}},screenshot:{urlSet:{large:screenshot}},thumbnail:{small:"https://cdn.nimg.jp/static.jpg"}};
+  const detail=parseOfficialRankingDetails(officialPage(p),"lv123456");
+  assert.equal(detail.thumbnailUrl,screenshot);
+  assert.equal(detail.broadcasterId,"123456");
+  assert.equal(detail.iconUrl,p.supplier.icons.uri150x150);
+  const row=parseRankingPage(page([p]))[0];
+  assert.equal(row.thumbnailUrl,screenshot);
+  assert.equal(row.broadcasterId,"123456");
+  assert.equal(parseOfficialRankingDetails(officialPage({...p,screenshot:{urlSet:{large:"https://evil.example/a.jpg"}}}),"lv123456").thumbnailUrl,p.thumbnail.small);
+});

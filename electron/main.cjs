@@ -2965,13 +2965,28 @@ function stopMonitor() {
 
 const { createRankingService, resolveRankingMonitorTarget, selectRankingVideoFrame } = require("./live-ranking.cjs");
 const getIndependentLiveRanking = createRankingService({ enrichDetails: true });
-ipcMain.handle("ranking:list", async () => {
+const rankingObserver=require("./ranking-observer.cjs").createRankingObserver({createProvider:async liveId=>{
+  const {NiconicoProvider}=await import("nicomget");
+  return new NiconicoProvider({liveId,fetchBacklog:false,maxRetries:0});
+}});
+let rankingObserverEpoch=0;
+function stopRankingObservation(){rankingObserverEpoch++;rankingObserver.stop();}
+ipcMain.handle("ranking:stop-activity",()=>{stopRankingObservation();return true;});
+ipcMain.handle("ranking:list", async (_event,options={}) => {
+  const observe=options?.observe===true;
+  if(!observe)stopRankingObservation();
+  const epoch=rankingObserverEpoch;
   const snapshot=await getIndependentLiveRanking();
+  const observing=observe&&epoch===rankingObserverEpoch&&!isQuitting&&!snapshot.stale;
+  if(observing)rankingObserver.sync(snapshot.rows,provider&&commentWriter?currentLiveId:"");
+  else if(epoch===rankingObserverEpoch)rankingObserver.stop();
   const frameSession={active:liveArticleSessionActive&&Boolean(provider&&commentWriter)&&!captureStopPromise&&!commentFinalizing,liveId:currentLiveId,source:liveArticleVideoSource,frames:liveArticleFrames};
   return {...snapshot,rows:snapshot.rows.map(row=>{
     const activity=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(row.liveId):null;
+    const observed=observing?rankingObserver.snapshot(row.liveId):null;
+    const measured=activity??observed?.activity;
     const frame=selectRankingVideoFrame(row.liveId,frameSession);
-    return {...row,activePeople:activity?.count??null,activePeopleComplete:activity?.complete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
+    return {...row,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
   })};
 });
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
@@ -4975,6 +4990,7 @@ async function shutdownGracefully() {
 }
 
 app.on("before-quit", (event) => {
+  stopRankingObservation();
   isQuitting = true;
   if (shutdownComplete) return;
   event.preventDefault();

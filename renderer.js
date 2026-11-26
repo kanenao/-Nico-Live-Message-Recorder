@@ -2020,7 +2020,7 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
   return JSON.stringify([item.liveId,item.rank,item.rankChange,item.rankNew,item.previousRank,item.rankHistory,
     item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,
     item.points,item.pointDelta,item.visitors,item.visitorDelta,item.comments,item.commentDelta,
-    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,
+    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,
     busy,fresh,pending,isRecording,commentState]);
 }
 function renderIndependentRanking() {
@@ -2105,8 +2105,9 @@ function renderIndependentRanking() {
     rateCell.title=Number.isFinite(item.commentRate)&&sampleCount>0
       ?"同一取得元のコメント増加数 / 分（比較可能な取得元 "+sampleCount+" 件）"
       :"比較可能なコメント数が不足、または取得間隔が対象外です。";
-    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+(item.activePeopleComplete?"人":"人以上"):"未取得");
-    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。現在コメント接続中の番組のみ。";
+    const activityLabel=item.activityStatus==="connecting"?"接続中…":item.activityStatus==="unavailable"?"接続不可":item.activityStatus==="outside"?"観測対象外":"未取得";
+    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+(item.activePeopleComplete?"人":"人以上"):activityLabel);
+    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位3番組の公開コメント観測。5分未満は観測下限。";
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
     record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
@@ -2167,7 +2168,8 @@ async function refreshIndependentRanking() {
   byId("ranking-status").textContent="ランキングを取得しています…";
   try {
     if(typeof api?.getLiveRanking!=="function")throw Error("ランキング機能に対応したアプリが必要です。");
-    rankingSnapshot=await api.getLiveRanking();
+    const observe=document.querySelector(".content")?.dataset.activePage==="ranking"&&byId("ranking-auto").checked&&byId("ranking-activity-auto").checked;
+    rankingSnapshot=await api.getLiveRanking({observe});
     renderIndependentRanking();
   }catch(error){
     if(rankingSnapshot){rankingSnapshot={...rankingSnapshot,stale:true};renderIndependentRanking();}
@@ -2176,6 +2178,7 @@ async function refreshIndependentRanking() {
 }
 function configureRankingRefresh(active) {
   if(rankingTimer){clearInterval(rankingTimer);rankingTimer=null;}
+  if(!active||!byId("ranking-auto").checked||!byId("ranking-activity-auto").checked)void api.stopRankingActivity?.().catch(()=>{});
   const page=document.querySelector(".content")?.dataset.activePage;
   const showLiveRanks=page==="dashboard"||page==="monitor";
   if(!active&&!showLiveRanks)return;
@@ -4083,6 +4086,7 @@ byId("ranking-refresh").addEventListener("click", refreshIndependentRanking);
 byId("ranking-search").addEventListener("input", renderIndependentRanking);
 byId("ranking-sort").addEventListener("change", renderIndependentRanking);
 byId("ranking-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
+byId("ranking-activity-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
 setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
