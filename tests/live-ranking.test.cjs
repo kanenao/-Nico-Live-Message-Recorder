@@ -820,3 +820,27 @@ test("ranking image retries alternative URL and records a bounded retry time",()
  append(parent,"https://cdn.nimg.jp/a.jpg","thumb","番組",["https://evil.example/a","https://cdn.nimg.jp/b.jpg"]);
  events.error();assert.equal(img.src,"https://cdn.nimg.jp/b.jpg");events.error();assert.ok(img.removed);assert.ok(Number(parent.dataset.imageFailedAt)>0);
 });
+
+test("official OG fallback is restricted to the exact requested live ID",()=>{
+ const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const meta='<meta property="og:url" content="https://live.nicovideo.jp/watch/lv123456"><meta content="https://cdn.nimg.jp/live/frame.jpg" property="og:image">';
+ assert.equal(parseOfficialRankingDetails(meta,"lv123456").thumbnailUrl,"https://cdn.nimg.jp/live/frame.jpg");
+ assert.equal(parseOfficialRankingDetails(meta,"lv234567"),null);
+ assert.equal(parseOfficialRankingDetails(meta.replace("/live/frame.jpg","/usericon/123.jpg"),"lv123456"),null);
+});
+test("chikuwa explicit image paths are accepted only in matching listing context",()=>{
+ const source="https://www.chikuwachan.com/live/NCU/";
+ const image="/live/images/lv123456.jpg";
+ const listing=page([program("lv123456"),program("lv234567")])+'<img data-src="'+image+'"><img src="/live/images/lv999999.jpg">';
+ const rows=parseRankingPage(listing,source);
+ assert.equal(rows[0].thumbnailUrl,"https://www.chikuwachan.com"+image);
+ assert.equal(rows[1].thumbnailUrl,"");
+ assert.equal(parseRankingPage(listing)[0].thumbnailUrl,"");
+ const {rankingListingImage}=require("../electron/live-ranking.cjs");
+ for(const url of ["https://evil.example/live/a.jpg","/live/usericon/a.jpg","/live/a.svg","/outside/a.jpg"])assert.equal(rankingListingImage(url,source),"");
+});
+test("chikuwa artwork inside exact watch link supplements the program",()=>{
+ const source="https://www.chikuwachan.com/live/NCU/";
+ const rows=parseRankingPage('<a href="https://live.nicovideo.jp/watch/lv123456" title="番組"><img data-src="/live/images/actual.jpg"></a>',source);
+ assert.equal(rows[0].thumbnailUrl,"https://www.chikuwachan.com/live/images/actual.jpg");
+});

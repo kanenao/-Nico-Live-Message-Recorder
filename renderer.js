@@ -1966,10 +1966,10 @@ async function registerRankingMonitor(item) {
   }
 }
 function appendRankingImage(parent,url,className,label,alternatives=[]) {
-  if(!url)return;
+  if(!url&&!alternatives.length)return;
   try{
     const candidates=[...new Set([url,...alternatives])].filter(value=>{
-      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp"));}catch{return false;}
+      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&((u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp"))||(u.origin==="https://www.chikuwachan.com"&&u.pathname.startsWith("/live/")&&/\.(?:jpe?g|png|webp)$/i.test(u.pathname)&&!/(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(u.pathname)));}catch{return false;}
     }).slice(0,8);
     if(!candidates.length)return;
     const img=document.createElement("img");let index=0;
