@@ -2128,6 +2128,10 @@ function updateRankingCoverage(){
   const list=byId("ranking-list");
   const loaded=list?Array.from(list.querySelectorAll("tr[data-live-id]")).filter(row=>Array.from(row.querySelectorAll(".ranking-thumbnail,.ranking-video-frame")).some(img=>img.complete&&img.naturalWidth>0&&!img.hidden)).length:0;
   const visible=list?list.querySelectorAll("tr[data-live-id]").length:0;
+  const attempted=rows.filter(x=>x.thumbnailAttempted).length;
+  const ready=rows.filter(x=>x.thumbnailRevision>0).length;
+  const progress=byId("ranking-image-progress");
+  if(progress)progress.textContent="画像取得：試行 "+attempted+" / "+rows.length+"番組 · 取得済み "+ready+"番組 · 一覧で表示確認 "+loaded+" / "+visible+"番組";
   const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
   for(const [key,value] of Object.entries(values)){const el=byId("ranking-coverage-"+key);if(el)el.textContent=value;}
 }

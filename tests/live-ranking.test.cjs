@@ -489,7 +489,8 @@ test("ranking hides per-source badges without disabling collection or freshness 
   assert.doesNotMatch(css,/\.ranking-sources?\b/);
   assert.match(html,/id="ranking-status"/);
   assert.match(renderer,/rankingStatusText\(rankingSnapshot,rankingVisibleCount/);
-  assert.match(renderer,/api\.getLiveRanking\(\{observe\}\)/);
+  assert.match(renderer,/api\.getLiveRanking\(\{observe,thumbnails\}\)/);
+  assert.match(renderer,/const thumbnails=document\.querySelector\("\.content"\)\?\.dataset\.activePage==="ranking"/);
   assert.equal(SOURCES.length,3);
 });
 

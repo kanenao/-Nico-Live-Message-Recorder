@@ -135,3 +135,18 @@ test("official program providerType verifies user for broadcast history",()=>{
  const row=parseOfficialRankingDetails('<script id="embedded-data" data-props="'+data+'"></script>',"lv123456");
  assert.equal(row.broadcasterId,"123456");
 });
+
+test("hover preview result never replaces or blocks the ordinary poster cache",async()=>{
+ let now=100000,calls=0;
+ const proxy=createRankingImageProxy({now:()=>now,fetchImpl:async url=>{
+   calls++;
+   if(url.includes("/watch/"))return new Response("missing",{status:404});
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ proxy.update([{liveId:"lv123456",thumbnailUrl:"https://live.simg.jp/live/sample.jpg"}]);
+ assert.equal(await proxy.get("lv123456","preview"),null);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
+ assert.equal(calls,2);
+ assert.ok(proxy.status("lv123456").revision>0);
+ assert.match(await proxy.get("lv123456","poster"),/^data:image\/jpeg;base64,/);
+});
