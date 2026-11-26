@@ -42,10 +42,10 @@ test("simultaneous and repeated recordings never silently overwrite existing vid
     candidate => busy.has(candidate.replace(/\\/g, "/"))), "配信者_20261117_010501");
 });
 
-test("comment writer renames only after closure and keeps article references synchronized", () => {
+test("comment writer renames only after closure without modifying retired articles", () => {
   assert.match(main, /await finishCommentWriter\(writer\)/);
   assert.match(main, /await moveCommentLogToBroadcasterFolder\(oldPath\)/);
-  assert.match(main, /relocateArticleForRenamedComment\(oldPath, commentFilePath\)/);
+  assert.doesNotMatch(main, /relocateArticleForRenamedComment\(oldPath, commentFilePath\)/);
   assert.match(main, /async function finalizeStreamlinkRecording\(/);
   assert.match(main, /resolvedRecordingStem\(streamlinkLiveId/);
   assert.match(main, /rememberRecordedVideo\(finalPath/);

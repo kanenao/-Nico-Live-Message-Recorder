@@ -88,11 +88,11 @@ test("each recorded video shows a poster and on-demand selectable inside-video s
   assert.match(renderer, /library-video-filmstrip/);
   assert.match(renderer, /scenesButton\.textContent = "動画内を見る"/);
   assert.match(renderer, /function makeVideoStoryboardPanel\(/);
-  assert.match(renderer, /makeArticleVideoScenesPanel\(article\)/);
+  assert.doesNotMatch(renderer, /makeArticleVideoScenesPanel\(article\)/);
   assert.match(renderer, /video\.currentTime = Math\.min\(selectedSeconds/);
-  assert.match(main, /ipcMain\.handle\("articles:video-preview"/);
+  assert.match(main, /ipcMain\.handle\("library:video-preview"/);
   assert.match(main, /safeLibraryVideoPath\(videoPath\)/);
-  assert.match(preload, /getArticleVideoPreview:.*ipcRenderer\.invoke\("articles:video-preview"/);
+  assert.doesNotMatch(preload, /getArticleVideoPreview:.*ipcRenderer\.invoke\("articles:video-preview"/);
   assert.match(css, /\.video-storyboard-layout/);
   assert.match(css, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
   assert.match(renderer, /openButton\.textContent = item\.type === "video" \? "再生" : "開く"/);

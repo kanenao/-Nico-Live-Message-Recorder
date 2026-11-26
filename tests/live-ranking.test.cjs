@@ -234,10 +234,10 @@ test("ranking chase action is explicit, confirmed and uses the standalone chase 
   assert.ok(start>=0&&end>start);
   const block=renderer.slice(start,end);
   assert.match(block,/if\(!window.confirm\(/);
-  assert.match(block,/!isRankingFresh\(rankingSnapshot\)/);
-  assert.match(block,/await startVideoRecording\(\{liveId:item.liveId,chase:true\}\)/);
+  assert.match(renderer,/if\(!isRankingFresh\(rankingSnapshot\)\)/);
+  assert.match(block,/await startRankingRecording\(item,true\)/);
   assert.match(renderer,/selectedTarget\?\.chase === true \|\| \(!selectedTarget && byId\("record-mode"\)\?\.value === "chase"\)/);
-  assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId,title:item.title/);
+  assert.match(renderer,/await startVideoRecording\(\{\.\.\.target,chase\}\)/);
   assert.match(renderer,/api\.startVideo\(liveId, quality, \{ chase: true \}\)/);
 });
 
@@ -376,7 +376,7 @@ test("ranking poll retries respect the refresh interval and recover after clock 
   assert.equal(due(now+1000,now),true);
   const snapshot={dataAt:new Date(now).toISOString(),stale:false,partial:true,rows:[{}]};
   assert.match(status(snapshot,1,now+10000),/一部取得不可.*10秒前/);
-  assert.match(status(snapshot,1,now+180001),/古いデータ（録画無効）/);
+  assert.match(status(snapshot,1,now+180001),/古いデータ（録画時に放送確認）/);
   assert.match(status({...snapshot,stale:true},1,now+10000),/更新失敗/);
   assert.match(status(snapshot,1,now-1000),/古いデータ/);
 });

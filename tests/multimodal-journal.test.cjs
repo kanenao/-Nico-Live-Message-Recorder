@@ -62,21 +62,12 @@ test("long recordings are split into bounded 120-second Whisper WAV segments", (
   assert.equal(formatAudioOffset(250), "00:04:10");
 });
 
-test("article pipeline enriches finished recordings and supports on-demand reanalysis", () => {
-  assert.match(main, /buildLiveArticleFfmpegArgs\(/);
-  assert.match(main, /collectLiveArticleStreamFrames\(/);
-  assert.match(main, /queueRecordedArticleAnalysis\(savedArticle\.articlePath\)/);
-  assert.match(main, /await transcribeVideoAudio\(/);
-  assert.match(main, /saved\.mediaAnalysis =/);
-  assert.match(main, /ipcMain\.handle\("articles:reanalyze"/);
-  assert.match(main, /deferAiForRecordedVideo/);
-  assert.match(main, /liveUpdate: !options\.finalize/);
-  assert.match(preload, /reanalyzeBroadcastArticle:.*ipcRenderer\.invoke\("articles:reanalyze"/);
-  assert.match(renderer, /api\.reanalyzeBroadcastArticle\(article\.articlePath\)/);
-  assert.match(renderer, /articles:analysis-state/);
-  assert.match(html, /放送映像を15秒間隔のJPEG画像として抽出/);
+test("retired article analysis is not requested by the recording lifecycle",()=>{
+ assert.doesNotMatch(main,/queueRecordedArticleAnalysis\(savedArticle\.articlePath\)/);
+ assert.doesNotMatch(preload,/reanalyzeBroadcastArticle:.*ipcRenderer\.invoke\("articles:reanalyze"/);
+ assert.doesNotMatch(renderer,/api\.reanalyzeBroadcastArticle\(/);
+ assert.doesNotMatch(html,/id="manual-article-generate-button"/);
 });
-
 
 test("previously incomplete comment-only articles can be reanalyzed without a recording video", () => {
   assert.match(main, /if \(!videoPath\) \{\s*\/\/ Articles can be created from comments alone/);

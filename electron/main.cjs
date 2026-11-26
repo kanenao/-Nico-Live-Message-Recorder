@@ -1242,9 +1242,6 @@ function updateCurrentBroadcaster(metadata, liveId) {
         broadcasterName: currentBroadcasterName,
         broadcasterId: currentBroadcasterId
       });
-      if (currentProgramInfo.programTitle || currentProgramInfo.description) {
-        void refreshLiveBroadcastArticle();
-      }
     }
   }
 }

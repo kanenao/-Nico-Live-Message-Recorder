@@ -496,13 +496,12 @@ test("feature navigation is grouped and every feature page has a dedicated view"
     "comments-nav-button",
     "compose-nav-button",
     "open-folder-button",
-    "articles-nav-button",
     "sidebar-settings-button"
   ]) {
     assert.match(html, new RegExp(`id="${id}"`), `missing navigation control: ${id}`);
   }
 
-  for (const page of ["dashboard", "monitor", "record", "comments", "compose", "library", "articles"]) {
+  for (const page of ["dashboard", "monitor", "record", "comments", "compose", "library", "ranking", "updates"]) {
     assert.match(html, new RegExp(`data-page="${page}"`), `missing page view: ${page}`);
     assert.match(html, new RegExp(`data-page-target="${page}"`), `missing page navigation: ${page}`);
   }
@@ -610,49 +609,12 @@ test("Windows notifications report detected LIVE and automatic recording results
 });
 
 
-test("registered broadcaster broadcast articles are stored locally and available in a dedicated page", () => {
-  assert.match(main, /require\("\.\/articles\.cjs"\)/);
-  assert.match(main, /generateBroadcastArticle\(/);
-  assert.match(main, /function createAndSaveBroadcastArticle\(/);
-  assert.match(main, /function listBroadcastArticles\(/);
-  assert.match(main, /path\.join\(dataRoot\(\), "articles"/);
-  assert.match(main, /ipcMain\.handle\("articles:list"/);
-  assert.match(main, /ipcMain\.handle\("articles:generate-from-comment"/);
-  assert.match(preload, /getBroadcastArticles:.*ipcRenderer\.invoke\("articles:list"/);
-  assert.match(preload, /generateBroadcastArticle:.*ipcRenderer\.invoke\("articles:generate-from-comment"/);
-  assert.match(renderer, /function renderBroadcastArticles\(/);
-  assert.match(renderer, /api\.getBroadcastArticles\(\)/);
-  assert.match(renderer, /api\.generateBroadcastArticle\(item\.path\)/);
-  assert.match(main, /await createAndSaveBroadcastArticle/);
-  assert.match(html, /data-page-target="articles"/);
-  assert.match(html, /id="articles-panel"[^>]*data-page="articles"/);
-  assert.match(html, /id="articles-search"/);
-});
 
-test("live article stop generates a final ended-state article before closing the comment log", () => {
-  const stopStart = main.indexOf("async function stopLiveArticleSession()");
-  const stopEnd = main.indexOf('ipcMain.handle("articles:live-stop"', stopStart);
-  const stopHandler = main.slice(stopStart, stopEnd);
-  assert.match(stopHandler, /while \(articleUpdateInProgress\)/);
-  assert.match(stopHandler, /refreshLiveBroadcastArticle\(\{ finalize: true \}\)/);
-  assert.ok(stopHandler.indexOf("refreshLiveBroadcastArticle") < stopHandler.indexOf("await closeCommentWriter"));
-  assert.match(main, /liveStatus: options\.finalize \? "ended" : "live"/);
-  assert.match(main, /state: options\.finalize \? "finalized" : "updated"/);
-});
 
-test("articles are refreshed after recording and comment logs are closed", () => {
-  assert.match(main, /await appendMarkerAndWait\("videoStop"/);
-  assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath,\s*\{/);
-  assert.match(main, /await createAndSaveBroadcastArticle\(commentFilePath, articleContext, \{/);
-  assert.match(renderer, /channel === "articles:generated"/);
-  assert.match(renderer, /if \(activePage === "articles"\) loadBroadcastArticles\(\)/);
-});
 
-test("article page explains local comment-based summaries and does not claim speech transcription", () => {
-  assert.match(html, /記事はこのPC内に保存されます/);
-  assert.match(html, /文字起こししたものではありません/);
-  assert.match(css, /\.broadcast-article-card/);
-});
+
+
+
 
 
 test("app settings expose the current version and a synchronized automatic update panel", () => {
@@ -703,7 +665,7 @@ test("dedicated version update page shows the current version, updater controls,
     "settings-install-update-button", "release-history-list", "settings-open-updates-button", "open-github-releases-button"]) {
     assert.ok(html.includes('id="' + id + '"'), "missing version page field: " + id);
   }
-  assert.match(renderer, /"articles", "updates"/);
+  assert.match(renderer, /"library", "updates"/);
   assert.match(renderer, /function parseReleaseHistory\(/);
   assert.match(renderer, /function renderReleaseHistory\(/);
   assert.match(renderer, /api\.getChangelog\(\)/);
@@ -722,9 +684,6 @@ test("dashboard live count retains registered-target count after manual capture 
   assert.match(renderer, /record\.title = status\.isRecording[\s\S]*この配信は現在録画中です/);
 });
 
-test("a live article is generated immediately when program metadata is already available", () => {
-  assert.match(main, /if \(currentProgramInfo\.programTitle \|\| currentProgramInfo\.description\) \{\s*void refreshLiveBroadcastArticle\(\);\s*\}/);
-});
 
 
 test("comment video composition uses a Nico-style font, adjustable pixel size, and collision-safe lanes", () => {
@@ -759,134 +718,18 @@ test("comment video composition uses a Nico-style font, adjustable pixel size, a
   assert.match(renderer, /red2: "#cc0033"/);
 });
 
-test("standalone article generation is available without monitor registration and accepts optional JSONL comments and video frames", () => {
-  assert.match(main, /function generateStandaloneBroadcastArticle\(/);
-  assert.match(main, /async function enhanceBroadcastArticleWithOllama\(/);
-  assert.match(main, /ipcMain\.handle\("articles:generate-manual"/);
-  assert.match(preload, /generateManualBroadcastArticle:.*ipcRenderer\.invoke\("articles:generate-manual"/);
-  assert.match(renderer, /function generateManualBroadcastArticle\(/);
-  assert.match(renderer, /api\.generateManualBroadcastArticle\(/);
-  assert.match(html, /id="manual-article-generate-button"/);
-  assert.match(html, /id="manual-article-file"/);
-  assert.match(main, /force: true/);
-  assert.match(main, /articles", "_manual"/);
-  assert.match(main, /async function extractArticleVideoFrames\(/);
-  assert.match(main, /const frameRate = \(targetFrames \/ durationSeconds\)/);
-  assert.match(main, /articles:select-video/);
-  assert.match(main, /async function startLiveArticleSession\(/);
-  assert.match(main, /async function stopLiveArticleSession\(/);
-  assert.match(main, /capturePage\(\)/);
-  assert.match(main, /LIVE_ARTICLE_REFRESH_INTERVAL_MS = 2 \* 60 \* 1000/);
-  assert.match(main, /LIVE_ARTICLE_FRAME_INTERVAL_MS = 15 \* 1000/);
-  assert.match(main, /LIVE_ARTICLE_MAX_FRAMES = 16/);
-  assert.match(main, /void refreshLiveBroadcastArticle\(\);/);
-  assert.match(main, /articleRefreshPending = true/);
-  assert.match(main, /state: "error", liveId/);
-  assert.match(renderer, /channel === "articles:live-state"/);
-  assert.match(renderer, /配信ストリーム直接取得/);
-  assert.match(preload, /startLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-start"/);
-  assert.match(preload, /stopLiveArticleSession:.*ipcRenderer\.invoke\("articles:live-stop"/);
-  assert.match(renderer, /api\.startLiveArticleSession\(/);
-  assert.match(renderer, /api\.stopLiveArticleSession\(/);
-  assert.match(html, /id="manual-article-live-start-button"/);
-  assert.match(html, /id="manual-article-live-stop-button"/);
-  assert.match(preload, /selectArticleVideo:.*ipcRenderer\.invoke\("articles:select-video"/);
-  assert.match(renderer, /api\.selectArticleVideo\(\)/);
-  assert.match(html, /id="manual-article-video-select-button"/);
-  assert.match(ollamaSource, /images: imagesToAttach.map/);
-  assert.match(main, /item.name === "qwen2.5vl:3b"/);
-  assert.ok(main.includes("capturedAt: new Date().toISOString()"));
-  assert.match(ollamaSource, /frameTimeline/);
-  assert.match(ollamaSource, /imagesToAttach\.map\(frame\s*=>\s*typeof frame === "string" \? frame : String\(frame && frame\.image/);
-});
-
-test("manual article generation can combine Whisper audio transcript, video frames, and Nico comments", () => {
-  assert.match(main, /require\("\.\/audio-transcription\.cjs"\)/);
-  assert.match(main, /transcribeVideoAudio\(/);
-  assert.match(main, /audioTranscript: audioTranscript \? audioTranscript\.text : ""/);
-  assert.match(main, /article\.audioTranscript = String\(options\.audioTranscript\)/);
-  assert.match(main, /articles:select-whisper-cli/);
-  assert.match(main, /articles:select-whisper-model/);
-  assert.match(preload, /selectArticleWhisperCli/);
-  assert.match(preload, /selectArticleWhisperModel/);
-  assert.match(preload, /downloadArticleWhisper/);
-  assert.match(main, /installWhisperAutomatically/);
-  assert.match(main, /runtimeSha256/);
-  assert.match(main, /modelSha1/);
-  assert.match(main, /whisper:download-progress/);
-  assert.match(html, /manual-article-whisper-auto-button/);
-  assert.match(renderer, /downloadArticleWhisper/);
-  assert.match(renderer, /selectArticleWhisperCli/);
-  assert.match(renderer, /selectArticleWhisperModel/);
-  assert.match(html, /manual-article-whisper-cli-button/);
-  assert.match(html, /manual-article-whisper-model-button/);
-  assert.match(ollamaSource, /音声認識テキスト/);
-  assert.match(ollamaSource, /映像・音声・コメントの情報源を混同しない/);
-  assert.match(audioTranscription, /"-ac", "1", "-ar", "16000"/);
-  assert.match(audioTranscription, /"-l", "ja"/);
-  assert.match(audioTranscription, /parseWhisperJson/);
-});
 
 
-test("AI article cards render a newspaper-style lead, highlights, timeline, and audience reaction", () => {
-  assert.match(renderer, /broadcast-article-lead/);
-  assert.match(renderer, /broadcast-article-highlights/);
-  assert.match(renderer, /broadcast-article-timeline/);
-  assert.match(renderer, /broadcast-article-reaction/);
-  assert.match(renderer, /articles-status-filter/);
-  assert.match(renderer, /articles-sort/);
-  assert.match(renderer, /broadcast-article-tags/);
-  assert.match(renderer, /broadcast-article-topics/);
-  assert.match(renderer, /article\.summary, article\.note, article\.aiAudienceReaction/);
-  assert.match(main, /aiCommentSampleCount/);
-  assert.match(main, /aiCommentTotalCount/);
-  assert.match(ollamaSource, /selectRepresentativeComments/);
-  assert.ok(ollamaSource.includes("prepareCommentEvidence(records, 24, 6)"));
-  assert.match(ollamaSource, /evidenceTimeline/);
-  assert.match(ollamaSource, /highlights/);
-  assert.match(ollamaSource, /audienceReaction/);
-  assert.match(main, /capturedAt: timestamp/);
-});
 
 
-test("live broadcast article session integrates Whisper.cpp audio capture and final transcription", () => {
-  assert.match(main, /startLiveArticleAudioCapture\(liveId\)/);
-  assert.match(main, /stopLiveArticleAudioCapture\(currentLiveId\)/);
-  assert.match(main, /audioTranscript: liveArticleAudioTranscript/);
-  assert.match(main, /audio-transcribing/);
-  assert.match(main, /audioCapturing: Boolean\(liveArticleAudioSegmentDirectory\)/);
-  assert.match(renderer, /audio-capturing/);
-  assert.match(renderer, /Whisper\.cpp/);
-  assert.match(html, /音声解析用データは一時保存し、終了後に削除/);
-});
 
 
-test("Ollama setup downloads the official Windows installer and pulls the selected model through the local API", () => {
-  const setup = fs.readFileSync(path.join(root, "electron", "ollama-setup.cjs"), "utf8");
-  assert.match(main, /ollama:download-installer/);
-  assert.match(main, /ollama:pull-model/);
-  assert.match(preload, /downloadOllamaInstaller/);
-  assert.match(preload, /pullOllamaModel/);
-  assert.match(renderer, /ollama-install-button/);
-  assert.match(renderer, /ollama-pull-model-button/);
-  assert.match(html, /id="ollama-install-button"/);
-  assert.match(html, /id="ollama-pull-model-button"/);
-  assert.ok(setup.includes("https://ollama.com/download/OllamaSetup.exe"));
-  assert.match(setup, /\/api\/pull/);
-  assert.match(main, /ollama:setup-progress/);
-  assert.match(setup, /onProgress/);
-});
 
 
-test("article summaries are attached to capture library videos and article deletion preserves source recordings", () => {
-  assert.match(main, /const savedArticles = listBroadcastArticles\(\)\.items/);
-  assert.match(main, /ipcMain\.handle\("articles:delete"/);
-  assert.match(main, /録画動画・コメントログは削除されません/);
-  assert.match(preload, /deleteBroadcastArticle/);
-  assert.match(renderer, /library-article-summary/);
-  assert.match(renderer, /api\.deleteBroadcastArticle\(article\.articlePath\)/);
-  assert.match(main, /article\.articlePath = fullPath/);
-});
+
+
+
+
 test("Streamlink waits for media bytes and preserves stderr when capture startup fails", () => {
   assert.match(main, /const startupDeadline = startupStartedAt \+ 60000/);
   assert.match(main, /hasNonEmptyFile\(outputPath\)/);
@@ -936,28 +779,9 @@ test("article HTML export escapes untrusted text and includes analysis sections"
     assert.ok(html.includes(value), "missing exported article content: " + value);
   }
 });
-test("article export is exposed through a save dialog and preload bridge", () => {
-  assert.match(main, /ipcMain\.handle\("articles:export-html"/);
-  assert.match(main, /dialog\.showSaveDialog/);
-  assert.match(main, /articleExport\.renderArticleHtml/);
-  assert.match(preload, /exportBroadcastArticleHtml:.*ipcRenderer\.invoke\("articles:export-html"/);
-  assert.match(renderer, /api\.exportBroadcastArticleHtml\(article\)/);
-});
 
 
-test("live article capture uses a hidden window and does not open the visible watch preview", () => {
-  assert.match(main, /async function openHiddenLiveArticleCapture/);
-  assert.match(main, /show:\s*false/);
-  assert.match(main, /offscreen:\s*true/);
-  assert.match(main, /async function shutdownGracefully[\s\S]*closeHiddenLiveArticleCapture/);
-  assert.match(main, /backgroundThrottling:\s*false/);
-  assert.match(main, /captureLiveArticleFrame[\s\S]*liveArticleCaptureWindow\.webContents\.capturePage/);
-  assert.match(main, /await openHiddenLiveArticleCapture\(liveId\)/);
-  assert.doesNotMatch(main.match(/async function startLiveArticleSession[\s\S]*?\n}\n/)?.[0] || "", /openLivePreview/);
-  assert.match(main, /function safeLiveId[\s\S]*allowedHosts/);
-  assert.match(html, /manual-article-live-id[^>]*maxlength="2048"/);
-  assert.match(html, /視聴ページは画面に表示せず/);
-});
+
 
 test("AI broadcast article prompt follows the Kick editorial structure while preserving source checks", () => {
   const ollama = fs.readFileSync(path.join(root, "electron", "ollama.cjs"), "utf8");
@@ -1084,27 +908,8 @@ test("all Niconico authentication consumers use shared cookie-domain normalizati
 });
 
 
-test("broadcast article page follows the Kick recorder editorial dashboard layout", () => {
-  assert.match(html, /broadcast-articles-panel kick-article-layout/);
-  assert.match(css, /\.kick-article-layout \.article-manual-generator/);
-  assert.match(css, /\.kick-article-layout \.article-library-toolbar/);
-  assert.match(css, /\.kick-article-layout \.broadcast-article-card/);
-  for (const id of ["manual-article-generate-button","manual-article-live-start-button","articles-search","articles-status-filter","articles-sort","articles-list"]) {
-    assert.ok(html.includes('id="' + id + '"'), "article workflow control missing: " + id);
-  }
-});
 
 
-test("broadcast article cards render video thumbnails and newspaper-style grid", () => {
-  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
-  const css = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
-  assert.match(renderer, /broadcast-article-media/);
-  assert.match(renderer, /getArticleThumbnail/);
-  assert.match(renderer, /broadcast-article-thumbnail/);
-  assert.match(renderer, /放送映像が保存されていません/);
-  assert.match(css, /auto-fill/);
-  assert.match(css, /aspect-ratio:16\/9/);
-});
 
 
 test("manual Niconico user_session controls use a dedicated secure cookie IPC", () => {
@@ -1157,29 +962,9 @@ test("recording metadata rendering tolerates missing optional UI fields", () => 
   assert.doesNotThrow(() => render());
 });
 
-test("Kick-like journal uses date headers and full-width broadcast hero instead of tiny article tiles", () => {
-  assert.match(renderer, /const dayGroups = new Map\(\)/);
-  assert.match(renderer, /broadcast-article-day-heading/);
-  assert.match(renderer, /broadcast-article-masthead/);
-  assert.match(renderer, /broadcast-article-hero/);
-  assert.match(renderer, /broadcast-article-comment-signal/);
-  assert.match(renderer, /card\.append\(masthead, hero, stats\)/);
-  assert.match(css, /\.kick-article-layout \.broadcast-articles-list \{ display:flex; flex-direction:column/);
-  assert.match(css, /\.broadcast-article-hero \{ display:grid; grid-template-columns/);
-  assert.match(css, /@media\(max-width:850px\)/);
-});
 
-test("new journal layout preserves AI errors, Whisper transcript, and existing article controls", () => {
-  const articleRender = renderer.slice(renderer.indexOf("function renderBroadcastArticles()"), renderer.indexOf("let broadcastArticles ="));
-  for (const fragment of ["broadcast-article-audio", "broadcast-article-transcript",
-    "broadcast-article-ai-warning", "article.aiFallbackReason", "broadcast-article-body",
-    "api.deleteBroadcastArticle(article.articlePath)", "api.exportBroadcastArticleHtml(article)",
-    "scheduleArticleThumbnail(thumbnail, mediaPlaceholder, article)", "article.coverImage"]) {
-    assert.ok(articleRender.includes(fragment), "Missing journal feature: " + fragment);
-  }
-  assert.match(main, /article\.coverImage = selectArticleCoverImage\(extracted\.frames\)/);
-  assert.match(main, /selectArticleCoverImage\(options\.images, previousArticle && previousArticle\.coverImage\)/);
-});
+
+
 
 test("Nico login is verified by a real authenticated-account API, not only the Cookie presence", () => {
   const checker = require("../electron/nico-auth-check.cjs");
@@ -1218,4 +1003,26 @@ test("auth feedback distinguishes verified login, expiry, missing Cookie, and ne
   assert.equal(ids.get("auth-session-warning").hidden, true);
   render({ state: "missing" });
   assert.equal(ids.get("login-state").textContent, "未ログイン");
+});
+
+test("retired articles are absent from UI and recording still finalizes its comment exports",()=>{
+ assert.doesNotMatch(html,/data-page-target="articles"|id="articles-panel"|id="manual-article-|id="ollama-/);
+ assert.doesNotMatch(preload,/ipcRenderer\.invoke\("(?:articles:|ollama:)/);
+ assert.doesNotMatch(renderer,/api\.(?:getBroadcastArticles|generateBroadcastArticle|generateManualBroadcastArticle|startLiveArticleSession|checkOllamaStatus|getArticleThumbnail)\(/);
+ const close=main.slice(main.indexOf("async function closeCommentWriter("),main.indexOf("function makeWindow("));
+ assert.match(close,/await finishCommentWriter\(writer\)/);
+ assert.match(close,/await exportCommentSidecars\(commentFilePath\)/);
+ assert.doesNotMatch(close,/await createAndSaveBroadcastArticle|queueRecordedArticleAnalysis|relocateArticleForRenamedComment/);
+ assert.match(main,/await appendMarkerAndWait\("videoStop"/);
+ assert.match(main,/aiArticleEnabled: false/);
+});
+test("recording library loads independently of removed article API",async()=>{
+ const vm=require("node:vm");
+ const code=renderer.slice(renderer.indexOf("async function loadCaptureLibrary("),renderer.indexOf("function formatUpdateBytes("));
+ const fields=new Map();let renders=0;
+ const ctx={api:{getCaptureLibrary:async()=>({items:[{path:"video.mp4"}],total:1,videoCount:1,commentCount:0})},captureLibraryItems:[],byId:id=>{if(!fields.has(id))fields.set(id,{});return fields.get(id);},renderCaptureLibrary:()=>renders++};
+ await vm.runInNewContext(code+"\nloadCaptureLibrary()",ctx);
+ assert.equal(ctx.captureLibraryItems.length,1);
+ assert.equal(fields.get("library-total").textContent,"1");
+ assert.equal(renders,1);assert.equal(fields.get("library-refresh-button").disabled,false);
 });
