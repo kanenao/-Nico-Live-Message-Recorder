@@ -2017,6 +2017,46 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
     }
   }catch{}
 }
+// One hover preview at a time; frames are actual fetched images, not video.
+let stopRankingHoverPreview=null;
+function attachRankingHoverPreview(picture,liveId){
+  picture.addEventListener("pointerenter",event=>{
+    if(event.pointerType!=="mouse"||typeof api.getRankingThumbnail!=="function")return;
+    stopRankingHoverPreview?.();
+    const deadline=Date.now()+10000,history=[];
+    let pending=false,last=0,index=0,stopped=false;
+    const overlay=document.createElement("img");
+    overlay.className="ranking-video-frame";overlay.alt="番組映像のコマ送り";
+    overlay.hidden=true;
+    picture.appendChild(overlay);
+    function stop(){
+      if(stopped)return;
+      stopped=true;clearInterval(timer);overlay.remove();
+      picture.removeEventListener("pointerleave",stop);
+      if(stopRankingHoverPreview===stop)stopRankingHoverPreview=null;
+    }
+    function tick(){
+      if(!picture.isConnected||Date.now()>=deadline){stop();return;}
+      if(history.length){
+        overlay.src=history[index++%history.length];overlay.hidden=false;
+      }
+      if(pending||Date.now()-last<2000)return;
+      pending=true;last=Date.now();
+      Promise.resolve().then(()=>api.getRankingThumbnail(liveId,"preview")).then(async data=>{
+        if(stopped||!picture.isConnected||Date.now()>=deadline||typeof data!=="string"||data.length>1400000||!/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data))return;
+        const probe=new Image();probe.src=data;await probe.decode();
+        if(stopped||!picture.isConnected||Date.now()>=deadline)return;
+        if(history.at(-1)!==data){history.push(data);if(history.length>6)history.shift();}
+        if(overlay.hidden){overlay.src=data;overlay.hidden=false;}
+      }).catch(()=>{}).finally(()=>{pending=false;});
+    }
+    const timer=setInterval(tick,500);
+    stopRankingHoverPreview=stop;
+    picture.addEventListener("pointerleave",stop,{once:true});
+    tick();
+  });
+}
+
 function appendRankingTrend(cell,item) {
   const history=Array.isArray(item.rankHistory)?item.rankHistory.filter(s=>Number.isFinite(s.at)&&Number.isInteger(s.rank)&&s.rank>0):[];
   if(history.length<2)return;
@@ -2138,6 +2178,7 @@ function renderIndependentRanking() {
     picture.title="番組映像プレビューを開く";
     picture.setAttribute("role","button");picture.tabIndex=0;
     const openPicture=()=>Promise.resolve().then(()=>api.openLivePreview(item.liveId)).catch(error=>showToast(error.message||"プレビューを開けませんでした。",true));
+    attachRankingHoverPreview(picture,item.liveId);
     picture.addEventListener("click",openPicture);
     picture.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openPicture();}});
     }
