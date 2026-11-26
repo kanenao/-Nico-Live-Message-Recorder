@@ -1,7 +1,8 @@
 "use strict";
-const {rankingImageUrl,rankingListingImage,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
+const {rankingImageUrl,rankingListingImage,fetchOfficialRankingDetails,fetchUserRankingThumbnails,isRankingBrandImage}=require("./live-ranking.cjs");
 const LISTING_URL="https://www.chikuwachan.com/live/NCU/";
 function safePosterUrl(value){
+  if(isRankingBrandImage(value))return "";
   return rankingImageUrl(value)||(typeof value==="string"&&value.startsWith("https://www.chikuwachan.com/")?rankingListingImage(value,LISTING_URL):"");
 }
 const MAX=1024*1024;
@@ -9,7 +10,18 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   const safe=safePosterUrl(url);
   if(!safe)return null;
   try{
-    const r=await fetchImpl(safe,{redirect:"error",signal:AbortSignal.timeout(7000),headers:{Referer:new URL(safe).origin==="https://www.chikuwachan.com"?LISTING_URL:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
+    // Website worker follows a bounded redirect chain; revalidate every hop.
+    const signal=AbortSignal.timeout(7000);
+    let target=safe,r;
+    for(let hop=0;hop<3;hop++){
+      r=await fetchImpl(target,{redirect:"manual",signal,headers:{Referer:new URL(target).origin==="https://www.chikuwachan.com"?LISTING_URL:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
+      if(![301,302,303,307,308].includes(r.status))break;
+      const location=r.headers?.get("location");await r.body?.cancel();
+      if(!location||hop===2)return null;
+      const next=safePosterUrl(new URL(location,target).href);
+      if(!next||!rankingImageUrl(next))return null;
+      target=next;
+    }
     const type=(r.headers?.get("content-type")||"").split(";")[0].trim().toLowerCase();
     if(!r.ok||!/^image\/(?:jpeg|png|webp|gif|avif)$/.test(type)||Number(r.headers.get("content-length")||0)>MAX){await r.body?.cancel();return null;}
     if(!r.body?.getReader)return null;
@@ -28,7 +40,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   }catch{return null;}
 }
 function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
-  let allowed=new Map(),users=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
+  let allowed=new Map(),users=new Map(),channels=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
   function storePoster(id,data){
@@ -48,6 +60,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       }
     }
     users=new Map(rows.map(r=>[r.liveId,String(r.broadcasterId||r.thumbnailHistoryUserId||"")]).filter(([,id])=>/^\d{5,15}$/.test(id)));
+    channels=new Map(rows.map(r=>[r.liveId,String(r.channelOwner||"")]).filter(([,id])=>/^[1-9]\d{0,14}$/.test(id)));
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
@@ -92,9 +105,10 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       }
       // A temporary watch-page failure must not block exact-ID history lookup.
       // History results are accepted only when their program ID matches id.
+      const channelOwner=details?.channelOwner||channels.get(id);
       const userId=details?.broadcasterId||users.get(id);
-      if(userId&&allowed.has(id)){
-        data=await attempt((await fetchUserRankingThumbnails(userId,id,fetchImpl)).slice(0,2));
+      if((channelOwner||userId)&&allowed.has(id)){
+        data=await attempt((await fetchUserRankingThumbnails(channelOwner||userId,id,fetchImpl,channelOwner?"channel":"user")).slice(0,2));
         if(data)return data;
       }
       return preview?null:attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
