@@ -49,6 +49,39 @@ function rankingImageUrl(value) {
     return u.href;
   }catch{return "";}
 }
+
+// Chikuwa public listing artwork is not hosted on nimg.jp. Never synthesize
+// a URL from a broadcaster ID; accept only explicit image paths in its HTML.
+function rankingListingImage(value,sourceUrl=""){
+  const official=rankingImageUrl(value);
+  if(official)return official;
+  if(typeof value!=="string"||value.length>2048)return "";
+  try{
+    const source=new URL(sourceUrl);
+    if(source.origin!=="https://www.chikuwachan.com"||source.pathname!=="/live/NCU/")return "";
+    const url=new URL(value,source);
+    if(url.origin!=="https://www.chikuwachan.com"||url.username||url.password||
+      !url.pathname.startsWith("/live/")||!/\.(?:jpe?g|png|webp)$/i.test(url.pathname)||
+      /(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(url.pathname))return "";
+    return url.href;
+  }catch{return "";}
+}
+function htmlAttribute(tag,name){
+  return tag.match(new RegExp("(?:^|\\s)"+name+"\\s*=\\s*([\"'])([\\s\\S]*?)\\1","i"))?.[2]?.replace(/&amp;/g,"&")||"";
+}
+function officialOgImage(html,id,declared=""){
+  const metadata=new Map();
+  for(const tag of String(html||"").matchAll(/<meta\b[^>]*>/gi)){
+    const key=(htmlAttribute(tag[0],"property")||htmlAttribute(tag[0],"name")).toLowerCase();
+    if(["og:url","og:image","og:image:secure_url","twitter:image","og:title"].includes(key)&&!metadata.has(key))metadata.set(key,htmlAttribute(tag[0],"content"));
+  }
+  const ogId=liveId(metadata.get("og:url"));
+  if((ogId&&ogId!==id)||(!ogId&&declared!==id))return null;
+  const candidates=[...new Set(["og:image:secure_url","og:image","twitter:image"].map(k=>rankingImageUrl(metadata.get(k))).filter(url=>url&&!/(?:usericon|user-icon|avatar|profile|logo|\/icons?\/)/i.test(new URL(url).pathname)))];
+  if(!candidates.length)return null;
+  return {title:clean(metadata.get("og:title")),thumbnailUrl:candidates[0],thumbnailCandidates:candidates};
+}
+
 function firstRankingImage(...values){
   for(const value of values){const url=rankingImageUrl(value);if(url)return url;}
   return "";
@@ -131,7 +164,7 @@ function unique(rows) {
   }
   return [...byId.values()];
 }
-function parseRankingPage(html) {
+function parseRankingPage(html,sourceUrl="") {
   if(typeof html!=="string"||html.length>MAX_BYTES)return [];
   const rows=[];
   for(const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)){
@@ -163,16 +196,33 @@ function parseRankingPage(html) {
       const attrs=img[1];
       if(/(?:user[-_ ]?icon|avatar|profile|badge|logo|アイコン)/i.test(attrs))return [];
       const value=name=>attrs.match(new RegExp("(?:^|\\s)"+name+"\\s*=\\s*([\"'])(.*?)\\1","i"))?.[2]?.replace(/&amp;/g,"&");
-      const url=firstRankingImage(value("data-src"),value("data-original"),value("src"));
+      const url=[value("data-src"),value("data-original"),value("data-lazy-src"),value("src")].map(v=>rankingListingImage(v,sourceUrl)).find(Boolean)||"";
       return url&&!/\/(?:usericon|user-icon|icons?)\//i.test(new URL(url).pathname)?[url]:[];
     });
     const thumbnailUrl=[...new Set(imageUrls)].length===1?imageUrls[0]:"";
-    if(existing){if(!existing.thumbnailUrl&&thumbnailUrl)existing.thumbnailUrl=thumbnailUrl;continue;}
+    if(existing){if(thumbnailUrl){if(!existing.thumbnailUrl)existing.thumbnailUrl=thumbnailUrl;existing.thumbnailCandidates=[...new Set([...(existing.thumbnailCandidates||[]),existing.thumbnailUrl,thumbnailUrl])].slice(0,8);}continue;}
     const title=clean(a[1].match(/\b(?:title|aria-label)\s*=\s*(["'])(.*?)\1/i)?.[2]||a[2]);
     if(!title||/^(視聴|見る|開く|放送ページ|LIVE|lv\d+)$/i.test(title))continue;
     rows.push({liveId:id,title,name:"",broadcasterId:"",startedAt:"",iconUrl:"",thumbnailUrl,visitors:null,comments:null});
   }
-  return structured||unique(rows);
+  // Some listings place an image outside the watch anchor. Associate it only
+  // if its own explicit image URL contains the exact program ID, never user ID.
+  const result=structured||unique(rows);
+  if(sourceUrl==="https://www.chikuwachan.com/live/NCU/"){
+    const byId=new Map(result.map(row=>[row.liveId,row]));
+    for(const tag of safeHtml.matchAll(/<img\b[^>]*>/gi)){
+      for(const key of ["data-src","data-original","data-lazy-src","src"]){
+        const url=rankingListingImage(htmlAttribute(tag[0],key),sourceUrl);
+        if(!url)continue;
+        const match=new URL(url).pathname.match(/(?:^|[^a-z0-9])(lv\d{5,15})(?![a-z0-9])/i);
+        const row=match&&byId.get(match[1].toLowerCase());
+        if(!row)continue;
+        if(!row.thumbnailUrl)row.thumbnailUrl=url;
+        row.thumbnailCandidates=[...new Set([...(row.thumbnailCandidates||[]),row.thumbnailUrl,url])].slice(0,8);
+      }
+    }
+  }
+  return result;
 }
 async function readBounded(response) {
   if(Number(response.headers?.get?.("content-length")||0)>MAX_BYTES)throw Error("取得上限超過");
@@ -223,14 +273,16 @@ function parseOfficialRankingDetails(html,id) {
       // Some public watch payloads carry supplier metadata next to program.
       // Use it only for an explicitly matching program, never an unrelated page.
       const supplier=p.supplier??p.programProvider??(declared===id?data.supplier??data.programProvider:null)??{};
+      const candidates=[...new Set([...programThumbnailCandidates(p,declared===id?data:{}),...(officialOgImage(html,id,declared)?.thumbnailCandidates||[])])].slice(0,8);
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
         iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.uri150x150,supplier.icons?.uri50x50,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
-        thumbnailUrl:programThumbnailCandidates(p,declared===id?data:{})[0]||"",thumbnailCandidates:programThumbnailCandidates(p,declared===id?data:{}),...readContributionStatistics(p)};
+        thumbnailUrl:candidates[0]||"",thumbnailCandidates:candidates,...readContributionStatistics(p)};
     }catch{}
   }
-  return null;
+  const og=officialOgImage(html,id);
+  return og?{liveId:id,...og,name:"",broadcasterId:"",startedAt:"",iconUrl:""}:null;
 }
 async function fetchOfficialRankingDetails(id,fetchImpl) {
   if(!/^lv\d{5,15}$/.test(id))return null;
@@ -324,7 +376,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
         }
         if(details?.broadcasterId&&!details.iconUrl)details.iconUrl=await getProfileIcon(details.broadcasterId);
         cache.delete(row.liveId);
-        cache.set(row.liveId,{details,expiresAt:now()+(details?1800000:300000)});
+        cache.set(row.liveId,{details,expiresAt:now()+(details?.thumbnailUrl?1800000:60000)});
       }));
     }
     while(cache.size>400)cache.delete(cache.keys().next().value);
@@ -336,7 +388,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       const conflict=d.broadcasterId&&row.broadcasterId&&d.broadcasterId!==row.broadcasterId;
       // Prefer verified official identity; do not retain a mismatched name or icon.
       return {...row,title:d.title||row.title,name:d.name||(conflict?"":row.name),
-        broadcasterId:d.broadcasterId,startedAt:d.startedAt||row.startedAt,
+        broadcasterId:d.broadcasterId||row.broadcasterId,startedAt:d.startedAt||row.startedAt,
         iconUrl:d.iconUrl||(conflict?"":row.iconUrl),adPoints:row.adPoints??d.adPoints??null,giftPoints:row.giftPoints??d.giftPoints??null,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl,thumbnailCandidates:[...new Set([...(d.thumbnailCandidates||[]),d.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8)};
     });
   };
@@ -349,7 +401,7 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
     const html=await readBounded(response);
     let rows=[];
     if(/^\s*[\[{]/.test(html)){try{rows=unique(extractJsonRows(JSON.parse(html)));}catch{}}
-    if(!rows.length)rows=parseRankingPage(html);
+    if(!rows.length)rows=parseRankingPage(html,source.url);
     if(!rows.length)throw Error("番組ID付きのランキングを取得できません");
     return {id:source.id,name:source.name,ok:true,rows};
   } catch(error) {
@@ -592,4 +644,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,rankingListingImage,officialOgImage};
