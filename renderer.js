@@ -2009,10 +2009,25 @@ function refreshRankingActions() {
     button.textContent=pending?"確認中…":"＋監視";button.disabled=pending||!fresh;
   }
 }
+// Only replace rows whose displayed data changed. Reuse the media cell
+// separately when just statistics change, so the image need not reload.
+function rankingMediaKey(item, now=Date.now()) {
+  const at=Date.parse(item.videoFrameAt);
+  const fresh=typeof item.videoFrame==="string"&&Number.isFinite(at)&&now>=at&&now-at<=90000;
+  return JSON.stringify([item.thumbnailUrl||"",fresh?item.videoFrameAt:null]);
+}
+function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commentState) {
+  return JSON.stringify([item.liveId,item.rank,item.rankChange,item.rankNew,item.previousRank,item.rankHistory,
+    item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,
+    item.points,item.pointDelta,item.visitors,item.visitorDelta,item.comments,item.commentDelta,
+    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,
+    busy,fresh,pending,isRecording,commentState]);
+}
 function renderIndependentRanking() {
   const list = byId("ranking-list");
   if (!list || !rankingSnapshot) return;
-  list.replaceChildren();
+  const existing=new Map(Array.from(list.children).filter(row=>row.dataset.liveId).map(row=>[row.dataset.liveId,row]));
+  const desired=[];
   const q = byId("ranking-search").value.trim().toLowerCase();
   const sort = byId("ranking-sort").value;
   const all = rankingSnapshot.rows || [];
@@ -2022,7 +2037,13 @@ function renderIndependentRanking() {
   const busy = captureStopInProgress || recordStartInProgress || Boolean(recordStartedAt) ||
     videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
   for (const item of rows) {
+    const old=existing.get(item.liveId);
+    const mediaKey=rankingMediaKey(item);
+    const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
+    const rowKey=rankingRowKey(item,mediaKey,busy,isRankingFresh(rankingSnapshot),rankingMonitorPending.has(item.liveId),isRecording,commentCaptureState);
+    if(old&&old.dataset.renderKey===rowKey){desired.push(old);continue;}
     const tr = document.createElement("tr");
+    tr.dataset.liveId=item.liveId;tr.dataset.renderKey=rowKey;
     const rankCell=rankingCell(tr, item.rank+"位", "ranking-rank");
     const movement=document.createElement("small");movement.className="ranking-movement";
     movement.textContent=rankingMovement(item);
@@ -2041,7 +2062,9 @@ function renderIndependentRanking() {
       meta.append(" · ",elapsed);
     }
     const identity=document.createElement("div");identity.className="ranking-identity";
-    const picture=document.createElement("div");picture.className="ranking-media";
+    let picture=old?.querySelector(".ranking-media");
+    if(!picture||picture.dataset.mediaKey!==mediaKey){
+    picture=document.createElement("div");picture.className="ranking-media";picture.dataset.mediaKey=mediaKey;
     const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
     picture.appendChild(placeholder);
     appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
@@ -2059,6 +2082,7 @@ function renderIndependentRanking() {
     const openPicture=()=>Promise.resolve().then(()=>api.openLivePreview(item.liveId)).catch(error=>showToast(error.message||"プレビューを開けませんでした。",true));
     picture.addEventListener("click",openPicture);
     picture.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openPicture();}});
+    }
     const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
     identity.append(picture,labels);info.appendChild(identity);
     const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points");
@@ -2078,7 +2102,6 @@ function renderIndependentRanking() {
     activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。現在コメント接続中の番組のみ。";
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
-    const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
     record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
     record.addEventListener("click",async()=>{
       if(record.disabled||!isRankingFresh(rankingSnapshot)){
@@ -2108,9 +2131,23 @@ function renderIndependentRanking() {
       setActivePage("record");
       await startVideoRecording({liveId:item.liveId,chase:true});
     });
-    actions.append(record,watch,monitor,chase,preview);list.appendChild(tr);
+    actions.append(record,watch,monitor,chase,preview);
+    // Restore keyboard focus if a refreshed row had an active action.
+    const focused=old?.contains(document.activeElement)?document.activeElement:null;
+    if(focused){const buttons=Array.from(old.querySelectorAll("button"));
+      const index=buttons.indexOf(focused);
+      tr.rankingRestoreFocus=index>=0?tr.querySelectorAll("button")[index]:focused.matches(".ranking-media")?picture:null;
+    }
+    desired.push(tr);
   }
-  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=9;list.appendChild(tr);}
+  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=9;desired.push(tr);}
+  // Remove obsolete rows first, then move only rows whose position changed.
+  const keep=new Set(desired);
+  for(const row of Array.from(list.children))if(!keep.has(row))row.remove();
+  desired.forEach((row,index)=>{
+    if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);
+    if(row.rankingRestoreFocus){row.rankingRestoreFocus.focus({preventScroll:true});delete row.rankingRestoreFocus;}
+  });
   rankingVisibleCount=rows.length;
   byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
 }

@@ -728,3 +728,29 @@ test("fast ranking refresh reuses detail cache without new watch-page requests",
   assert.equal(next[0].thumbnailUrl,"https://cdn.nimg.jp/a.jpg");
   assert.equal(next[1].thumbnailUrl,undefined);
 });
+
+
+test("ranking row identity includes display data and media expires without unnecessary reload",()=>{
+  const vm=require("node:vm");
+  const s=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const code=s.slice(s.indexOf("function rankingMediaKey("),s.indexOf("function renderIndependentRanking("));
+  const {media,key}=vm.runInNewContext(code+"\n({media:rankingMediaKey,key:rankingRowKey});");
+  const now=1700000000000;
+  const item={liveId:"lv123456",rank:1,comments:10,thumbnailUrl:"https://cdn.nimg.jp/a.jpg",videoFrame:"data:image/jpeg;base64,abc",videoFrameAt:new Date(now-10000).toISOString()};
+  const first=media(item,now);
+  assert.equal(media({...item,comments:20},now),first);
+  assert.notEqual(media(item,now+90000),first);
+  assert.notEqual(media({...item,thumbnailUrl:"https://cdn.nimg.jp/b.jpg"},now),first);
+  const row=i=>key(i,first,false,true,false,false,"disconnected");
+  assert.equal(row({...item}),row(item));
+  assert.notEqual(row({...item,comments:20}),row(item));
+  assert.notEqual(row({...item,activePeople:1}),row(item));
+});
+test("ranking refresh keeps existing rows and reuses unchanged media",()=>{
+  const s=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const block=s.slice(s.indexOf("function renderIndependentRanking("),s.indexOf("async function refreshIndependentRanking("));
+  assert.doesNotMatch(block,/list\.replaceChildren\(\)/);
+  assert.match(block,/old\.dataset\.renderKey===rowKey/);
+  assert.match(block,/picture\.dataset\.mediaKey!==mediaKey/);
+  assert.match(block,/if\(list\.children\[index\]!==row\)list\.insertBefore/);
+});
