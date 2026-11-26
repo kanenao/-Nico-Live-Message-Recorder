@@ -901,3 +901,23 @@ test("ranking layout keeps all seven metrics groups and adapts to content width"
  assert.match(renderer,/actions\.append\(record,watch,monitor,chase,preview\)/);
  assert.match(renderer,/cell\.colSpan=7/);
 });
+
+test("ranking scroll restores same program offset after reordering",()=>{
+ const vm=require("node:vm"),source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const code=source.slice(source.indexOf("function captureRankingScroll("),source.indexOf("function renderIndependentRanking("));
+ const {capture,restore}=vm.runInNewContext(code+"\n({capture:captureRankingScroll,restore:restoreRankingScroll})");
+ let top=90;const row={dataset:{liveId:"lv123456"},getBoundingClientRect:()=>({top,bottom:top+60})};
+ const scroll={scrollTop:100,getBoundingClientRect:()=>({top:100})},list={children:[row]};
+ const anchor=capture(scroll,list);assert.equal(anchor.offset,-10);
+ top=190;restore(scroll,list,anchor);assert.equal(scroll.scrollTop,200);
+ scroll.scrollTop=0;assert.equal(capture(scroll,list),null);
+});
+test("ranking smooth update retains program row, existing image and prior status while loading",()=>{
+ const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ assert.match(source,/desired\.push\(old\?patchRankingRow\(old,tr,actionKey\):tr\)/);
+ assert.match(source,/if\(picture===oldPicture\)identity\.appendChild\(labels\)/);
+ assert.match(source,/if\(nextPicture&&nextPicture!==oldPicture\)oldPicture\.replaceWith\(nextPicture\)/);
+ assert.match(source,/parent\.querySelector\?\.\("\.ranking-previous-image"\)\?\.remove\(\)/);
+ assert.match(source,/if\(!rankingSnapshot\)byId\("ranking-status"\)\.textContent="ランキングを取得しています…"/);
+ assert.match(source,/restoreRankingScroll\(scroll,list,scrollAnchor\)/);
+});

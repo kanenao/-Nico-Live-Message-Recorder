@@ -2003,7 +2003,7 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
       }
       advance();
     });
-    img.addEventListener("load",()=>{delete parent.dataset.imageFailedAt;});
+    img.addEventListener("load",()=>{delete parent.dataset.imageFailedAt;parent.querySelector?.(".ranking-previous-image")?.remove();});
     if(posterRevision&&canLookup){
       // The main process already downloaded and validated this program image.
       Promise.resolve().then(()=>api.getRankingThumbnail(liveId,"poster")).then(data=>{
@@ -2135,11 +2135,44 @@ function updateRankingCoverage(){
   const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
   for(const [key,value] of Object.entries(values)){const el=byId("ranking-coverage-"+key);if(el)el.textContent=value;}
 }
+// Reconcile cells on the same program row instead of detaching/recreating it.
+function patchRankingRow(old,next,actionKey){
+  const oldIdentity=old.cells[1].querySelector(".ranking-identity");
+  const nextIdentity=next.cells[1].querySelector(".ranking-identity");
+  const nextPicture=nextIdentity.querySelector(".ranking-media");
+  const oldPicture=oldIdentity.querySelector(".ranking-media");
+  if(nextPicture&&nextPicture!==oldPicture)oldPicture.replaceWith(nextPicture);
+  const oldLabels=oldIdentity.querySelector(".ranking-labels");
+  const nextLabels=nextIdentity.querySelector(".ranking-labels");
+  if(oldLabels.outerHTML!==nextLabels.outerHTML)oldLabels.replaceWith(nextLabels);
+  for(const index of [0,2,3,4,5,6]){
+    const before=old.cells[index],after=next.cells[index];
+    if((index===6&&old.dataset.actionKey!==actionKey)||before.outerHTML!==after.outerHTML)before.replaceWith(after);
+  }
+  old.dataset.renderKey=next.dataset.renderKey;
+  old.dataset.actionKey=actionKey;
+  if(next.dataset.podium)old.dataset.podium=next.dataset.podium;else delete old.dataset.podium;
+  return old;
+}
+function captureRankingScroll(scroll,list){
+  if(!scroll||scroll.scrollTop<=1)return null;
+  const top=scroll.getBoundingClientRect().top;
+  const row=Array.from(list.children).find(r=>r.dataset.liveId&&r.getBoundingClientRect().bottom>top);
+  return {id:row?.dataset.liveId,offset:row?row.getBoundingClientRect().top-top:0,scrollTop:scroll.scrollTop};
+}
+function restoreRankingScroll(scroll,list,anchor){
+  if(!scroll||!anchor)return;
+  const row=Array.from(list.children).find(r=>r.dataset.liveId===anchor.id);
+  if(row)scroll.scrollTop+=row.getBoundingClientRect().top-scroll.getBoundingClientRect().top-anchor.offset;
+  else scroll.scrollTop=anchor.scrollTop;
+}
 function renderIndependentRanking() {
   const list = byId("ranking-list");
   if (!list || !rankingSnapshot) return;
   const existing=new Map(Array.from(list.children).filter(row=>row.dataset.liveId).map(row=>[row.dataset.liveId,row]));
   const desired=[];
+  const scroll=list.closest(".ranking-scroll");
+  const scrollAnchor=captureRankingScroll(scroll,list);
   // Save focus before moving any thumbnail or row. Moving a focused DOM
   // element may blur it, even when the same element is reinserted.
   const activeElement=document.activeElement;
@@ -2164,7 +2197,8 @@ function renderIndependentRanking() {
     const retryImage=failedAt>0&&Date.now()-failedAt>=30000;
     if(old&&old.dataset.renderKey===rowKey&&!retryImage){desired.push(old);continue;}
     const tr = document.createElement("tr");
-    tr.dataset.liveId=item.liveId;tr.dataset.renderKey=rowKey;
+    const actionKey=JSON.stringify([item.title,item.name,item.broadcasterId,item.startedAt,busy,isRecording,isRankingFresh(rankingSnapshot),rankingMonitorPending.has(item.liveId),commentCaptureState]);
+    tr.dataset.liveId=item.liveId;tr.dataset.renderKey=rowKey;tr.dataset.actionKey=actionKey;
     if(item.rank<=3)tr.dataset.podium=String(item.rank);
     const rankCell=rankingCell(tr, item.rank+"位", "ranking-rank");
     const movement=document.createElement("small");movement.className="ranking-movement";
@@ -2201,11 +2235,16 @@ function renderIndependentRanking() {
       programDetails.append(" · ",elapsed);
     }
     const identity=document.createElement("div");identity.className="ranking-identity";
-    let picture=old?.querySelector(".ranking-media");
+    const oldPicture=old?.querySelector(".ranking-media");
+    let picture=oldPicture;
     if(!picture||picture.dataset.mediaKey!==mediaKey||retryImage){
     picture=document.createElement("div");picture.className="ranking-media";picture.dataset.mediaKey=mediaKey;
     const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
     picture.appendChild(placeholder);
+    const previous=oldPicture?.querySelector(".ranking-thumbnail:not(.ranking-previous-image),.ranking-previous-image");
+    if(previous?.complete&&previous.naturalWidth>0){
+      const fallback=previous.cloneNode(false);fallback.className="ranking-previous-image";fallback.alt="前回取得した番組画像";picture.appendChild(fallback);
+    }
     appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル",item.thumbnailCandidates||[],item.liveId,item.thumbnailRevision);
     const frameAt=Date.parse(item.videoFrameAt);
     if(typeof item.videoFrame==="string"&&item.videoFrame.length<=420023&&
@@ -2224,7 +2263,8 @@ function renderIndependentRanking() {
     picture.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openPicture();}});
     }
     const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
-    identity.append(picture,labels);info.appendChild(identity);
+    if(picture===oldPicture)identity.appendChild(labels);else identity.append(picture,labels);
+    info.appendChild(identity);
     const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points ranking-total-score");
     const coverage=document.createElement("small");coverage.className="ranking-delta";
     coverage.textContent=(item.scoreMethod==="ollama"?"AI":"統計")+" · "+rankingNumber(item.scoreCoverage)+"%";
@@ -2298,7 +2338,7 @@ function renderIndependentRanking() {
       await startVideoRecording({liveId:item.liveId,chase:true});
     });
     actions.append(record,watch,monitor,chase,preview);
-    desired.push(tr);
+    desired.push(old?patchRankingRow(old,tr,actionKey):tr);
   }
   if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=7;desired.push(tr);}
   // Remove obsolete rows first, then move only rows whose position changed.
@@ -2307,6 +2347,7 @@ function renderIndependentRanking() {
   desired.forEach((row,index)=>{
     if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);
   });
+  restoreRankingScroll(scroll,list,scrollAnchor);
   // Restore the same program/action after all DOM moves, not by rank.
   // Never steal focus from the search field or activate a disabled action.
   if(focusedId){
@@ -2324,17 +2365,18 @@ async function refreshIndependentRanking() {
   rankingLoading=true;
   rankingLastRequestAt=Date.now();
   const button=byId("ranking-refresh");button.disabled=true;
-  byId("ranking-status").textContent="ランキングを取得しています…";
+  if(!rankingSnapshot)byId("ranking-status").textContent="ランキングを取得しています…";
+  button.setAttribute("aria-busy","true");
   try {
     if(typeof api?.getLiveRanking!=="function")throw Error("ランキング機能に対応したアプリが必要です。");
     const observe=document.querySelector(".content")?.dataset.activePage==="ranking"&&byId("ranking-auto").checked&&byId("ranking-activity-auto").checked;
     const thumbnails=document.querySelector(".content")?.dataset.activePage==="ranking";
     rankingSnapshot=await api.getLiveRanking({observe,thumbnails});
-    renderIndependentRanking();
+    if(document.querySelector(".content")?.dataset.activePage==="ranking")renderIndependentRanking();
   }catch(error){
-    if(rankingSnapshot){rankingSnapshot={...rankingSnapshot,stale:true};renderIndependentRanking();}
+    if(rankingSnapshot){rankingSnapshot={...rankingSnapshot,stale:true};if(document.querySelector(".content")?.dataset.activePage==="ranking")renderIndependentRanking();}
     else byId("ranking-status").textContent="取得エラー："+(error.message||String(error));
-  }finally{rankingLoading=false;button.disabled=false;refreshLiveRankingLabels();}
+  }finally{rankingLoading=false;button.disabled=false;button.removeAttribute("aria-busy");refreshLiveRankingLabels();}
 }
 function configureRankingRefresh(active) {
   if(rankingTimer){clearInterval(rankingTimer);rankingTimer=null;}
