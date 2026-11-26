@@ -55,7 +55,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
         }
         return null;
       }
-      let data=await attempt([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean).slice(0,2));
+      let data=await attempt([...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
       if(!data&&details.broadcasterId&&allowed.has(id)){
         const history=await fetchUserRankingThumbnails(details.broadcasterId,id,fetchImpl);
         data=await attempt(history.slice(0,1));
@@ -64,7 +64,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     };
     const task=load().then(data=>{
       cache.delete(key);cache.set(key,{at:now(),data});
-      while(cache.size>24)cache.delete(cache.keys().next().value);
+      while(cache.size>48)cache.delete(cache.keys().next().value);
       return allowed.has(id)&&(lookup||allowed.get(id).has(safe))?data:null;
     }).finally(()=>pending.delete(key));
     pending.set(key,task);return task;

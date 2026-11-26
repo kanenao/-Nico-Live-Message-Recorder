@@ -35,3 +35,17 @@ test("late public comment connection cannot survive cancellation",async()=>{
   observer.stop();release({status:"ON_AIR"});await settle();
   assert.equal(p.closed,true);assert.equal(observer.snapshot("lv123456"),null);
 });
+
+test("expanded observer connects two per refresh and caps at ten",async()=>{
+ const providers=new Map();
+ const observer=createRankingObserver({limit:10,startsPerSync:2,createProvider:async id=>{
+   const p=new EventEmitter();p.connect=async()=>({status:"ON_AIR"});p.disconnect=()=>{p.closed=true;};providers.set(id,p);return p;
+ }});
+ try{
+   const rows=Array.from({length:15},(_,i)=>({liveId:"lv"+(123456+i)}));
+   observer.sync(rows);await settle();assert.equal(providers.size,2);
+   for(let i=0;i<8;i++){observer.sync(rows);await settle();}
+   assert.equal(providers.size,10);assert.equal(observer.snapshot(rows[10].liveId),null);
+ }finally{observer.stop();}
+ assert.ok([...providers.values()].every(p=>p.closed));
+});

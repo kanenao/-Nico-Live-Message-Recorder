@@ -81,3 +81,24 @@ test("hover preview refreshes the official image after two seconds without expan
  now+=1000;await proxy.get("lv123456","preview");assert.equal(calls,4);
  proxy.update([]);assert.equal(await proxy.get("lv123456","preview"),null);
 });
+
+test("reference card parser matches sibling image only in unique program container",()=>{
+ const {parseRankingCardImages}=require("../electron/live-ranking.cjs");
+ const html='<div><article><img src="https://live.simg.jp/live/a.jpg"><a href="https://live.nicovideo.jp/watch/lv123456">A</a></article><article><img src="https://cdn.nimg.jp/usericon/a.jpg"><a href="https://live.nicovideo.jp/watch/lv234567">B</a></article><article><img src="https://live.simg.jp/live/c.jpg"><a href="https://live.nicovideo.jp/watch/lv345678">C</a><a href="https://live.nicovideo.jp/watch/lv456789">D</a></article></div>';
+ const result=parseRankingCardImages(html);
+ assert.equal(result.get("lv123456"),"https://live.simg.jp/live/a.jpg");
+ assert.equal(result.has("lv234567"),false);assert.equal(result.has("lv345678"),false);assert.equal(result.has("lv456789"),false);
+});
+test("official image fallback tries distinct second URL after first returns 404",async()=>{
+ const proxy=createRankingImageProxy({fetchImpl:async url=>{
+   if(url.includes("/watch/")){
+     const data=JSON.stringify({program:{nicoliveProgramId:"lv123456",title:"番組",thumbnail:{screenshot:{large:"https://live.simg.jp/old.jpg",small:"https://live.simg.jp/new.jpg"}}}}).replaceAll('"',"&quot;");
+     return new Response('<script id="embedded-data" data-props="'+data+'"></script>');
+   }
+   if(url.endsWith("old.jpg"))return new Response("missing",{status:404});
+   assert.ok(url.endsWith("new.jpg"));
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ proxy.update([{liveId:"lv123456"}]);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
+});

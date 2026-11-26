@@ -595,6 +595,50 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
       rankHistory:[...history,{at:now,rank}]};
   });
 }
+// Reference ZIP: match images and watch links within a single-program HTML
+// container. Ignore ambiguous containers and profile artwork; do not add ranks.
+function parseRankingCardImages(html){
+  const result=new Map(),root={parent:null,name:"",ids:new Set(),images:new Set()},stack=[root],links=[];
+  const source=String(html||"").replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi,"");
+  let tokens=0;
+  for(const [token] of source.matchAll(/<!--[\s\S]*?-->|<(?:[^>"']|"[^"]*"|'[^']*')+>/g)){
+    if(++tokens>50000)break;
+    if(token.startsWith("<!--"))continue;
+    const tag=token.match(/^<(\/?)([a-z][\w-]*)/i);if(!tag)continue;
+    const name=tag[2].toLowerCase();
+    if(tag[1]){
+      let i=stack.length-1;while(i>0&&stack[i].name!==name)i--;
+      if(i>0)stack.length=i;
+      continue;
+    }
+    if(stack.length>80)continue;
+    const node={name,parent:stack.at(-1),ids:new Set(),images:new Set()};
+    if(name==="a"){
+      const id=liveId(htmlAttribute(token,"href"));
+      if(id){links.push({id,node});for(let p=node;p;p=p.parent){if(p.ids.size<2)p.ids.add(id);}}
+    }
+    if(name==="img"&&!/(?:user[-_ ]?icon|avatar|profile|badge|logo|アイコン|NCU_)/i.test(token)){
+      const url=["data-src","data-original","data-lazy-src","src"].map(k=>rankingImageUrl(htmlAttribute(token,k))).find(v=>v&&!/(?:usericon|user-icon|nicoaccount|channel-icon|avatar|profile|logo|\/icons?\/)/i.test(new URL(v).pathname));
+      if(url)for(let p=node;p;p=p.parent){if(p.images.size<3)p.images.add(url);}
+    }
+    if(!/^(?:img|input|br|hr|meta|link|source|area|base|col|embed|param|track|wbr)$/.test(name)&&!token.endsWith("/>"))stack.push(node);
+  }
+  for(const {id,node} of links){
+    for(let p=node;p&&p!==root&&p.ids.size===1;p=p.parent){
+      if(p.images.size===1){if(!result.has(id))result.set(id,[...p.images][0]);break;}
+      if(p.images.size>1)break;
+    }
+    if(result.size>=400)break;
+  }
+  return result;
+}
+async function fetchRankingCardImages(fetchImpl){
+  try{
+    const response=await fetchImpl("https://ikioi-ranking.com/v/nico",{redirect:"error",signal:AbortSignal.timeout(4000),headers:{accept:"text/html","user-agent":"Nico-Live-Message-Recorder"}});
+    return response?.ok?parseRankingCardImages(await readBounded(response)):new Map();
+  }catch{return new Map();}
+}
+
 function parseNicoFeedImages(xml){
   const images=new Map();
   for(const [item] of String(xml||"").matchAll(/<item\b[^>]*>[\s\S]*?<\/item>/gi)){
@@ -636,7 +680,7 @@ function createRankingService(options={}) {
     lastAttempt=at;
     pending=(async()=>{
       const useFeed=options.feedImages===true&&(feedAt===null||at<feedAt||at-feedAt>=30000);
-      const [results,feed]=await Promise.all([Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl))),useFeed?fetchNicoFeedImages(fetchImpl):Promise.resolve(null)]);
+      const [results,feed]=await Promise.all([Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl))),useFeed?Promise.all([fetchNicoFeedImages(fetchImpl),fetchRankingCardImages(fetchImpl)]).then(([rss,cards])=>new Map([...cards,...rss])):Promise.resolve(null)]);
       if(feed){feedImages=feed;feedAt=at;}
       const checkedAt=now();
       const healthy=results.filter(s=>s.ok);
@@ -685,4 +729,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages};

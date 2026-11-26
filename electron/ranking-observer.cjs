@@ -5,7 +5,7 @@ const {observeProviderStatistics}=require("./ranking-statistics.cjs");
 // Public, read-only comment observation; no recorder/writer or account cookies.
 // Keep the beta limit small, start at most one new connection each refresh,
 // and disconnect when the ranking screen is left or its refresh lease expires.
-function createRankingObserver({createProvider,now=Date.now,limit=3,leaseMs=45000}={}){
+function createRankingObserver({createProvider,now=Date.now,limit=3,startsPerSync=1,leaseMs=45000}={}){
   const entries=new Map(),retryAt=new Map();
   let lease=null;
   const close=entry=>{
@@ -62,10 +62,12 @@ function createRankingObserver({createProvider,now=Date.now,limit=3,leaseMs=4500
     const ids=[...new Set((rows||[]).map(row=>row.liveId).filter(id=>/^lv\d{5,15}$/.test(id)&&id!==excludedId))].slice(0,limit);
     for(const entry of entries.values())if(!ids.includes(entry.id))close(entry);
     if(entries.size>=limit)return;
-    const id=ids.find(id=>!entries.has(id)&&!retryAt.has(id));
-    if(!id)return;
-    const entry={id,tracker:createRankingActivityTracker(now),pending:true,closed:false,connected:false,thumbnailUrl:""};
-    entries.set(id,entry);void start(entry);
+    const capacity=Math.min(Math.max(1,Math.min(2,startsPerSync)),limit-entries.size);
+    const candidates=ids.filter(id=>!entries.has(id)&&!retryAt.has(id)).slice(0,capacity);
+    for(const id of candidates){
+      const entry={id,tracker:createRankingActivityTracker(now),pending:true,closed:false,connected:false,thumbnailUrl:""};
+      entries.set(id,entry);void start(entry);
+    }
   }
   function snapshot(id){
     const entry=entries.get(id);
