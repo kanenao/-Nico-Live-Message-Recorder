@@ -2018,7 +2018,7 @@ function rankingMediaKey(item, now=Date.now()) {
 }
 function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commentState) {
   return JSON.stringify([item.liveId,item.rank,item.rankChange,item.rankNew,item.previousRank,item.rankHistory,
-    item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,
+    item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,item.scoreMethod,item.scorePolicy,
     item.points,item.pointDelta,item.visitors,item.visitorDelta,item.comments,item.commentDelta,
     item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
     busy,fresh,pending,isRecording,commentState]);
@@ -2094,9 +2094,10 @@ function renderIndependentRanking() {
     identity.append(picture,labels);info.appendChild(identity);
     const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points");
     const coverage=document.createElement("small");coverage.className="ranking-delta";
-    coverage.textContent="指標充足 "+rankingNumber(item.scoreCoverage)+"%";
+    coverage.textContent=(item.scoreMethod==="ollama"?"AI配点":"統計配点")+" / 指標充足 "+rankingNumber(item.scoreCoverage)+"%";
     score.appendChild(coverage);
-    score.title="勢い35%・来場者20%・コメント20%・増加/分25%。各指標の90パーセンタイルで対数正規化。未取得指標は加点なし。";
+    const scoreNames={points:"勢い",visitors:"来場者",comments:"コメント",commentRate:"コメント増加/分",visitorRate:"来場者増加/分",activePeople:"アクティブ",adPoints:"広告",giftPoints:"ギフト"};
+    score.title=Object.entries(item.scoreWeights||{}).map(([k,w])=>(scoreNames[k]||k)+" "+(w*100).toFixed(1)+"%").join(" / ")+"。未取得は加点なし。アクティブ・広告・ギフトは全候補で比較可能なときのみ採用。";
     appendRankingDelta(rankingCell(tr,rankingNumber(item.points),"ranking-points"),item.pointDelta,"pt");
     appendRankingDelta(rankingCell(tr,rankingNumber(item.visitors)),item.visitorDelta,"人");
     appendRankingDelta(rankingCell(tr,rankingNumber(item.comments)),item.commentDelta,"件");

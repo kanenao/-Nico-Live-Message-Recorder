@@ -612,19 +612,19 @@ test("official watch payload uses top-level supplier only for the matching decla
 });
 
 
-test("composite ranking uses all four indicators and distinguishes missing from measured zero",()=>{
+test("composite ranking uses core indicators and distinguishes missing from measured zero",()=>{
   const {applyCompositeScores}=require("../electron/live-ranking.cjs");
   const rows=applyCompositeScores([
-    {points:100,visitors:100,comments:100,commentRate:10},
-    {points:100,visitors:0,comments:0,commentRate:0},
+    {points:100,visitors:100,comments:100,commentRate:10,visitorRate:5},
+    {points:100,visitors:0,comments:0,commentRate:0,visitorRate:0},
     {points:100,visitors:null,comments:null,commentRate:null}
   ]);
   assert.ok(rows[0].compositeScore>rows[1].compositeScore);
   assert.equal(rows[0].scoreCoverage,100);
-  assert.equal(rows[2].scoreCoverage,35);
+  assert.equal(rows[2].scoreCoverage,30);
   assert.equal(rows[2].scoreParts.visitors,null);
   assert.equal(rows[1].scoreParts.visitors,0);
-  for(const field of ["points","visitors","comments","commentRate"])assert.ok(rows[0].scoreParts[field]>0);
+  for(const field of ["points","visitors","comments","commentRate","visitorRate"])assert.ok(rows[0].scoreParts[field]>0);
 });
 test("ranking activity counts unique live commenters only, expires samples and resets at disconnect",()=>{
   const {createRankingActivityTracker}=require("../electron/live-ranking.cjs");
