@@ -923,3 +923,21 @@ test("ranking smooth update retains program row, existing image and prior status
  assert.match(source,/if\(!rankingSnapshot\)byId\("ranking-status"\)\.textContent="ランキングを取得しています…"/);
  assert.match(source,/restoreRankingScroll\(scroll,list,scrollAnchor\)/);
 });
+
+
+test("ranking split provider type resolves user IDs without treating channels as users",()=>{
+ const {extractJsonRows}=require("../electron/live-ranking.cjs");
+ const row=(id,providerType,supplier)=>({program:{id,title:"live",providerType},supplier});
+ const rows=extractJsonRows([row("lv123456","user",{programProviderId:"123456",name:"user"}),row("lv123457","channel",{id:"123456",name:"channel"}),row("lv123458","channel",{programProviderType:"user",programProviderId:"123456"})]);
+ assert.equal(rows.length,3);assert.equal(rows[0].broadcasterId,"123456");assert.equal(rows[1].broadcasterId,"");assert.equal(rows[2].broadcasterId,"");
+});
+test("nested screenshot URLs and wrapped official program IDs are supported",()=>{
+ const {programThumbnailCandidates,parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const thumbnail={screenshot:{urls:{large:{uri:"https://cdn.nimg.jp/live/current.jpg"}}}};
+ assert.deepEqual(programThumbnailCandidates({thumbnail}),["https://cdn.nimg.jp/live/current.jpg"]);
+ const payload=JSON.stringify({program:{id:{value:"lv123456"},title:"test",providerType:"user",thumbnail},supplier:{programProviderId:"123456"}}).replaceAll('"',"&quot;");
+ const html='<script id="embedded-data" data-props="'+payload+'"></script>';
+ const parsed=parseOfficialRankingDetails(html,"lv123456");
+ assert.equal(parsed.broadcasterId,"123456");assert.equal(parsed.thumbnailUrl,"https://cdn.nimg.jp/live/current.jpg");
+ assert.equal(parseOfficialRankingDetails(html,"lv999999"),null);
+});

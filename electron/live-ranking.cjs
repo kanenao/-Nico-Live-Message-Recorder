@@ -91,7 +91,7 @@ function programThumbnailCandidates(p={},raw={}){
   const values=[];
   for(const obj of [p,raw]){
     if(!obj||typeof obj!=="object")continue;
-    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
+    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot?.urls,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
       if(typeof item==="string"){values.push(item);continue;}
       if(!item||typeof item!=="object")continue;
       for(const k of ["large","huge","middle","small","normal","url","uri","uri640x360","uri320x180","uri160x90"]){
@@ -111,15 +111,19 @@ function jsonRow(raw) {
   const status=String(p.schedule?.status??p.liveStatus??p.status??"").toUpperCase();
   if(status&&!["ON_AIR","ONAIR","LIVE","ON AIR"].includes(status))return null;
   if(p.isOnAir===false)return null;
-  const provider=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
+  const providerRaw=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
+  const declaredType=String(p.providerType??raw.providerType??"").trim().toLowerCase();
+  const supplierType=String(providerRaw.programProviderType??providerRaw.supplierType??providerRaw.type??"").trim().toLowerCase();
+  const conflictingType=Boolean(declaredType&&supplierType&&declaredType!==supplierType);
+  const providerType=supplierType||declaredType;
+  const provider={...providerRaw,programProviderType:providerType};
   const statistics=p.statistics??p.stats??raw.statistics??raw.stats??{};
-  const providerType=String(provider.programProviderType??provider.supplierType??provider.type??"").trim().toLowerCase();
   const numeric=String(provider.id??p.userId??"").trim();
   // Official-format providers include programProviderId and a provider type.
   // Keep the legacy untyped numeric-ID format for ranking lists only.
   // A named channel must never be treated as a user.
   const hasIdentityLink=[provider.url,provider.pageUrl,provider.userPageUrl,provider.profileUrl].some(v=>typeof v==="string"&&v);
-  const broadcasterId=providerType||hasIdentityLink?officialSupplierUserId(provider):
+  const broadcasterId=conflictingType?"":providerType||hasIdentityLink?officialSupplierUserId(provider):
     /^\d{1,15}$/.test(numeric)?numeric:"";
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
     broadcasterId,
@@ -269,7 +273,7 @@ function parseOfficialRankingDetails(html,id) {
       const data=JSON.parse(raw.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
       const p=data?.program;
       if(!p||typeof p!=="object"||!clean(p.title))continue;
-      const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id);
+      const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id?.value??p.id);
       if(declared&&declared!==id)return null;
       // Some public watch payloads carry supplier metadata next to program.
       // Use it only for an explicitly matching program, never an unrelated page.
