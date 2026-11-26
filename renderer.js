@@ -2070,6 +2070,15 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
 function rankingTopRows(rows){
   return (Array.isArray(rows)?rows:[]).filter(row=>Number.isInteger(row.rank)&&row.rank>=1&&row.rank<=100).sort((a,b)=>a.rank-b.rank);
 }
+function syncRankingQuickSort(){
+  const key=byId("ranking-sort").value;
+  for(const button of document.querySelectorAll("[data-ranking-sort-key]"))button.setAttribute("aria-pressed",String(button.dataset.rankingSortKey===key));
+}
+function setRankingView(view){
+  if(!["compact","table"].includes(view))return;
+  byId("ranking-panel").dataset.rankingView=view;
+  for(const button of document.querySelectorAll("[data-ranking-view-key]"))button.setAttribute("aria-pressed",String(button.dataset.rankingViewKey===view));
+}
 function updateRankingCoverage(){
   const rows=rankingTopRows(rankingSnapshot?.rows);
   const list=byId("ranking-list");
@@ -2077,6 +2086,8 @@ function updateRankingCoverage(){
   const visible=list?list.querySelectorAll("tr[data-live-id]").length:0;
   const attempted=rows.filter(x=>x.thumbnailAttempted).length;
   const ready=rows.filter(x=>x.thumbnailRevision>0).length;
+  const brief=byId("ranking-coverage-brief");
+  if(brief){const value=rows.length+"番組 · 画像 "+ready+"/"+rows.length;if(brief.textContent!==value)brief.textContent=value;}
   const progress=byId("ranking-image-progress");
   if(progress)progress.textContent="画像取得：試行 "+attempted+" / "+rows.length+"番組 · 取得済み "+ready+"番組 · 一覧で表示確認 "+loaded+" / "+visible+"番組";
   const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
@@ -2129,6 +2140,7 @@ function renderIndependentRanking() {
   const focusedMedia=Boolean(focusedId&&activeElement.matches(".ranking-media"));
   const q = byId("ranking-search").value.trim().toLowerCase();
   const sort = byId("ranking-sort").value;
+  syncRankingQuickSort();
   const all = rankingTopRows(rankingSnapshot.rows);
   const rows = all.filter(item => [item.title,item.name,item.liveId].some(v=>String(v||"").toLowerCase().includes(q)));
   const key = item => sort === "startedAt" ? (Date.parse(item.startedAt)||null) : item[sort];
@@ -4078,6 +4090,8 @@ byId("settings-open-updates-button").addEventListener("click", () => {
 byId("ranking-refresh").addEventListener("click", refreshIndependentRanking);
 byId("ranking-search").addEventListener("input", renderIndependentRanking);
 byId("ranking-sort").addEventListener("change", renderIndependentRanking);
+for(const button of document.querySelectorAll("[data-ranking-sort-key]"))button.addEventListener("click",()=>{byId("ranking-sort").value=button.dataset.rankingSortKey;syncRankingQuickSort();renderIndependentRanking();});
+for(const button of document.querySelectorAll("[data-ranking-view-key]"))button.addEventListener("click",()=>setRankingView(button.dataset.rankingViewKey));
 byId("ranking-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
 byId("ranking-activity-auto").addEventListener("change", () => configureRankingRefresh(document.querySelector(".content").dataset.activePage === "ranking"));
 setActivePage("dashboard");

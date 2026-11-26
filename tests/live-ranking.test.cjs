@@ -921,3 +921,18 @@ test("ranking smooth update retains program row, existing image and prior status
  assert.match(source,/if\(!rankingSnapshot\)byId\("ranking-status"\)\.textContent="ランキングを取得しています…"/);
  assert.match(source,/restoreRankingScroll\(scroll,list,scrollAnchor\)/);
 });
+
+test("ranking offers compact and detailed views and quick metric sorts without duplicate lists",()=>{
+ const html=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
+ const css=fs.readFileSync(path.join(__dirname,"..","styles.css"),"utf8");
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ assert.match(html,/id="ranking-panel" data-page="ranking" data-ranking-view="compact"/);
+ assert.match(html,/data-ranking-view-key="table"/);
+ for(const key of ["compositeScore","visitors","comments","activePeople","adPoints","giftPoints"])assert.ok(html.includes('data-ranking-sort-key="'+key+'"'));
+ assert.equal((html.match(/id="ranking-list"/g)||[]).length,1);
+ assert.match(renderer,/function setRankingView\(view\)/);
+ assert.match(renderer,/byId\("ranking-panel"\)\.dataset\.rankingView=view/);
+ assert.match(renderer,/button\.dataset\.rankingSortKey;syncRankingQuickSort\(\);renderIndependentRanking\(\)/);
+ assert.match(css,/data-ranking-view="compact"/);
+ assert.match(html,/id="ranking-coverage-brief"/);
+});
