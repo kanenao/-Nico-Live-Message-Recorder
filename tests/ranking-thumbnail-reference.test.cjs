@@ -13,7 +13,7 @@ test("RSS thumbnail joins only by explicit program ID",()=>{
  assert.equal(rows[0].thumbnailUrl,image);assert.equal(rows[1].thumbnailUrl,undefined);
 });
 test("official referer proxy preserves signed URL and rejects nonimage data",async()=>{
- const fetchImpl=async(url,options)=>{assert.equal(url,image);assert.equal(options.headers.Referer,"https://live.nicovideo.jp/");assert.equal(options.redirect,"error");return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});};
+ const fetchImpl=async(url,options)=>{assert.equal(url,image);assert.equal(options.headers.Referer,"https://live.nicovideo.jp/");assert.equal(options.redirect,"manual");return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});};
  assert.match(await fetchRankingImage(image,fetchImpl),/^data:image\/jpeg;base64,/);
  assert.equal(await fetchRankingImage("https://evil.example/a.jpg",fetchImpl),null);
  assert.equal(await fetchRankingImage(image,async()=>new Response("html",{headers:{"Content-Type":"image/jpeg"}})),null);
