@@ -946,3 +946,10 @@ test("stale ranking recording target requires exact official program and ON_AIR 
  assert.equal((await resolveRankingRecordingTarget(id,async()=>detail)).liveId,id);
  for(const bad of [null,{...detail,liveId:"lv999999"},{...detail,verifiedLiveStatus:"ENDED"},{...detail,verifiedLiveStatus:""}])await assert.rejects(resolveRankingRecordingTarget(id,async()=>bad),/放送中/);
 });
+
+test("ranking listing program-level providerType preserves short user IDs but rejects channels",()=>{
+ const user=parseRankingPage(page([{...program("lv123456"),providerType:"user",supplier:{programProviderId:"123",name:"配信者"}}]))[0];
+ assert.equal(user.broadcasterId,"123");
+ const channel=parseRankingPage(page([{...program("lv234567"),providerType:"channel",supplier:{programProviderId:"123",name:"チャンネル"}}]))[0];
+ assert.equal(channel.broadcasterId,"");
+});

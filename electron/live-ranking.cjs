@@ -113,13 +113,13 @@ function jsonRow(raw) {
   if(p.isOnAir===false)return null;
   const provider=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
   const statistics=p.statistics??p.stats??raw.statistics??raw.stats??{};
-  const providerType=String(provider.programProviderType??provider.supplierType??provider.type??"").trim().toLowerCase();
+  const providerType=String(provider.programProviderType??provider.supplierType??provider.type??p.providerType??raw.providerType??"").trim().toLowerCase();
   const numeric=String(provider.id??p.userId??"").trim();
   // Official-format providers include programProviderId and a provider type.
   // Keep the legacy untyped numeric-ID format for ranking lists only.
   // A named channel must never be treated as a user.
   const hasIdentityLink=[provider.url,provider.pageUrl,provider.userPageUrl,provider.profileUrl].some(v=>typeof v==="string"&&v);
-  const broadcasterId=providerType||hasIdentityLink?officialSupplierUserId(provider):
+  const broadcasterId=providerType||hasIdentityLink?officialSupplierUserId({...provider,programProviderType:providerType||undefined}):
     /^\d{1,15}$/.test(numeric)?numeric:"";
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
     broadcasterId,
@@ -302,7 +302,7 @@ async function fetchOfficialRankingDetails(id,fetchImpl) {
 // Limit each actual refresh to six lookups, with two concurrent requests.
 // Cache successes and failures, and prefer uncached rows in rank order.
 async function fetchOfficialRankingProfileIcon(userId,fetchImpl) {
-  if(!/^\d{5,15}$/.test(userId))return "";
+  if(!/^[1-9]\d{0,14}$/.test(userId))return "";
   try {
     const response=await fetchImpl("https://nvapi.nicovideo.jp/v1/users/"+userId,{
       redirect:"error",headers:{accept:"application/json","X-Frontend-Id":"6","X-Frontend-Version":"0"},signal:AbortSignal.timeout(4000)});

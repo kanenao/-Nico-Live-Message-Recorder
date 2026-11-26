@@ -251,7 +251,8 @@ test("recording library and Streamlink runtime updater controls are exposed", ()
   assert.match(renderer, /function setActivePage\(/);
   assert.match(renderer, /function renderCaptureLibrary\(/);
   assert.match(renderer, /const groups = new Map\(\)/);
-  assert.match(renderer, /api\.getArticleThumbnail\(article\.articlePath\)/);
+  assert.match(renderer, /api\.getLibraryThumbnail\(item\.path\)/);
+  assert.doesNotMatch(renderer, /api\.getArticleThumbnail\(/);
   assert.match(main, /ipcMain\.handle\("library:thumbnail"/);
   assert.match(preload, /getLibraryThumbnail:.*ipcRenderer\.invoke\("library:thumbnail"/);
   assert.match(renderer, /function renderStreamlinkUpdateState\(/);
