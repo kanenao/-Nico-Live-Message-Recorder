@@ -2998,7 +2998,8 @@ ipcMain.handle("ranking:list", async (_event,options={}) => {
     return {...row,adPoints:measured?.adPoints??row.adPoints??null,giftPoints:measured?.giftPoints??row.giftPoints??null,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),giftObservedPoints:measured?.giftObservedPoints??null,giftObservedCount:measured?.giftObservedCount??null,giftObservationComplete:measured?.giftObservationComplete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
   });
   rankingImageProxy.update(rows);
-  return {...snapshot,rows};
+  if(options?.thumbnails===true&&!snapshot.stale&&!isQuitting)void rankingImageProxy.prefetch().catch(()=>{});
+  return {...snapshot,rows:rows.map(row=>({...row,thumbnailRevision:rankingImageProxy.status(row.liveId).revision,thumbnailAttempted:rankingImageProxy.status(row.liveId).attempted}))};
 });
 function resolvePublicRankingUser(liveId){
   return resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {

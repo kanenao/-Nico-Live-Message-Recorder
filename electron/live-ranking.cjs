@@ -46,7 +46,7 @@ function rankingImageUrl(value) {
   try{
     const u=new URL(value.startsWith("//")?"https:"+value:value);
     if(u.protocol!=="https:"||u.username||u.password||u.port||
-       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp")))return "";
+       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp")||((u.hostname==="nicovideo.jp"||u.hostname.endsWith(".nicovideo.jp"))&&/(?:^|\/)(?:liveimg|live[-_]thumbnails?|video_thumbnails|thumbnails?)(?:\/|$)/i.test(u.pathname))))return "";
     return u.href;
   }catch{return "";}
 }
@@ -273,7 +273,8 @@ function parseOfficialRankingDetails(html,id) {
       if(declared&&declared!==id)return null;
       // Some public watch payloads carry supplier metadata next to program.
       // Use it only for an explicitly matching program, never an unrelated page.
-      const supplier=p.supplier??p.programProvider??(declared===id?data.supplier??data.programProvider:null)??{};
+      const supplierRaw=p.supplier??p.programProvider??(declared===id?data.supplier??data.programProvider:null)??{};
+      const supplier={...supplierRaw,programProviderType:supplierRaw.programProviderType??supplierRaw.supplierType??supplierRaw.type??p.providerType};
       const candidates=[...new Set([...programThumbnailCandidates(p,declared===id?data:{}),...(officialOgImage(html,id,declared)?.thumbnailCandidates||[])])].slice(0,8);
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
         broadcasterId:officialSupplierUserId(supplier),

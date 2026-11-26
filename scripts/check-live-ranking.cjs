@@ -1,6 +1,7 @@
 "use strict";
 // Diagnostic only. No credentials, titles, or full response bodies in logs.
 const {createRankingService,createRankingDetailEnricher,rankingListingImage}=require("../electron/live-ranking.cjs");
+const {createRankingImageProxy}=require("../electron/ranking-image-proxy.cjs");
 (async()=>{
   const snapshot=await createRankingService({feedImages:true})();
   const enrich=createRankingDetailEnricher(globalThis.fetch);
@@ -22,7 +23,11 @@ const {createRankingService,createRankingDetailEnricher,rankingListingImage}=req
       await response.body?.cancel();
     }catch{checks.push("network-error");}
   }
-  console.log(JSON.stringify({checkedAt:snapshot.checkedAt,stale:snapshot.stale,partial:snapshot.partial,
+  const proxy=createRankingImageProxy();
+  proxy.update(rows.slice(0,100));
+  for(let i=0;i<3&&!snapshot.stale;i++)await proxy.prefetch();
+  const posterSamples=rows.slice(0,100).filter(x=>proxy.status(x.liveId).attempted);
+  console.log(JSON.stringify({posterAttempted:posterSamples.length,posterValidated:posterSamples.filter(x=>proxy.status(x.liveId).revision>0).length,checkedAt:snapshot.checkedAt,stale:snapshot.stale,partial:snapshot.partial,
     programs:rows.length,top100:rows.filter(x=>x.rank<=100).length,top100WithVisitors:rows.filter(x=>x.rank<=100&&x.visitors!=null).length,top100WithComments:rows.filter(x=>x.rank<=100&&x.comments!=null).length,top100WithUserIds:rows.filter(x=>x.rank<=100&&x.broadcasterId).length,top100WithThumbnails:rows.filter(x=>x.rank<=100&&x.thumbnailUrl).length,withVisitors:rows.filter(x=>x.visitors!=null).length,withComments:rows.filter(x=>x.comments!=null).length,
     withUserIds:rows.filter(x=>x.broadcasterId).length,withNames:rows.filter(x=>x.name).length,withIcons:rows.filter(x=>x.iconUrl).length,
     withThumbnails:rows.filter(x=>x.thumbnailUrl).length,thumbnailCoverageByBatch:stages,imageResponses:checks.filter(x=>x==="image-response").length,imageSampleCount:checks.length,imageChecks:checks,sources:snapshot.sources},null,2));

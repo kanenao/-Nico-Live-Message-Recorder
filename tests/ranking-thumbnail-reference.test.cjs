@@ -102,3 +102,36 @@ test("official image fallback tries distinct second URL after first returns 404"
  proxy.update([{liveId:"lv123456"}]);
  assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
 });
+
+test("all one hundred ranked programs receive a bounded image attempt and retain their successful poster",async()=>{
+ let now=100000,calls=0,active=0,maxActive=0;
+ const proxy=createRankingImageProxy({now:()=>now,fetchImpl:async url=>{
+   calls++;active++;maxActive=Math.max(maxActive,active);
+   await new Promise(r=>setImmediate(r));active--;
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ const rows=Array.from({length:100},(_,i)=>({liveId:"lv"+(123456+i),thumbnailUrl:"https://live.simg.jp/live/"+i+".jpg"}));
+ proxy.update(rows);
+ for(let i=0;i<25;i++){await proxy.prefetch();now+=10000;}
+ assert.equal(calls,100);assert.ok(maxActive<=4);
+ assert.ok(rows.every(r=>proxy.status(r.liveId).revision>0));
+ assert.match(await proxy.get(rows[99].liveId,"poster"),/^data:image\/jpeg;base64,/);
+ proxy.update(rows.slice(0,99));assert.equal(await proxy.get(rows[99].liveId,"poster"),null);
+});
+test("failed images do not monopolize queue; unattempted lower ranks take precedence",async()=>{
+ let now=100000;
+ const proxy=createRankingImageProxy({now:()=>now,fetchImpl:async url=>{
+   if(url.includes("watch/")||url.includes("/bad"))return new Response("missing",{status:404});
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ const rows=Array.from({length:8},(_,i)=>({liveId:"lv"+(123456+i),thumbnailUrl:"https://live.simg.jp/"+(i<4?"bad":"good")+i+".jpg"}));
+ proxy.update(rows);await proxy.prefetch();now+=100000;await proxy.prefetch();
+ assert.ok(rows.slice(0,4).every(r=>proxy.status(r.liveId).attempted&&!proxy.status(r.liveId).revision));
+ assert.ok(rows.slice(4).every(r=>proxy.status(r.liveId).revision>0));
+});
+test("official program providerType verifies user for broadcast history",()=>{
+ const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const data=JSON.stringify({program:{nicoliveProgramId:"lv123456",title:"番組",providerType:"user",supplier:{programProviderId:"123456"}}}).replaceAll('"',"&quot;");
+ const row=parseOfficialRankingDetails('<script id="embedded-data" data-props="'+data+'"></script>',"lv123456");
+ assert.equal(row.broadcasterId,"123456");
+});

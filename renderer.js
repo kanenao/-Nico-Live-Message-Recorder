@@ -1966,7 +1966,7 @@ async function registerRankingMonitor(item) {
     renderIndependentRanking();
   }
 }
-function appendRankingImage(parent,url,className,label,alternatives=[],liveId="") {
+function appendRankingImage(parent,url,className,label,alternatives=[],liveId="",posterRevision=0) {
   const canLookup=Boolean(liveId&&typeof api!=="undefined"&&typeof api.getRankingThumbnail==="function");
   if(!url&&!alternatives.length&&!canLookup)return;
   try{
@@ -2004,7 +2004,14 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
       advance();
     });
     img.addEventListener("load",()=>{delete parent.dataset.imageFailedAt;});
-    if(candidates.length){img.src=candidates[0];parent.appendChild(img);}
+    if(posterRevision&&canLookup){
+      // The main process already downloaded and validated this program image.
+      Promise.resolve().then(()=>api.getRankingThumbnail(liveId,"poster")).then(data=>{
+        if(!parent.isConnected)return;
+        if(isImage(data)){img.src=data;parent.appendChild(img);return;}
+        if(candidates.length){img.src=candidates[0];parent.appendChild(img);}else lookup();
+      }).catch(()=>{if(parent.isConnected){if(candidates.length){img.src=candidates[0];parent.appendChild(img);}else lookup();}});
+    }else if(candidates.length){img.src=candidates[0];parent.appendChild(img);}
     else if(canLookup){
       // Missing URLs are resolved only for visible rows, not all 200 at once.
       requestAnimationFrame(()=>{
@@ -2095,7 +2102,7 @@ function refreshRankingActions() {
 function rankingMediaKey(item, now=Date.now()) {
   const at=Date.parse(item.videoFrameAt);
   const fresh=typeof item.videoFrame==="string"&&Number.isFinite(at)&&now>=at&&now-at<=90000;
-  return JSON.stringify([item.thumbnailUrl||"",item.thumbnailCandidates||[],fresh?item.videoFrameAt:null]);
+  return JSON.stringify([item.thumbnailUrl||"",item.thumbnailCandidates||[],item.thumbnailRevision||0,fresh?item.videoFrameAt:null]);
 }
 function rankingScoreBreakdown(item) {
   const names={points:"勢い",visitors:"来場者",comments:"コメント",commentRate:"コメント増加/分",visitorRate:"来場者増加/分",activePeople:"アクティブ",adPoints:"広告",giftPoints:"ギフト"};
@@ -2121,7 +2128,7 @@ function updateRankingCoverage(){
   const list=byId("ranking-list");
   const loaded=list?Array.from(list.querySelectorAll("tr[data-live-id]")).filter(row=>Array.from(row.querySelectorAll(".ranking-thumbnail,.ranking-video-frame")).some(img=>img.complete&&img.naturalWidth>0&&!img.hidden)).length:0;
   const visible=list?list.querySelectorAll("tr[data-live-id]").length:0;
-  const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:loaded+" / "+visible};
+  const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
   for(const [key,value] of Object.entries(values)){const el=byId("ranking-coverage-"+key);if(el)el.textContent=value;}
 }
 function renderIndependentRanking() {
@@ -2195,7 +2202,7 @@ function renderIndependentRanking() {
     picture=document.createElement("div");picture.className="ranking-media";picture.dataset.mediaKey=mediaKey;
     const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
     picture.appendChild(placeholder);
-    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル",item.thumbnailCandidates||[],item.liveId);
+    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル",item.thumbnailCandidates||[],item.liveId,item.thumbnailRevision);
     const frameAt=Date.parse(item.videoFrameAt);
     if(typeof item.videoFrame==="string"&&item.videoFrame.length<=420023&&
         /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(item.videoFrame)&&
@@ -2317,7 +2324,8 @@ async function refreshIndependentRanking() {
   try {
     if(typeof api?.getLiveRanking!=="function")throw Error("ランキング機能に対応したアプリが必要です。");
     const observe=document.querySelector(".content")?.dataset.activePage==="ranking"&&byId("ranking-auto").checked&&byId("ranking-activity-auto").checked;
-    rankingSnapshot=await api.getLiveRanking({observe});
+    const thumbnails=document.querySelector(".content")?.dataset.activePage==="ranking";
+    rankingSnapshot=await api.getLiveRanking({observe,thumbnails});
     renderIndependentRanking();
   }catch(error){
     if(rankingSnapshot){rankingSnapshot={...rankingSnapshot,stale:true};renderIndependentRanking();}
