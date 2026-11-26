@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v1.2.1-beta.153</span>
+        <span class="version" id="version">v1.2.1-beta.154</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -75,10 +75,19 @@
             <span class="nav-icon">⚙</span><span class="nav-text">アプリ設定</span>
           </button>
         </div>
+        <div class="nav-group">
+          <div class="side-label">サポート</div>
+          <button class="nav-item" type="button" id="feedback-bug-nav-button" data-page-target="feedback-bug">
+            <span class="nav-icon" aria-hidden="true">!</span><span class="nav-text">不具合情報</span>
+          </button>
+          <button class="nav-item" type="button" id="feedback-feature-nav-button" data-page-target="feedback-feature">
+            <span class="nav-icon" aria-hidden="true">＋</span><span class="nav-text">機能要望</span>
+          </button>
+        </div>
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">1.2.1-beta.153</span></div>
+          <div class="small-version">BUILD <span id="build-version">1.2.1-beta.154</span></div>
         </div>
       </aside>
 
@@ -696,7 +705,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v1.2.1-beta.153</strong>
+              <strong id="app-current-version">v1.2.1-beta.154</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -828,24 +837,61 @@
             </div>
             <button class="button button-outline release-history-more" id="release-history-more-button" type="button" hidden>過去の更新履歴も表示</button>
           </div>
-          <section class="feedback-report-card" id="feedback-report-card" aria-labelledby="feedback-title">
-            <div class="feedback-report-heading">
-              <div class="eyebrow">FEEDBACK / AI TRIAGE</div>
-              <h3 id="feedback-title">不具合情報・機能要望</h3>
-              <p>β版・正規版どちらも対応。報告後にAIが種類・対象版・優先度を判断してタグを付けます。</p>
+
+        </section>
+
+        <section class="panel feedback-page page-hidden" id="feedback-bug-panel" data-page="feedback-bug" aria-labelledby="feedback-bug-title">
+          <div class="panel-heading">
+            <div>
+              <div class="eyebrow">SUPPORT / BUG REPORT</div>
+              <h2 id="feedback-bug-title">不具合情報</h2>
+              <p class="session-description">録画・コメント取得・自動更新など、正常に動かない機能はこちら。</p>
             </div>
-            <label class="feedback-report-label" for="feedback-details">報告するメッセージ（500文字まで）</label>
-            <textarea id="feedback-details" rows="3" maxlength="500" placeholder="例：コメント付き動画の生成が50%で停止する／録画ライブラリをもっと見やすくしてほしい"></textarea>
+            <span class="feedback-category feedback-category-bug" aria-hidden="true">!</span>
+          </div>
+          <div class="feedback-report-card">
+            <h3>発生した不具合を報告</h3>
+            <p class="feedback-report-note">発生した機能、操作手順、期待した動作、実際の動作、エラーメッセージを記入してください。</p>
+            <label class="feedback-report-label" for="feedback-bug-details">報告内容（500文字まで）</label>
+            <textarea class="feedback-details" id="feedback-bug-details" rows="7" maxlength="500" aria-describedby="feedback-bug-count feedback-bug-note" placeholder="例：コメント付き動画の生成が50%で停止する。\n再現手順：動画とコメントを選択して生成開始。"></textarea>
+            <div class="feedback-report-meta">
+              <span class="feedback-report-note">対象版・バージョンは自動入力されます。</span>
+              <span id="feedback-bug-count" class="feedback-report-count">0 / 500文字</span>
+            </div>
             <div class="feedback-report-actions">
-              <button class="button button-outline button-small" id="feedback-bug-button" type="button">不具合情報</button>
-              <button class="button button-secondary button-small" id="feedback-feature-button" type="button">機能要望</button>
+              <button class="button button-primary" id="feedback-bug-button" type="button" disabled>GitHubで不具合を報告</button>
             </div>
-            <p class="feedback-report-note" id="feedback-report-note" role="status">GitHubで内容を確認して送信してください。送信後にAIが自動分類・受付します。user_session・Cookie・個人情報は書かないでください。</p>
-          </section>
+            <p class="feedback-report-note" id="feedback-bug-note" role="status">GitHubで内容を確認して送信してください。送信後は既存のAI分類・タグ付け処理の対象になります。user_session・Cookie・個人情報は書かないでください。</p>
+          </div>
+        </section>
+
+        <section class="panel feedback-page page-hidden" id="feedback-feature-panel" data-page="feedback-feature" aria-labelledby="feedback-feature-title">
+          <div class="panel-heading">
+            <div>
+              <div class="eyebrow">SUPPORT / FEATURE REQUEST</div>
+              <h2 id="feedback-feature-title">機能要望</h2>
+              <p class="session-description">新機能・表示改善・使い勝手の提案はこちら。</p>
+            </div>
+            <span class="feedback-category feedback-category-feature" aria-hidden="true">＋</span>
+          </div>
+          <div class="feedback-report-card">
+            <h3>追加・改善してほしい機能を提案</h3>
+            <p class="feedback-report-note">改善したい機能、希望する動作、利用場面や理由を記入してください。</p>
+            <label class="feedback-report-label" for="feedback-feature-details">報告内容（500文字まで）</label>
+            <textarea class="feedback-details" id="feedback-feature-details" rows="7" maxlength="500" aria-describedby="feedback-feature-count feedback-feature-note" placeholder="例：録画ライブラリを配信者別に検索したい。\n理由：保存した番組を探しやすくするため。"></textarea>
+            <div class="feedback-report-meta">
+              <span class="feedback-report-note">対象版・バージョンは自動入力されます。</span>
+              <span id="feedback-feature-count" class="feedback-report-count">0 / 500文字</span>
+            </div>
+            <div class="feedback-report-actions">
+              <button class="button button-primary" id="feedback-feature-button" type="button" disabled>GitHubで機能を要望</button>
+            </div>
+            <p class="feedback-report-note" id="feedback-feature-note" role="status">GitHubで内容を確認して送信してください。送信後は既存のAI分類・タグ付け処理の対象になります。user_session・Cookie・個人情報は書かないでください。</p>
+          </div>
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v1.2.1-beta.153</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.2.1-beta.154</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>

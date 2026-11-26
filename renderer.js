@@ -2192,7 +2192,7 @@ function configureRankingRefresh(active) {
        isRankingRefreshDue(rankingLastRequestAt))void refreshIndependentRanking();
   },5000);
 }
-const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates", "feedback-bug", "feedback-feature"]);
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -3945,24 +3945,48 @@ byId("update-channel-switch-button").addEventListener("click", switchUpdateChann
 byId("edition-release-refresh").addEventListener("click", () => void refreshEditionReleaseHistory(true));
 byId("edition-beta-download").addEventListener("click", () => void openPublicEditionInstaller("beta"));
 byId("edition-stable-download").addEventListener("click", () => void openPublicEditionInstaller("stable"));
+function feedbackForm(kind) {
+  if(kind!=="bug"&&kind!=="feature")return null;
+  return {
+    details:byId("feedback-"+kind+"-details"),
+    count:byId("feedback-"+kind+"-count"),
+    button:byId("feedback-"+kind+"-button"),
+    note:byId("feedback-"+kind+"-note")
+  };
+}
+function updateFeedbackForm(kind) {
+  const form=feedbackForm(kind);
+  if(!form)return;
+  const length=String(form.details.value||"").length;
+  form.count.textContent=length+" / 500文字";
+  form.button.disabled=form.button.dataset.busy==="true"||!String(form.details.value||"").trim()||length>500;
+}
 async function openFeedbackReport(kind) {
-  const details = String(byId("feedback-details").value || "").trim();
-  if (!details) {
-    showToast("不具合・機能要望の内容を入力してください。", true);
+  const form=feedbackForm(kind);
+  if(!form||form.button.dataset.busy==="true")return;
+  const details=String(form.details.value||"").trim();
+  if(!details||details.length>500){
+    showToast("報告内容を1〜500文字で入力してください。",true);
     return;
   }
+  form.button.dataset.busy="true";updateFeedbackForm(kind);
   try {
     await api.openFeedback(kind, details);
-    byId("feedback-report-note").textContent =
-      "GitHubの報告フォームを開きました。送信はGitHubで確認して実行してください。";
+    form.note.textContent="GitHubの報告フォームを開きました。送信はGitHubで確認して実行してください。";
   } catch (error) {
-    const message = "報告フォームを開けませんでした：" + (error.message || error);
-    byId("feedback-report-note").textContent = message;
-    showToast(message, true);
+    const message="報告フォームを開けませんでした："+(error.message||error);
+    form.note.textContent=message;showToast(message,true);
+  } finally {
+    delete form.button.dataset.busy;updateFeedbackForm(kind);
   }
 }
-byId("feedback-bug-button").addEventListener("click", () => void openFeedbackReport("bug"));
-byId("feedback-feature-button").addEventListener("click", () => void openFeedbackReport("feature"));
+for(const kind of ["bug","feature"]){
+  const form=feedbackForm(kind);
+  if(!form?.details||!form.count||!form.button||!form.note)continue;
+  form.details.addEventListener("input",()=>updateFeedbackForm(kind));
+  form.button.addEventListener("click",()=>void openFeedbackReport(kind));
+  updateFeedbackForm(kind);
+}
 
 byId("open-github-releases-button").addEventListener("click", async () => {
   try {
