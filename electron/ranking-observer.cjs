@@ -1,5 +1,6 @@
 "use strict";
 const {createRankingActivityTracker,rankingImageUrl}=require("./live-ranking.cjs");
+const {observeProviderStatistics}=require("./ranking-statistics.cjs");
 
 // Public, read-only comment observation; no recorder/writer or account cookies.
 // Keep the beta limit small, start at most one new connection each refresh,
@@ -9,7 +10,7 @@ function createRankingObserver({createProvider,now=Date.now,limit=3,leaseMs=4500
   let lease=null;
   const close=entry=>{
     if(!entry||entry.closed)return;
-    entry.closed=true;entry.tracker.reset("");
+    entry.closed=true;entry.tracker.reset("");entry.detachStats?.();
     try{entry.provider?.disconnect();}catch{}
     // A pending connect may still finish. Keep its slot occupied until it settles.
     if(!entry.pending)entries.delete(entry.id);
@@ -28,6 +29,7 @@ function createRankingObserver({createProvider,now=Date.now,limit=3,leaseMs=4500
       entry.provider=provider;
       provider.on("error",()=>{if(!entry.closed)fail(entry);});
       if(entry.closed){provider.disconnect();return;}
+      entry.detachStats=observeProviderStatistics(provider,stats=>{if(!entry.closed)entry.tracker.statistics(stats);});
       provider.on("stateChange",state=>{
         if(entry.closed)return;
         if(state==="connected")entry.tracker.state(entry.id,true);
