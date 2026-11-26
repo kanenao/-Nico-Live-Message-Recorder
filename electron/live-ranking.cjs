@@ -5,6 +5,7 @@ const SOURCES = Object.freeze([
   {id:"nicoran",name:"nico-ran.stream",url:"https://nico-ran.stream/"},
   {id:"official",name:"ニコ生公式ランキング",url:"https://live.nicovideo.jp/ranking"}
 ].map(Object.freeze));
+const {readContributionStatistics}=require("./ranking-statistics.cjs");
 const LIMIT=200;
 const MAX_BYTES=6*1024*1024;
 const REFRESH_MS=10000;
@@ -93,8 +94,7 @@ function jsonRow(raw) {
     thumbnailUrl:programThumbnailCandidates(p,raw)[0]||"",thumbnailCandidates:programThumbnailCandidates(p,raw),
     visitors:count(statistics.watchCount??statistics.visitorCount??p.watchCount??p.visitorCount??p.viewCounter),
     comments:count(statistics.commentCount??p.commentCount??p.commentCounter),
-    adPoints:count(statistics.totalNicoadPoints??statistics.totalAdPoints??p.totalNicoadPoints??p.totalAdPoints),
-    giftPoints:count(statistics.totalGiftPoints??p.totalGiftPoints)};
+    ...readContributionStatistics({...raw,...p,statistics})};
 }
 function extractJsonRows(value) {
   const rows=[];let visited=0;
@@ -227,7 +227,7 @@ function parseOfficialRankingDetails(html,id) {
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
         iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.uri150x150,supplier.icons?.uri50x50,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
-        thumbnailUrl:programThumbnailCandidates(p,declared===id?data:{})[0]||"",thumbnailCandidates:programThumbnailCandidates(p,declared===id?data:{})};
+        thumbnailUrl:programThumbnailCandidates(p,declared===id?data:{})[0]||"",thumbnailCandidates:programThumbnailCandidates(p,declared===id?data:{}),...readContributionStatistics(p)};
     }catch{}
   }
   return null;
@@ -337,7 +337,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       // Prefer verified official identity; do not retain a mismatched name or icon.
       return {...row,title:d.title||row.title,name:d.name||(conflict?"":row.name),
         broadcasterId:d.broadcasterId,startedAt:d.startedAt||row.startedAt,
-        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl,thumbnailCandidates:[...new Set([...(d.thumbnailCandidates||[]),d.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8)};
+        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),adPoints:row.adPoints??d.adPoints??null,giftPoints:row.giftPoints??d.giftPoints??null,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl,thumbnailCandidates:[...new Set([...(d.thumbnailCandidates||[]),d.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8)};
     });
   };
 }
@@ -425,9 +425,9 @@ function selectRankingVideoFrame(liveId,session,now=Date.now()){
 function createRankingActivityTracker(now=Date.now){
   let liveId="",connected=false,startedAt=0,lastAt=0,uncertainAt=null;
   const users=new Map(),gifts=new Map();
-  let giftPoints=0,giftUncertainAt=null;
+  let giftPoints=0,giftUncertainAt=null,adTotal=null,giftTotal=null;
   const WINDOW=300000,LIMIT_USERS=50000;
-  function reset(id){liveId=id||"";connected=false;startedAt=0;lastAt=0;uncertainAt=null;users.clear();gifts.clear();giftPoints=0;giftUncertainAt=null;}
+  function reset(id){liveId=id||"";connected=false;startedAt=0;lastAt=0;uncertainAt=null;users.clear();gifts.clear();giftPoints=0;giftUncertainAt=null;adTotal=null;giftTotal=null;}
   function state(id,active){
     if(id!==liveId||!active)reset(id);
     if(active&&!connected){startedAt=now();lastAt=startedAt;connected=true;}
@@ -460,12 +460,19 @@ function createRankingActivityTracker(now=Date.now){
     users.delete(id);
     users.set(id,at);
   }
+  function statistics(data){
+    if(!connected)return;
+    const at=now(),value=readContributionStatistics(data);
+    if(value.adPoints!==null)adTotal={value:value.adPoints,at};
+    if(value.giftPoints!==null)giftTotal={value:value.giftPoints,at};
+  }
   function snapshot(id){
     if(!connected||id!==liveId)return null;
     const at=now();if(!prune(at))return null;
-    return {count:users.size,complete:at-startedAt>=WINDOW&&(uncertainAt===null||at-uncertainAt>=WINDOW),giftObservedPoints:giftPoints,giftObservedCount:gifts.size,giftObservationComplete:at-startedAt>=WINDOW&&(giftUncertainAt===null||at-giftUncertainAt>=WINDOW)};
+    const recent=entry=>entry&&at>=entry.at&&at-entry.at<=120000?entry.value:null;
+    return {adPoints:recent(adTotal),giftPoints:recent(giftTotal),count:users.size,complete:at-startedAt>=WINDOW&&(uncertainAt===null||at-uncertainAt>=WINDOW),giftObservedPoints:giftPoints,giftObservedCount:gifts.size,giftObservationComplete:at-startedAt>=WINDOW&&(giftUncertainAt===null||at-giftUncertainAt>=WINDOW)};
   }
-  return {reset,state,observe,snapshot};
+  return {reset,state,observe,statistics,snapshot};
 }
 function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSourceIds=null,scoreOptions={}) {
   const byId=new Map();
@@ -512,6 +519,8 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
     const activity=scoreOptions.activity?.(row.liveId);
     row.activePeople=activity?.count??null;
     row.activePeopleComplete=activity?.complete===true;
+    row.adPoints=activity?.adPoints??row.adPoints??null;
+    row.giftPoints=activity?.giftPoints??row.giftPoints??null;
     row.previousRank=old&&elapsed>0&&elapsed<=3?old.rank??null:null;
     row.pointDelta=old&&elapsed>0&&elapsed<=3&&Number.isFinite(old.points)&&
       Array.isArray(old.commentRateSourceIds)&&Array.isArray(old.visitorRateSourceIds)&&

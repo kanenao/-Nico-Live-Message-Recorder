@@ -1846,6 +1846,9 @@ async function connectPreparedCommentSession(liveId) {
     });
     provider = activeProvider;
 
+    require("./ranking-statistics.cjs").observeProviderStatistics(activeProvider,stats=>{
+      if(epoch===commentSessionEpoch)rankingActivity.statistics(stats);
+    });
     activeProvider.on("comment", (data) => {
       if (epoch === commentSessionEpoch) appendEvent("comment", data);
     });
@@ -2990,7 +2993,7 @@ ipcMain.handle("ranking:list", async (_event,options={}) => {
     const observed=observing?rankingObserver.snapshot(row.liveId):null;
     const measured=activity??observed?.activity;
     const frame=selectRankingVideoFrame(row.liveId,frameSession);
-    return {...row,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),giftObservedPoints:measured?.giftObservedPoints??null,giftObservedCount:measured?.giftObservedCount??null,giftObservationComplete:measured?.giftObservationComplete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
+    return {...row,adPoints:measured?.adPoints??row.adPoints??null,giftPoints:measured?.giftPoints??row.giftPoints??null,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),giftObservedPoints:measured?.giftObservedPoints??null,giftObservedCount:measured?.giftObservedCount??null,giftObservationComplete:measured?.giftObservationComplete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
   })};
 });
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>

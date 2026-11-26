@@ -2127,12 +2127,13 @@ function renderIndependentRanking() {
       ?"同一取得元のコメント増加数 / 分（比較可能な取得元 "+sampleCount+" 件）"
       :"比較可能なコメント数が不足、または取得間隔が対象外です。";
     const activityLabel=item.activityStatus==="connecting"?"接続中…":item.activityStatus==="unavailable"?"接続不可":item.activityStatus==="outside"?"観測対象外":"未取得";
-    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+(item.activePeopleComplete?"人":"人以上"):activityLabel);
-    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位3番組の公開コメント観測。5分未満は観測下限。";
+    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+"人":activityLabel);
+    activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位3番組の公開コメント観測。5分未満は観測開始後の人数であり、5分全体の人数ではありません。";
+    if(Number.isFinite(item.activePeople)&&!item.activePeopleComplete){const note=document.createElement("small");note.className="ranking-delta";note.textContent="観測中";activeCell.appendChild(note);}
     const adCell=rankingCell(tr,Number.isFinite(item.adPoints)?rankingNumber(item.adPoints)+"pt":"未取得");
-    adCell.title="取得元に明示された累計広告ポイントのみ。未取得を0とは扱いません。";
+    adCell.title="視聴接続の統計通知または取得元に明示された累計広告ポイント。未取得を0とは扱いません。";
     const giftCell=rankingCell(tr,Number.isFinite(item.giftPoints)?rankingNumber(item.giftPoints)+"pt":"未取得");
-    giftCell.title="取得元の累計ギフトポイント。受信イベントによる観測値とは別です。";
+    giftCell.title="視聴接続の統計通知または取得元の累計ギフトポイント。受信イベントによる観測値とは別です。";
     if(Number.isFinite(item.giftObservedPoints)){
       const observed=document.createElement("small");observed.className="ranking-delta";
       observed.textContent="観測5分: "+rankingNumber(item.giftObservedPoints)+"pt"+(item.giftObservationComplete?"":"以上");
