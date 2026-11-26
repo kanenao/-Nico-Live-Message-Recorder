@@ -331,25 +331,28 @@ function momentumPoints(ranks,commentRate,visitorRate){
   // Square roots limit the impact of sudden spikes and very large channels.
   return Math.round(reference+50*Math.sqrt(Math.max(0,commentRate??0))+20*Math.sqrt(Math.max(0,visitorRate??0)));
 }
-// Adaptive statistical score, not a trained AI or official ranking.
-const SCORE_METRICS=Object.freeze({points:0.35,visitors:0.20,comments:0.20,commentRate:0.25});
-function applyCompositeScores(rows){
+const {BASE,eligibleMetrics}=require("./ranking-ai-score.cjs");
+function applyCompositeScores(rows,advisor){
+  const keys=eligibleMetrics(rows);
+  const policy=advisor?.get(rows,keys)??{weights:Object.fromEntries(keys.map(k=>[k,BASE[k]])),method:"statistical"};
+  const total=keys.reduce((sum,k)=>sum+policy.weights[k],0);
+  const weights=Object.fromEntries(keys.map(k=>[k,policy.weights[k]/total]));
   const scales={};
-  for(const key of Object.keys(SCORE_METRICS)){
+  for(const key of keys){
     const values=rows.map(r=>r[key]).filter(v=>Number.isFinite(v)&&v>=0).sort((a,b)=>a-b);
     scales[key]=values.length?Math.max(1,values[Math.ceil((values.length-1)*0.9)]):1;
   }
   return rows.map(row=>{
     let sum=0,coverage=0;
     const scoreParts={};
-    for(const [key,weight] of Object.entries(SCORE_METRICS)){
-      const value=row[key];
+    for(const key of keys){
+      const weight=weights[key],value=row[key];
       if(!Number.isFinite(value)||value<0){scoreParts[key]=null;continue;}
       const normalized=Math.min(1,Math.log1p(value)/Math.log1p(scales[key]));
       scoreParts[key]=Math.round(normalized*weight*1000);
       sum+=normalized*weight;coverage+=weight;
     }
-    return {...row,compositeScore:Math.round(sum*1000),scoreCoverage:Math.round(coverage*100),scoreParts};
+    return {...row,compositeScore:Math.round(sum*1000),scoreCoverage:Math.round(coverage*100),scoreParts,scoreWeights:weights,scoreMethod:policy.method,scorePolicy:JSON.stringify(weights)};
   });
 }
 // Only reuse frames from the same running Streamlink article session.
@@ -414,7 +417,7 @@ function createRankingActivityTracker(now=Date.now){
   }
   return {reset,state,observe,snapshot};
 }
-function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSourceIds=null) {
+function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSourceIds=null,scoreOptions={}) {
   const byId=new Map();
   for(const source of results.filter(s=>s.ok)){
     unique(source.rows).forEach((row,i)=>{
@@ -455,6 +458,9 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
     row.visitorRateSourceIds=visitors.sourceIds;
     row.visitorDelta=visitors.delta;
     row.points=momentumPoints(ranks,row.commentRate,row.visitorRate);
+    const activity=scoreOptions.activity?.(row.liveId);
+    row.activePeople=activity?.count??null;
+    row.activePeopleComplete=activity?.complete===true;
     row.previousRank=old&&elapsed>0&&elapsed<=3?old.rank??null:null;
     row.pointDelta=old&&elapsed>0&&elapsed<=3&&Number.isFinite(old.points)&&
       Array.isArray(old.commentRateSourceIds)&&Array.isArray(old.visitorRateSourceIds)&&
@@ -464,15 +470,16 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
     row.rankNew=Boolean(!old&&comparable&&previous.length&&previous.length<LIMIT&&elapsed>0&&elapsed<=3);
     return row;
   });
-  const rows=applyCompositeScores(candidates).sort((a,b)=>b.compositeScore-a.compositeScore||b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
+  const rows=applyCompositeScores(candidates,scoreOptions.advisor).sort((a,b)=>b.compositeScore-a.compositeScore||b.points-a.points||a.liveId.localeCompare(b.liveId)).slice(0,LIMIT);
   return rows.map((row,i)=>{
     const rank=i+1;
     const old=prior.get(row.liveId);
     // Do not join across changed coverage or long interruptions. A missing
     // program is not interpreted as last place. Keep at most one hour / 40 samples.
-    const history=old&&elapsed>0&&elapsed<=3&&Array.isArray(old.rankHistory)
+    const samePolicy=old?.scorePolicy===row.scorePolicy;
+     const history=old&&samePolicy&&elapsed>0&&elapsed<=3&&Array.isArray(old.rankHistory)
       ?old.rankHistory.filter(sample=>Number.isFinite(sample.at)&&sample.at>=now-3600000&&sample.at<now).slice(-39):[];
-    return {...row,rank,rankChange:row.previousRank==null?null:row.previousRank-rank,
+    return {...row,rank,previousRank:samePolicy?row.previousRank:null,rankChange:!samePolicy||row.previousRank==null?null:row.previousRank-rank,
       rankHistory:[...history,{at:now,rank}]};
   });
 }
@@ -491,7 +498,7 @@ function createRankingService(options={}) {
       const results=await Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl)));
       const checkedAt=now();
       const healthy=results.filter(s=>s.ok);
-      let rows=buildRanking(results,previous,checkedAt,previousAt,previousSourceIds);
+      let rows=buildRanking(results,previous,checkedAt,previousAt,previousSourceIds,{advisor:options.advisor,activity:options.activity});
       if(healthy.length){
         if(enrich){
           // Keep the more expensive watch/profile lookup cadence unchanged.
