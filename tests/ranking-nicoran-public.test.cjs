@@ -23,3 +23,13 @@ test("watch-only event cards and duplicated labels do not fabricate metrics",asy
  const rows=parseNicoRanCards(card("lv123456","lv123456","来場者 1 広告 3 pt 広告 9 pt"));
  assert.equal(rows[0].adPoints,null);
 });
+
+test("structured public source rows retain valid visitors and comments without card markup",async()=>{
+ const source={id:"nicoran",name:"nico-ran.stream",url:"https://nico-ran.stream/"};
+ const data={programs:[{id:"lv123456",title:"番組",status:"ON_AIR",statistics:{watchCount:12,commentCount:0}}]};
+ for(const payload of [JSON.stringify(data),'<script type="application/json">'+JSON.stringify(data)+'</script>']){
+  const result=await fetchSource(source,async()=>new Response(payload));
+  assert.equal(result.ok,true);assert.equal(result.rows.length,1);
+  assert.equal(result.rows[0].visitors,12);assert.equal(result.rows[0].comments,0);
+ }
+});
