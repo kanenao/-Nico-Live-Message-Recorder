@@ -64,7 +64,7 @@ test("program-ID fallback tries verified user broadcast history if image candida
  assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
 });
 
-test("hover preview refreshes the official image after two seconds without expanding allowed IDs",async()=>{
+test("hover preview reuses only a successful source and refreshes after two seconds",async()=>{
  let now=100000,calls=0;
  const proxy=createRankingImageProxy({now:()=>now,fetchImpl:async(url)=>{
    calls++;
@@ -76,8 +76,10 @@ test("hover preview refreshes the official image after two seconds without expan
  }});
  proxy.update([{liveId:"lv123456"}]);
  assert.equal(await proxy.get("lv999999","preview"),null);
- await proxy.get("lv123456","preview");assert.equal(calls,2);
- now+=1000;await proxy.get("lv123456","preview");assert.equal(calls,2);
+ assert.equal(await proxy.get("lv123456","preview"),null);assert.equal(calls,0);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);assert.equal(calls,2);
+ await proxy.get("lv123456","preview");assert.equal(calls,3);
+ now+=1000;await proxy.get("lv123456","preview");assert.equal(calls,3);
  now+=1000;await proxy.get("lv123456","preview");assert.equal(calls,4);
  proxy.update([]);assert.equal(await proxy.get("lv123456","preview"),null);
 });
@@ -108,12 +110,13 @@ test("all one hundred ranked programs receive a bounded image attempt and retain
  const proxy=createRankingImageProxy({now:()=>now,fetchImpl:async url=>{
    calls++;active++;maxActive=Math.max(maxActive,active);
    await new Promise(r=>setImmediate(r));active--;
+   if(url.includes("/watch/"))return new Response(null,{status:404});
    return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
  }});
  const rows=Array.from({length:100},(_,i)=>({liveId:"lv"+(123456+i),thumbnailUrl:"https://live.simg.jp/live/"+i+".jpg"}));
  proxy.update(rows);
  for(let i=0;i<25;i++){await proxy.prefetch();now+=10000;}
- assert.equal(calls,100);assert.ok(maxActive<=4);
+ assert.equal(calls,200);assert.ok(maxActive<=4);
  assert.ok(rows.every(r=>proxy.status(r.liveId).revision>0));
  assert.match(await proxy.get(rows[99].liveId,"poster"),/^data:image\/jpeg;base64,/);
  proxy.update(rows.slice(0,99));assert.equal(await proxy.get(rows[99].liveId,"poster"),null);
