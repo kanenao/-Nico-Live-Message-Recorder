@@ -1965,19 +1965,26 @@ async function registerRankingMonitor(item) {
     renderIndependentRanking();
   }
 }
-function appendRankingImage(parent,url,className,label,alternatives=[]) {
+function appendRankingImage(parent,url,className,label,alternatives=[],liveId="") {
   if(!url&&!alternatives.length)return;
   try{
     const candidates=[...new Set([url,...alternatives])].filter(value=>{
-      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&((u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp"))||(u.origin==="https://www.chikuwachan.com"&&u.pathname.startsWith("/live/")&&/\.(?:jpe?g|png|webp)$/i.test(u.pathname)&&!/(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(u.pathname)));}catch{return false;}
+      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&((u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp"))||(u.origin==="https://www.chikuwachan.com"&&u.pathname.startsWith("/live/")&&/\.(?:jpe?g|png|webp)$/i.test(u.pathname)&&!/(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(u.pathname)));}catch{return false;}
     }).slice(0,8);
     if(!candidates.length)return;
     const img=document.createElement("img");let index=0;
     img.className=className;img.alt=label;img.loading="lazy";img.referrerPolicy="no-referrer";
+    let proxied=false;
+    const advance=()=>{proxied=false;index++;if(index<candidates.length){img.src=candidates[index];return;}parent.dataset.imageFailedAt=String(Date.now());img.remove();};
     img.addEventListener("error",()=>{
-      index++;
-      if(index<candidates.length){img.src=candidates[index];return;}
-      parent.dataset.imageFailedAt=String(Date.now());img.remove();
+      if(!proxied&&liveId&&typeof api!=="undefined"&&typeof api.getRankingThumbnail==="function"){
+        proxied=true;
+        Promise.resolve().then(()=>api.getRankingThumbnail(liveId,candidates[index])).then(data=>{
+          if(typeof data==="string"&&data.length<=1400000&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data)){img.src=data;return;}
+          advance();
+        }).catch(advance);return;
+      }
+      advance();
     });
     img.addEventListener("load",()=>{delete parent.dataset.imageFailedAt;});
     img.src=candidates[0];parent.appendChild(img);
@@ -2091,7 +2098,7 @@ function renderIndependentRanking() {
     picture=document.createElement("div");picture.className="ranking-media";picture.dataset.mediaKey=mediaKey;
     const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
     picture.appendChild(placeholder);
-    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル",item.thumbnailCandidates||[]);
+    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル",item.thumbnailCandidates||[],item.liveId);
     const frameAt=Date.parse(item.videoFrameAt);
     if(typeof item.videoFrame==="string"&&item.videoFrame.length<=420023&&
         /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(item.videoFrame)&&

@@ -45,7 +45,7 @@ function rankingImageUrl(value) {
   try{
     const u=new URL(value.startsWith("//")?"https:"+value:value);
     if(u.protocol!=="https:"||u.username||u.password||u.port||
-       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")))return "";
+       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp")))return "";
     return u.href;
   }catch{return "";}
 }
@@ -90,7 +90,7 @@ function programThumbnailCandidates(p={},raw={}){
   const values=[];
   for(const obj of [p,raw]){
     if(!obj||typeof obj!=="object")continue;
-    for(const item of [obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
+    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
       if(typeof item==="string"){values.push(item);continue;}
       if(!item||typeof item!=="object")continue;
       for(const k of ["large","huge","middle","small","normal","url","uri","uri640x360","uri320x180","uri160x90"]){
@@ -595,10 +595,38 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
       rankHistory:[...history,{at:now,rank}]};
   });
 }
+function parseNicoFeedImages(xml){
+  const images=new Map();
+  for(const [item] of String(xml||"").matchAll(/<item\b[^>]*>[\s\S]*?<\/item>/gi)){
+    const link=item.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i)?.[1]?.trim().replace(/^<!\[CDATA\[|\]\]>$/g,"").replace(/&amp;/g,"&");
+    const id=liveId(link);
+    if(!id)continue;
+    for(const tag of item.matchAll(/<media:thumbnail\b[^>]*>/gi)){
+      const url=rankingImageUrl(htmlAttribute(tag[0],"url"));
+      if(url&&!/(?:usericon|user-icon|avatar|profile|logo|\/icons?\/)/i.test(new URL(url).pathname)){images.set(id,url);break;}
+    }
+    if(images.size>=400)break;
+  }
+  return images;
+}
+async function fetchNicoFeedImages(fetchImpl){
+  try{
+    const response=await fetchImpl("https://live.nicovideo.jp/recent/rss?tab=live",{redirect:"error",signal:AbortSignal.timeout(4000),headers:{accept:"application/rss+xml,application/xml,text/xml"}});
+    return response?.ok?parseNicoFeedImages(await readBounded(response)):new Map();
+  }catch{return new Map();}
+}
+function mergeNicoFeedImages(rows,images){
+  return rows.map(row=>{
+    const image=images.get(row.liveId);
+    if(!image)return row;
+    return {...row,thumbnailUrl:row.thumbnailUrl||image,thumbnailCandidates:[...new Set([row.thumbnailUrl,...(row.thumbnailCandidates||[]),image].filter(Boolean))].slice(0,8)};
+  });
+}
 function createRankingService(options={}) {
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   const now=options.now||Date.now;
   const enrich=options.enrichDetails===true?createRankingDetailEnricher(fetchImpl,now):null;
+  let feedImages=new Map(),feedAt=null;
   let pending=null,detailPending=null,lastAttempt=0,lastDetailAt=null,snapshot=null,previousAt=0,previous=[],previousSourceIds=[];
   return async function getRanking(){
     if(pending)return pending;
@@ -607,11 +635,14 @@ function createRankingService(options={}) {
     if(snapshot&&elapsed>=0&&elapsed<REFRESH_MS)return snapshot;
     lastAttempt=at;
     pending=(async()=>{
-      const results=await Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl)));
+      const useFeed=options.feedImages===true&&(feedAt===null||at<feedAt||at-feedAt>=30000);
+      const [results,feed]=await Promise.all([Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl))),useFeed?fetchNicoFeedImages(fetchImpl):Promise.resolve(null)]);
+      if(feed){feedImages=feed;feedAt=at;}
       const checkedAt=now();
       const healthy=results.filter(s=>s.ok);
       let rows=buildRanking(results,previous,checkedAt,previousAt,previousSourceIds,{advisor:options.advisor,activity:options.activity});
       if(healthy.length){
+        if(options.feedImages===true)rows=mergeNicoFeedImages(rows,feedImages);
         if(enrich){
           // Desktop: one bounded batch per refresh, without blocking rank delivery.
           // Preserve the synchronous mode for diagnostics and existing callers.
@@ -654,4 +685,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,rankingListingImage,officialOgImage};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages};

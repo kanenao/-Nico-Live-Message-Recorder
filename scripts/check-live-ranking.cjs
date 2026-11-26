@@ -2,7 +2,7 @@
 // Diagnostic only. No credentials, titles, or full response bodies in logs.
 const {createRankingService,createRankingDetailEnricher,rankingListingImage}=require("../electron/live-ranking.cjs");
 (async()=>{
-  const snapshot=await createRankingService()();
+  const snapshot=await createRankingService({feedImages:true})();
   const enrich=createRankingDetailEnricher(globalThis.fetch);
   let rows=snapshot.rows;
   const stages=[rows.filter(x=>x.thumbnailUrl).length];
@@ -16,7 +16,7 @@ const {createRankingService,createRankingDetailEnricher,rankingListingImage}=req
     const url=rankingListingImage(candidate,"https://www.chikuwachan.com/live/NCU/");
     if(!url){checks.push("rejected");continue;}
     try{
-      const response=await fetch(url,{redirect:"error",signal:AbortSignal.timeout(4000),headers:{accept:"image/*",range:"bytes=0-1023"}});
+      const response=await fetch(url,{redirect:"error",signal:AbortSignal.timeout(4000),headers:{accept:"image/*",Referer:"https://live.nicovideo.jp/",range:"bytes=0-1023"}});
       const type=response.headers.get("content-type")||"";
       checks.push(response.ok&&/^image\/(?:jpeg|png|webp|gif)(?:;|$)/i.test(type)?"image-response":"HTTP "+response.status+" / "+type.split(";")[0].slice(0,60));
       await response.body?.cancel();
