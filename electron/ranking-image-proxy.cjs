@@ -25,7 +25,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   }catch{return null;}
 }
 function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
-  let allowed=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
+  let allowed=new Map(),knownUsers=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
   function storePoster(id,data){
@@ -37,6 +37,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
   }
   function update(rows){
     allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(safeProgramImage).filter(Boolean))]));
+    knownUsers=new Map(rows.filter(r=>/^[1-9]\d{0,14}$/.test(String(r.broadcasterId||""))).map(r=>[r.liveId,String(r.broadcasterId)]));
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
@@ -71,11 +72,12 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       let data=null;
       if(!preview){data=await attempt([...allowed.get(id)||[]].slice(0,2));if(data)return data;}
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
-      if(!details||!allowed.has(id))return null;
-      data=await attempt([...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
-      if(!data&&details.broadcasterId&&allowed.has(id)){
-        const history=await fetchUserRankingThumbnails(details.broadcasterId,id,fetchImpl);
-        data=await attempt(history.slice(0,1));
+      if(!allowed.has(id))return null;
+      data=await attempt([...new Set([details?.thumbnailUrl,...(details?.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
+      const userId=details?.broadcasterId||((!details?.providerType||details.providerType==="user")?knownUsers.get(id):"");
+      if(!data&&userId&&allowed.has(id)){
+        const history=await fetchUserRankingThumbnails(userId,id,fetchImpl);
+        data=await attempt(history.slice(0,2));
       }
       return data;
     };

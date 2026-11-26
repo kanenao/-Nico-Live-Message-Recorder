@@ -2952,7 +2952,7 @@ function stopMonitor() {
   return getMonitorState();
 }
 
-const { createRankingService, resolveRankingMonitorTarget, selectRankingVideoFrame } = require("./live-ranking.cjs");
+const { createRankingService, resolveRankingMonitorTarget, resolveRankingRecordingTarget, fetchOfficialRankingDetails, selectRankingVideoFrame } = require("./live-ranking.cjs");
 const rankingAiAdvisor=require('./ranking-ai-score.cjs').createAiWeightAdvisor();
 const getIndependentLiveRanking = createRankingService({ enrichDetails: true,backgroundDetails:true,feedImages:true,advisor:rankingAiAdvisor,activity:liveId=>{
   const active=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(liveId):null;
@@ -2994,6 +2994,7 @@ function resolvePublicRankingUser(liveId){
   }));
 }
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) => resolvePublicRankingUser(liveId));
+ipcMain.handle("ranking:verify-recording",(_event,liveId)=>resolveRankingRecordingTarget(liveId,id=>fetchOfficialRankingDetails(id,globalThis.fetch)));
 ipcMain.handle("ranking:open-user-profile", async (_event, liveId) => {
   const {userId}=await resolvePublicRankingUser(liveId);
   const profileUrl=nicoUserPageUrl(userId);

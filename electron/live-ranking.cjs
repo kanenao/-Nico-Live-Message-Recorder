@@ -44,7 +44,7 @@ function time(v) {
 function rankingImageUrl(value) {
   if(typeof value!=="string"||value.length>2048)return "";
   try{
-    const u=new URL(value.startsWith("//")?"https:"+value:value);
+    const u=new URL(value.startsWith("//")?"https:"+value:value.startsWith("/")?"https://live.nicovideo.jp"+value:value);
     if(u.protocol!=="https:"||u.username||u.password||u.port||
        !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp")||((u.hostname==="nicovideo.jp"||u.hostname.endsWith(".nicovideo.jp"))&&/(?:^|\/)(?:liveimg|live[-_]thumbnails?|video_thumbnails|thumbnails?)(?:\/|$)/i.test(u.pathname))))return "";
     return u.href;
@@ -242,7 +242,7 @@ function officialSupplierUserId(supplier) {
   // Do not treat a channel or an official program as an individual user.
   if(type&&type!=="user")return "";
   const raw=String(supplier.programProviderId??supplier.id??"").trim();
-  const numeric=/^\d{5,15}$/.test(raw)?raw:"";
+  const numeric=/^[1-9]\d{0,14}$/.test(raw)?raw:"";
   const urls=[supplier.url,supplier.pageUrl,supplier.userPageUrl,supplier.profileUrl];
   const ids=new Set();
   for(const value of urls){
@@ -251,7 +251,7 @@ function officialSupplierUserId(supplier) {
       const u=new URL(value);
       if(u.protocol!=="https:"||u.username||u.password||u.port||
          !["www.nicovideo.jp","nicovideo.jp"].includes(u.hostname))continue;
-      const match=/^\/user\/(\d{5,15})\/?$/.exec(u.pathname);
+      const match=/^\/user\/([1-9]\d{0,14})\/?$/.exec(u.pathname);
       if(match)ids.add(match[1]);
     }catch{}
   }
@@ -266,7 +266,7 @@ function parseOfficialRankingDetails(html,id) {
     const raw=tag[0].match(/\bdata-props\s*=\s*(["'])([\s\S]*?)\1/i)?.[2];
     if(!raw)continue;
     try{
-      const data=JSON.parse(raw.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
+      const data=JSON.parse(raw.replace(/&quot;|&#34;|&#x22;/gi,'"').replace(/&#39;|&#x27;|&apos;/gi,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
       const p=data?.program;
       if(!p||typeof p!=="object"||!clean(p.title))continue;
       const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id);
@@ -277,6 +277,8 @@ function parseOfficialRankingDetails(html,id) {
       const supplier={...supplierRaw,programProviderType:supplierRaw.programProviderType??supplierRaw.supplierType??supplierRaw.type??p.providerType};
       const candidates=[...new Set([...programThumbnailCandidates(p,declared===id?data:{}),...(officialOgImage(html,id,declared)?.thumbnailCandidates||[])])].slice(0,8);
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
+        verifiedLiveStatus:declared===id?String(p.status??p.schedule?.status??p.liveStatus??"").toUpperCase():"",
+        providerType:String(supplier.programProviderType??"").toLowerCase(),
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
         visitors:count(p.statistics?.watchCount??p.statistics?.visitorCount??p.watchCount??p.visitorCount),
@@ -324,8 +326,8 @@ async function fetchOfficialRankingProfileIcon(userId,fetchImpl) {
   }catch{return "";}
 }
 async function fetchUserRankingThumbnails(userId,id,fetchImpl){
-  if(!/^\d{5,15}$/.test(String(userId))||!/^lv\d{5,15}$/.test(String(id)))return [];
-  for(const version of ["v2","v1"]){
+  if(!/^[1-9]\d{0,14}$/.test(String(userId))||!/^lv\d{5,15}$/.test(String(id)))return [];
+  for(const version of ["v1","v2"]){
     try{
       const url=new URL("https://live.nicovideo.jp/front/api/"+version+"/user-broadcast-history");
       url.search=new URLSearchParams({providerId:userId,providerType:"user",isIncludeNonPublic:"false",offset:"0",limit:"5",withTotalCount:"true"});
@@ -373,8 +375,8 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
     for(let i=0;i<wanted.length;i+=2){
       await Promise.all(wanted.slice(i,i+2).map(async row=>{
         let details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
-        const userId=details?.broadcasterId||(!details?row.broadcasterId:"");
-        if(userId&&!details?.thumbnailUrl&&!row.thumbnailUrl){
+        const userId=details?.broadcasterId||((!details?.providerType||details.providerType==="user")?row.broadcasterId:"");
+        if(userId&&!details?.thumbnailUrl){
           const candidates=await fetchUserRankingThumbnails(userId,row.liveId,fetchImpl);
           if(candidates.length)details={...(details||row),thumbnailUrl:candidates[0],thumbnailCandidates:candidates};
         }
@@ -736,4 +738,11 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages};
+async function resolveRankingRecordingTarget(value,fetchProgram){
+  const id=liveId(value);
+  if(!id)throw Error("正しい放送IDを指定してください。");
+  const detail=await fetchProgram(id);
+  if(!detail||detail.liveId!==id||!["ON_AIR","ONAIR","LIVE","ON AIR"].includes(detail.verifiedLiveStatus))throw Error("現在放送中であることを確認できませんでした。放送ページをご確認ください。");
+  return {liveId:id,title:detail.title||"",name:detail.name||"",broadcasterId:detail.broadcasterId||"",startedAt:detail.startedAt||""};
+}
+module.exports={resolveRankingRecordingTarget,SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages};

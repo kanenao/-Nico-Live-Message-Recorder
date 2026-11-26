@@ -1862,8 +1862,8 @@ function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
   const fresh=isRankingFresh(snapshot,now);
   const total=Array.isArray(snapshot.rows)?snapshot.rows.length:0;
   const topCount=Array.isArray(snapshot.rows)?snapshot.rows.filter(row=>Number.isInteger(row.rank)&&row.rank>=1&&row.rank<=100).length:0;
-  const state=snapshot.stale?"更新失敗 / 前回データ（録画無効）":
-    !fresh?"更新待ち / 古いデータ（録画無効）":
+  const state=snapshot.stale?"更新失敗 / 前回データ（録画時に放送確認）":
+    !fresh?"更新待ち / 古いデータ（録画時に放送確認）":
     (snapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+total+"番組";
   const ageLabel=Number.isFinite(age)&&age>=0?" ／ "+Math.floor(age/1000)+"秒前":"";
   return state+" ／ "+checked+ageLabel+" ／ 上位 "+topCount+"/100件 ／ 表示 "+visibleCount+"件";
@@ -1891,7 +1891,7 @@ function refreshLiveRankingLabels() {
   }
 }
 async function registerRankingMonitor(item) {
-  if(rankingMonitorPending.has(item.liveId)||!isRankingFresh(rankingSnapshot))return;
+  if(rankingMonitorPending.has(item.liveId))return;
   rankingMonitorPending.add(item.liveId);
   renderIndependentRanking();
   try {
@@ -2027,6 +2027,25 @@ function appendRankingTrend(cell,item) {
   line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");
   svg.appendChild(line);cell.appendChild(svg);
 }
+let rankingRecordingPending=false;
+async function startRankingRecording(item,chase=false){
+  if(rankingRecordingPending)return;
+  rankingRecordingPending=true;
+  refreshRankingActions();
+  try{
+    let target=item;
+    if(!isRankingFresh(rankingSnapshot)){
+      if(typeof api.verifyRankingRecording!=="function")throw Error("放送確認に対応したアプリへ更新してください。");
+      showToast("対象番組が放送中か確認しています…");
+      target=await api.verifyRankingRecording(item.liveId);
+      if(target?.liveId!==item.liveId)throw Error("放送IDを確認できませんでした。");
+    }
+    if(captureStopInProgress||recordStartInProgress||recordStartedAt||videoCaptureState==="recording"||videoCaptureState==="stopping"||monitorAutoProcessing)throw Error("別の録画処理が動作中です。終了後に開始してください。");
+    setActivePage("record");
+    await startVideoRecording({...target,chase});
+  }catch(error){showToast(error.message||"ランキングから録画を開始できませんでした。",true);}
+  finally{rankingRecordingPending=false;refreshRankingActions();}
+}
 function refreshRankingActions() {
   const fresh=isRankingFresh(rankingSnapshot);
   const busy=captureStopInProgress||recordStartInProgress||Boolean(recordStartedAt)||
@@ -2034,14 +2053,15 @@ function refreshRankingActions() {
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-record]")){
     const active=Boolean((currentCaptureTarget?.liveId===button.dataset.rankingRecord||(currentRecordingIsChase&&currentLiveId===button.dataset.rankingRecord))&&recordStartedAt);
     button.textContent=active?"● 録画中":"● 録画";
-    button.disabled=busy||!fresh;
+    button.disabled=busy||rankingRecordingPending;
+    button.title=busy?"他の録画処理中":rankingRecordingPending?"放送を確認中":fresh?"録画を開始":"公式番組情報で放送中か確認して録画";
   }
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-chase]")){
-    button.disabled=busy||!fresh||commentCaptureState==="connected"||commentCaptureState==="connecting";
+    button.disabled=busy||rankingRecordingPending||commentCaptureState==="connected"||commentCaptureState==="connecting";
   }
   for(const button of document.querySelectorAll("#ranking-list button[data-ranking-monitor]")){
     const pending=rankingMonitorPending.has(button.dataset.rankingMonitor);
-    button.textContent=pending?"確認中…":"＋監視";button.disabled=pending||!fresh;
+    button.textContent=pending?"確認中…":"＋監視";button.disabled=pending;
   }
 }
 // Only replace rows whose displayed data changed. Reuse the media cell
@@ -2267,13 +2287,11 @@ function renderIndependentRanking() {
     }
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
-    record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
+    record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||rankingRecordingPending;
+    record.title=busy?"他の録画処理中":isRankingFresh(rankingSnapshot)?"録画を開始":"公式番組情報で放送中か確認して録画";
     record.addEventListener("click",async()=>{
-      if(record.disabled||!isRankingFresh(rankingSnapshot)){
-        showToast("ランキングの情報が古くなりました。更新してください。",true);return;
-      }
-      setActivePage("record");
-      await startVideoRecording({liveId:item.liveId,title:item.title,name:item.name,broadcasterId:item.broadcasterId,startedAt:item.startedAt});
+      if(record.disabled)return;
+      await startRankingRecording(item);
     });
     const watch=document.createElement("button");watch.type="button";watch.className="button button-quiet button-small";watch.textContent="視聴";
     watch.addEventListener("click",()=>api.openWatch(item.liveId).catch(error=>showToast(error.message||"視聴ページを開けませんでした。",true)));
@@ -2282,19 +2300,17 @@ function renderIndependentRanking() {
     const monitor=document.createElement("button");monitor.type="button";monitor.className="button button-outline button-small";
     const pending=rankingMonitorPending.has(item.liveId);
     monitor.dataset.rankingMonitor=item.liveId;monitor.textContent=pending?"確認中…":"＋監視";
-    monitor.disabled=pending||!isRankingFresh(rankingSnapshot);
+    monitor.disabled=pending;
     monitor.title="公式の番組情報で配信者を確認して監視リストに登録";
     monitor.addEventListener("click",()=>void registerRankingMonitor(item));
     const chase=document.createElement("button");chase.type="button";chase.className="button button-outline button-small";
     chase.dataset.rankingChase=item.liveId;chase.textContent="追っかけ（試験）";
-    chase.disabled=busy||!isRankingFresh(rankingSnapshot)||commentCaptureState==="connected"||commentCaptureState==="connecting";
+    chase.disabled=busy||rankingRecordingPending||commentCaptureState==="connected"||commentCaptureState==="connecting";
     chase.title="映像・音声のみ。実際の開始位置は未検証です。通常録画に自動切り替えしません。";
     chase.addEventListener("click",async()=>{
-      if(chase.disabled||!isRankingFresh(rankingSnapshot))return;
+      if(chase.disabled)return;
       if(!window.confirm("追っかけ録画（試験）を開始しますか？\n映像・音声のみ保存し、過去コメントは取得しません。放送の対応状況により開始できない場合があります。"))return;
-      if(!isRankingFresh(rankingSnapshot))return showToast("ランキングが古くなりました。更新してください。",true);
-      setActivePage("record");
-      await startVideoRecording({liveId:item.liveId,chase:true});
+      await startRankingRecording(item,true);
     });
     actions.append(record,watch,monitor,chase,preview);
     desired.push(old?patchRankingRow(old,tr,actionKey):tr);

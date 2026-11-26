@@ -63,9 +63,10 @@ test("ranking UI and IPC are wired to the existing recording pathway",()=>{
   const preload=fs.readFileSync(path.join(root,"electron/preload.cjs"),"utf8");
   assert.match(html,/data-page-target="ranking"/);
   assert.match(html,/id="ranking-list"/);
-  assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId/);
+  assert.match(renderer,/await startRankingRecording\(item\)/);
+   assert.match(renderer,/await startVideoRecording\(\{\.\.\.target,chase\}\)/);
   assert.match(renderer,/configureRankingRefresh\(activePage === "ranking"\)/);
-  assert.match(renderer,/record.disabled\|\|!isRankingFresh\(rankingSnapshot\)/);
+  assert.match(renderer,/target=await api\.verifyRankingRecording\(item\.liveId\)/);
   assert.match(preload,/ipcRenderer.invoke\("ranking:list",options\)/);
   assert.match(main,/ipcMain.handle\("ranking:list",/);
 });
@@ -78,7 +79,7 @@ test("comment velocity cannot jump when a different source supplies the counter"
   assert.equal(after[0].comments,900);
   assert.equal(after[0].commentRate,5);
 });
-test("invalid timestamps and old snapshots cannot enable the record button",()=>{
+test("invalid timestamps and old snapshots require official verification before recording",()=>{
   const vm=require("node:vm");
   const source=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
   const start=source.indexOf("function isRankingFresh(");
@@ -935,4 +936,13 @@ test("ranking offers compact and detailed views and quick metric sorts without d
  assert.match(renderer,/button\.dataset\.rankingSortKey;syncRankingQuickSort\(\);renderIndependentRanking\(\)/);
  assert.match(css,/data-ranking-view="compact"/);
  assert.match(html,/id="ranking-coverage-brief"/);
+});
+
+test("stale ranking recording target requires exact official program and ON_AIR status",async()=>{
+ const {resolveRankingRecordingTarget,parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const id="lv123456";
+ const detail=parseOfficialRankingDetails(officialPage({nicoliveProgramId:id,title:"放送中",status:"ON_AIR",providerType:"user",supplier:{programProviderId:"123"}}),id);
+ assert.equal(detail.broadcasterId,"123");
+ assert.equal((await resolveRankingRecordingTarget(id,async()=>detail)).liveId,id);
+ for(const bad of [null,{...detail,liveId:"lv999999"},{...detail,verifiedLiveStatus:"ENDED"},{...detail,verifiedLiveStatus:""}])await assert.rejects(resolveRankingRecordingTarget(id,async()=>bad),/放送中/);
 });

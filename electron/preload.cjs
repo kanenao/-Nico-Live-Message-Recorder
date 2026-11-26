@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   getLiveRanking: (options) => ipcRenderer.invoke("ranking:list",options),
   getRankingThumbnail: (id,url) => ipcRenderer.invoke("ranking:thumbnail",id,url),
+  verifyRankingRecording: liveId=>ipcRenderer.invoke("ranking:verify-recording",liveId),
   stopRankingActivity: () => ipcRenderer.invoke("ranking:stop-activity"),
   resolveRankingMonitorTarget: (liveId) => ipcRenderer.invoke("ranking:resolve-monitor", liveId),
   openRankingUserProfile: (liveId) => ipcRenderer.invoke("ranking:open-user-profile",liveId),

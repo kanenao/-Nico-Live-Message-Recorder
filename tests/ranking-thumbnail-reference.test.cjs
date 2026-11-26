@@ -161,3 +161,18 @@ test("explicit Chikuwa listing screenshot can be fetched through the bounded ima
  assert.match(await proxy.get("lv123456",url),/^data:image\/jpeg;base64,/);
  assert.equal(await proxy.get("lv123456","https://www.chikuwachan.com/live/usericon/a.jpg"),null);
 });
+
+test("user broadcast history can recover exact current image even if official watch page is unavailable",async()=>{
+ const image="https://live.simg.jp/live/user.jpg";
+ const proxy=createRankingImageProxy({fetchImpl:async url=>{
+   if(url.includes("/watch/"))return new Response("missing",{status:404});
+   if(url.includes("/user-broadcast-history")){
+     assert.match(url,/providerId=123/);
+     return new Response(JSON.stringify({data:{programsList:[{id:{value:"lv999999"},thumbnail:{screenshot:"https://live.simg.jp/wrong.jpg"}},{id:{value:"lv123456"},thumbnail:{screenshot:{large:image}}}]}}));
+   }
+   assert.equal(url,image);
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ proxy.update([{liveId:"lv123456",broadcasterId:"123"}]);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
+});
