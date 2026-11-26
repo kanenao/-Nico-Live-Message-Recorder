@@ -63,7 +63,7 @@ function jsonRow(raw) {
   if(p.isOnAir===false)return null;
   const provider=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
   const statistics=p.statistics??p.stats??raw.statistics??raw.stats??{};
-  const providerType=String(provider.programProviderType??provider.type??"").trim().toLowerCase();
+  const providerType=String(provider.programProviderType??provider.supplierType??provider.type??"").trim().toLowerCase();
   const numeric=String(provider.id??p.userId??"").trim();
   // Official-format providers include programProviderId and a provider type.
   // Keep the legacy untyped numeric-ID format for ranking lists only.
@@ -74,10 +74,12 @@ function jsonRow(raw) {
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
     broadcasterId,
     startedAt:time(p.schedule?.beginTime??p.beginTime??p.beginAt??p.startTime??p.startedAt),
-    iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small,provider.thumbnailUrl),
-    thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnail?.middle,p.thumbnails?.large,p.thumbnails?.small),
+    iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.uri150x150,provider.icons?.uri50x50,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small,provider.thumbnailUrl),
+    thumbnailUrl:firstRankingImage(p.screenshot?.urlSet?.large,p.screenshot?.urlSet?.middle,p.screenshot?.urlSet?.small,p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnail?.middle,p.thumbnails?.large,p.thumbnails?.small),
     visitors:count(statistics.watchCount??statistics.visitorCount??p.watchCount??p.visitorCount??p.viewCounter),
-    comments:count(statistics.commentCount??p.commentCount??p.commentCounter)};
+    comments:count(statistics.commentCount??p.commentCount??p.commentCounter),
+    adPoints:count(statistics.totalNicoadPoints??statistics.totalAdPoints??p.totalNicoadPoints??p.totalAdPoints),
+    giftPoints:count(statistics.totalGiftPoints??p.totalGiftPoints)};
 }
 function extractJsonRows(value) {
   const rows=[];let visited=0;
@@ -102,7 +104,7 @@ function unique(rows) {
     // records may contain metadata omitted from the first listing.
     // Never combine user identity or artwork across conflicting identities.
     const conflict=old.broadcasterId&&row.broadcasterId&&old.broadcasterId!==row.broadcasterId;
-    for(const field of ["startedAt","thumbnailUrl","visitors","comments"]){
+    for(const field of ["startedAt","thumbnailUrl","visitors","comments","adPoints","giftPoints"]){
       if((old[field]==null||old[field]==="")&&row[field]!=null&&row[field]!=="")old[field]=row[field];
     }
     if(!conflict){
@@ -169,7 +171,7 @@ async function readBounded(response) {
 // Read only public metadata from a fixed official watch URL. Never return
 // the full embedded page (it can contain session and connection information).
 function officialSupplierUserId(supplier) {
-  const type=String(supplier.programProviderType??supplier.type??"").trim().toLowerCase();
+  const type=String(supplier.programProviderType??supplier.supplierType??supplier.type??"").trim().toLowerCase();
   // Do not treat a channel or an official program as an individual user.
   if(type&&type!=="user")return "";
   const raw=String(supplier.programProviderId??supplier.id??"").trim();
@@ -208,8 +210,8 @@ function parseOfficialRankingDetails(html,id) {
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
-        iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
-        thumbnailUrl:firstRankingImage(p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnails?.large)};
+        iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.uri150x150,supplier.icons?.uri50x50,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
+        thumbnailUrl:firstRankingImage(p.screenshot?.urlSet?.large,p.screenshot?.urlSet?.middle,p.screenshot?.urlSet?.small,p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnails?.large)};
     }catch{}
   }
   return null;
@@ -369,9 +371,10 @@ function selectRankingVideoFrame(liveId,session,now=Date.now()){
 }
 function createRankingActivityTracker(now=Date.now){
   let liveId="",connected=false,startedAt=0,lastAt=0,uncertainAt=null;
-  const users=new Map();
+  const users=new Map(),gifts=new Map();
+  let giftPoints=0,giftUncertainAt=null;
   const WINDOW=300000,LIMIT_USERS=50000;
-  function reset(id){liveId=id||"";connected=false;startedAt=0;lastAt=0;uncertainAt=null;users.clear();}
+  function reset(id){liveId=id||"";connected=false;startedAt=0;lastAt=0;uncertainAt=null;users.clear();gifts.clear();giftPoints=0;giftUncertainAt=null;}
   function state(id,active){
     if(id!==liveId||!active)reset(id);
     if(active&&!connected){startedAt=now();lastAt=startedAt;connected=true;}
@@ -385,11 +388,20 @@ function createRankingActivityTracker(now=Date.now){
       if(at-seen<WINDOW)break;
       users.delete(id);
     }
+    for(const [id,gift] of gifts){if(at-gift.at<WINDOW)break;giftPoints-=gift.points;gifts.delete(id);}
     return true;
   }
   function observe(record){
-    if(!connected||record?.type!=="comment"||record.isHistory||record.liveId!==liveId)return;
+    if(!connected||!["comment","gift"].includes(record?.type)||record.isHistory||record.liveId!==liveId)return;
     const at=now();if(!prune(at))return;
+    if(record.type==="gift"){
+      const points=count(record.point),stamp=Date.parse(record.timestamp);
+      if(points===null||!Number.isFinite(stamp)||!record.itemId){giftUncertainAt=at;return;}
+      const key=JSON.stringify([stamp,String(record.itemId),String(record.userId??""),points,String(record.message??"")]);
+      if(gifts.has(key))return;
+      if(gifts.size>=LIMIT_USERS||!Number.isSafeInteger(giftPoints+points)){giftUncertainAt=at;return;}
+      gifts.set(key,{at,points});giftPoints+=points;return;
+    }
     const id=String(record.userId??"").trim();
     if(!id||id.length>160||(!users.has(id)&&users.size>=LIMIT_USERS)){uncertainAt=at;return;}
     users.delete(id);
@@ -398,7 +410,7 @@ function createRankingActivityTracker(now=Date.now){
   function snapshot(id){
     if(!connected||id!==liveId)return null;
     const at=now();if(!prune(at))return null;
-    return {count:users.size,complete:at-startedAt>=WINDOW&&(uncertainAt===null||at-uncertainAt>=WINDOW)};
+    return {count:users.size,complete:at-startedAt>=WINDOW&&(uncertainAt===null||at-uncertainAt>=WINDOW),giftObservedPoints:giftPoints,giftObservedCount:gifts.size,giftObservationComplete:at-startedAt>=WINDOW&&(giftUncertainAt===null||at-giftUncertainAt>=WINDOW)};
   }
   return {reset,state,observe,snapshot};
 }
@@ -416,7 +428,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
         for(const field of ["name","broadcasterId","iconUrl"])if(!item[field]&&row[field])item[field]=row[field];
       }
       // Do not sum cross-site counters: use the largest reported cumulative value.
-      for(const field of ["visitors","comments"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
+      for(const field of ["visitors","comments","adPoints","giftPoints"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
       item.sourceRanks[source.id]=i+1;
     });
   }
