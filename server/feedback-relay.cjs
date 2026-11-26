@@ -16,10 +16,10 @@ function createRelay({token,fetchImpl=globalThis.fetch,now=Date.now}={}) {
     while(recent.length&&time-recent[0]>=60000)recent.shift();
     if(recent.length>=30)return reply(res,429,{error:"rate_limit"});
     recent.push(time);
-    let raw="",size=0;
+    const chunks=[];let size=0;
     try {
-      for await(const chunk of req){size+=chunk.length;if(size>8192){reply(res,413,{error:"too_large"});return;}raw+=chunk.toString("utf8");}
-      const input=JSON.parse(raw);
+      for await(const chunk of req){size+=chunk.length;if(size>8192){reply(res,413,{error:"too_large"});return;}chunks.push(chunk);}
+      const input=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks)));
       if(typeof input?.details!=="string"||typeof input?.version!=="string")throw Error("invalid");
       const params=new URL(buildFeedbackIssueUrl(input)).searchParams;
       const details=params.get("details");
