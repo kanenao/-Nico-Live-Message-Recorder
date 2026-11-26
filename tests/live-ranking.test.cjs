@@ -754,3 +754,14 @@ test("ranking refresh keeps existing rows and reuses unchanged media",()=>{
   assert.match(block,/picture\.dataset\.mediaKey!==mediaKey/);
   assert.match(block,/if\(list\.children\[index\]!==row\)list\.insertBefore/);
 });
+
+
+test("ranking captures focus before moving media and restores by live ID after ordering",()=>{
+  const s=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const block=s.slice(s.indexOf("function renderIndependentRanking("),s.indexOf("async function refreshIndependentRanking("));
+  assert.ok(block.indexOf("const activeElement=document.activeElement")<block.indexOf("identity.append(picture,labels)"));
+  assert.ok(block.indexOf("desired.forEach((row,index)")<block.indexOf("if(focusedId){"));
+  assert.match(block,/candidate\.dataset\.liveId===focusedId/);
+  assert.match(block,/target&&!target\.disabled&&document\.activeElement!==target/);
+  assert.match(block,/target\.focus\(\{preventScroll:true\}\)/);
+});

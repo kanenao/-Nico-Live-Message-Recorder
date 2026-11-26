@@ -2028,6 +2028,13 @@ function renderIndependentRanking() {
   if (!list || !rankingSnapshot) return;
   const existing=new Map(Array.from(list.children).filter(row=>row.dataset.liveId).map(row=>[row.dataset.liveId,row]));
   const desired=[];
+  // Save focus before moving any thumbnail or row. Moving a focused DOM
+  // element may blur it, even when the same element is reinserted.
+  const activeElement=document.activeElement;
+  const focusedRow=activeElement?.closest("tr[data-live-id]");
+  const focusedId=focusedRow&&list.contains(focusedRow)?focusedRow.dataset.liveId:null;
+  const focusedButtonIndex=focusedId?Array.from(focusedRow.querySelectorAll("button")).indexOf(activeElement):-1;
+  const focusedMedia=Boolean(focusedId&&activeElement.matches(".ranking-media"));
   const q = byId("ranking-search").value.trim().toLowerCase();
   const sort = byId("ranking-sort").value;
   const all = rankingSnapshot.rows || [];
@@ -2132,12 +2139,6 @@ function renderIndependentRanking() {
       await startVideoRecording({liveId:item.liveId,chase:true});
     });
     actions.append(record,watch,monitor,chase,preview);
-    // Restore keyboard focus if a refreshed row had an active action.
-    const focused=old?.contains(document.activeElement)?document.activeElement:null;
-    if(focused){const buttons=Array.from(old.querySelectorAll("button"));
-      const index=buttons.indexOf(focused);
-      tr.rankingRestoreFocus=index>=0?tr.querySelectorAll("button")[index]:focused.matches(".ranking-media")?picture:null;
-    }
     desired.push(tr);
   }
   if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=9;desired.push(tr);}
@@ -2146,8 +2147,15 @@ function renderIndependentRanking() {
   for(const row of Array.from(list.children))if(!keep.has(row))row.remove();
   desired.forEach((row,index)=>{
     if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);
-    if(row.rankingRestoreFocus){row.rankingRestoreFocus.focus({preventScroll:true});delete row.rankingRestoreFocus;}
   });
+  // Restore the same program/action after all DOM moves, not by rank.
+  // Never steal focus from the search field or activate a disabled action.
+  if(focusedId){
+    const row=desired.find(candidate=>candidate.dataset.liveId===focusedId);
+    const target=focusedMedia?row?.querySelector(".ranking-media"):
+      focusedButtonIndex>=0?row?.querySelectorAll("button")[focusedButtonIndex]:null;
+    if(target&&!target.disabled&&document.activeElement!==target)target.focus({preventScroll:true});
+  }
   rankingVisibleCount=rows.length;
   byId("ranking-status").textContent=rankingStatusText(rankingSnapshot,rankingVisibleCount);
 }
