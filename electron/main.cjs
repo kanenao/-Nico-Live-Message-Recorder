@@ -2968,7 +2968,7 @@ function stopMonitor() {
 
 const { createRankingService, resolveRankingMonitorTarget, selectRankingVideoFrame } = require("./live-ranking.cjs");
 const rankingAiAdvisor=require('./ranking-ai-score.cjs').createAiWeightAdvisor();
-const getIndependentLiveRanking = createRankingService({ enrichDetails: true,advisor:rankingAiAdvisor,activity:liveId=>{
+const getIndependentLiveRanking = createRankingService({ enrichDetails: true,backgroundDetails:true,advisor:rankingAiAdvisor,activity:liveId=>{
   const active=provider&&commentWriter&&!captureStopPromise&&!commentFinalizing&&!timeshiftCommentFetchActive?rankingActivity.snapshot(liveId):null;
   return active??rankingObserver.snapshot(liveId)?.activity??null;
 } });
