@@ -1279,55 +1279,7 @@ function renderLiveBroadcasts() {
     actions.append(record, watch);
     footer.append(source, actions);
 
-    const articlePreview = document.createElement("section");
-    articlePreview.className = "live-broadcast-ai-article";
-    const articleHeader = document.createElement("div");
-    articleHeader.className = "live-broadcast-article-header";
-    const articleLabel = document.createElement("strong");
-    articleLabel.textContent = "AI放送記事";
-    const preview = liveArticlePreviews.get(String(status.liveId || "").toLowerCase());
-    const articleType = document.createElement("span");
-    articleType.textContent = preview
-      ? (preview.aiProvider ? "Ollama記事" : "記事保存済み・AI未生成")
-      : (status.isRecording ? "記事を作成中" : "記事未作成");
-    articleHeader.append(articleLabel, articleType);
-    articlePreview.appendChild(articleHeader);
-
-    const articleTitle = document.createElement("strong");
-    articleTitle.className = "live-broadcast-article-title";
-    articleTitle.textContent = preview
-      ? (preview.title || "放送記事")
-      : (status.isRecording
-        ? "コメントの受信・記事生成を準備しています…"
-        : "この放送のAI記事はまだありません");
-    articlePreview.appendChild(articleTitle);
-    const articleSummary = document.createElement("p");
-    articleSummary.className = "live-broadcast-article-summary";
-    articleSummary.textContent = preview
-      ? (preview.summary || "記事本文は記事一覧から確認できます。")
-      : (status.isRecording
-        ? "記事が保存されると、見出し・要約が自動的に表示されます。"
-        : "記事生成画面から生放送の映像・音声・コメントを分析できます。");
-    articlePreview.appendChild(articleSummary);
-    const articleFooter = document.createElement("div");
-    articleFooter.className = "live-broadcast-article-footer";
-    const articleMeta = document.createElement("span");
-    articleMeta.className = "live-broadcast-article-meta";
-    articleMeta.textContent = preview
-      ? "コメント " + (Number(preview.commentCount) || 0).toLocaleString("ja-JP") + "件" +
-        (preview.videoFrameCount ? " · 映像 " + preview.videoFrameCount + "枚" : "") +
-        (preview.hasAudio ? " · 音声解析あり" : "") +
-        (preview.generatedAt ? " · 更新 " + new Date(preview.generatedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "")
-      : "配信ID：" + (status.liveId || "未取得");
-    const articleButton = document.createElement("button");
-    articleButton.type = "button";
-    articleButton.className = "button button-outline button-small live-broadcast-article-button";
-    articleButton.textContent = preview ? "記事を読む" : "記事を作成";
-    articleButton.addEventListener("click", () => openLiveArticleFromDashboard(status, Boolean(preview)));
-    articleFooter.append(articleMeta, articleButton);
-    articlePreview.appendChild(articleFooter);
-
-    card.append(top, broadcaster, title, meta, articlePreview, footer);
+    card.append(top, broadcaster, title, meta, footer);
     list.appendChild(card);
   }
   renderDashboardStats();
@@ -1507,7 +1459,6 @@ function applyMonitorState(result) {
   if (Array.isArray(result.pendingDetections)) {
     result.pendingDetections.forEach(handleMonitorLiveDetected);
   }
-  void refreshLiveArticlePreviews();
 }
 
 function addMonitorActivity(message, kind = "") {
@@ -1695,9 +1646,6 @@ function openSettings() {
   byId("setting-keep-awake").checked = monitorSettings.keepAwake !== false;
   byId("setting-auto-update-streamlink").checked = monitorSettings.autoUpdateStreamlink !== false;
   byId("setting-notify-on-live").checked = monitorSettings.notifyOnLive !== false;
-  byId("setting-ai-article-enabled").checked = monitorSettings.aiArticleEnabled !== false;
-  byId("setting-ai-article-model").value = monitorSettings.aiArticleModel || "qwen2.5:3b";
-  void checkOllamaStatus();
   void refreshAuthStatus();
   byId("settings-modal").hidden = false;
 }
@@ -1719,8 +1667,7 @@ async function saveSettings() {
     keepAwake: byId("setting-keep-awake").checked,
     autoUpdateStreamlink: byId("setting-auto-update-streamlink").checked,
     notifyOnLive: byId("setting-notify-on-live").checked,
-    aiArticleEnabled: byId("setting-ai-article-enabled").checked,
-    aiArticleModel: byId("setting-ai-article-model").value.trim() || "qwen2.5:3b"
+    aiArticleEnabled: false
   };
   Object.assign(values, readAssMotionInputs("setting-ass-"));
   const button = byId("save-settings-button");
@@ -2398,7 +2345,7 @@ function configureRankingRefresh(active) {
        isRankingRefreshDue(rankingLastRequestAt))void refreshIndependentRanking();
   },5000);
 }
-const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "articles", "updates", "feedback-bug", "feedback-feature"]);
+const APP_PAGES = new Set(["dashboard", "monitor", "ranking", "record", "comments", "compose", "library", "updates", "feedback-bug", "feedback-feature"]);
 
 function setActivePage(page) {
   const activePage = APP_PAGES.has(page) ? page : "dashboard";
@@ -2408,7 +2355,7 @@ function setActivePage(page) {
   content.querySelectorAll(":scope > [data-page]").forEach((view) => {
     const isActive = view.dataset.page === activePage;
     view.classList.toggle("page-hidden", !isActive);
-    if (view.id === "library-panel" || view.id === "articles-panel") view.hidden = !isActive;
+    if (view.id === "library-panel") view.hidden = !isActive;
   });
 
   document.querySelectorAll("[data-page-target]").forEach((button) => {
@@ -2421,8 +2368,6 @@ function setActivePage(page) {
   configureRankingRefresh(activePage === "ranking");
   if (activePage === "updates") void refreshEditionReleaseHistory();
   if (activePage === "library") loadCaptureLibrary();
-  if (activePage === "articles") loadBroadcastArticles();
-  if (activePage === "dashboard") void refreshLiveArticlePreviews();
 }
 
 function formatLibraryBytes(value) {
@@ -2612,15 +2557,6 @@ function renderCaptureLibrary() {
       if (expanded) scheduleLibraryThumbnail(image, placeholder, item);
     }
     row.appendChild(file);
-    if (item.type === "video" && item.article) {
-      const articleSummary = document.createElement("div"); articleSummary.className = "library-article-summary";
-      const articleTitle = document.createElement("strong"); articleTitle.textContent = "放送記事：" + item.article.title; articleSummary.appendChild(articleTitle);
-      if (item.article.summary) { const summary = document.createElement("p"); summary.textContent = item.article.summary; articleSummary.appendChild(summary); }
-      if (item.article.topics && item.article.topics.length) { const topics = document.createElement("small"); topics.textContent = "話題：" + item.article.topics.join("・"); articleSummary.appendChild(topics); }
-      const openArticle = document.createElement("button"); openArticle.type = "button"; openArticle.className = "button button-outline button-small"; openArticle.textContent = "記事を見る";
-      openArticle.addEventListener("click", async () => { await loadBroadcastArticles(); byId("articles-search").value = item.liveId || item.article.title; setActivePage("articles"); renderBroadcastArticles(); });
-      articleSummary.appendChild(openArticle); file.appendChild(articleSummary);
-    }
     row.appendChild(createLibraryText("library-broadcaster", item.broadcaster));
     const type = createLibraryText("library-type", item.type === "video" ? "録画動画 · " + item.extension : "コメント · " + item.extension);
     type.classList.toggle("is-video", item.type === "video");
@@ -2646,29 +2582,6 @@ function renderCaptureLibrary() {
       catch (error) { showToast(error.message || "保存場所を開けませんでした。", true); }
     });
     actions.append(openButton, showButton);
-    if (item.type === "comment" && item.extension === "JSONL") {
-      const articleButton = document.createElement("button");
-      articleButton.type = "button";
-      articleButton.className = "button button-outline button-small";
-      articleButton.textContent = "記事を生成";
-      articleButton.addEventListener("click", async () => {
-        articleButton.disabled = true;
-        try {
-          const result = await api.generateBroadcastArticle(item.path);
-          if (result && result.status === "generated") {
-            showToast("放送記事を生成しました: " + (result.title || item.liveId));
-            await loadBroadcastArticles();
-          } else {
-            showToast((result && result.reason) || "記事を生成できませんでした。", true);
-          }
-        } catch (error) {
-          showToast(error.message || "放送記事を生成できませんでした。", true);
-        } finally {
-          articleButton.disabled = false;
-        }
-      });
-      actions.appendChild(articleButton);
-    }
     if (item.type === "video") {
       const scenesButton = document.createElement("button");
       scenesButton.type = "button";
@@ -3288,7 +3201,6 @@ async function loadArticleWhisperSettings() {
     if (settings.managed) byId("manual-article-whisper-download-status").textContent = "自動セットアップ済み。録画動画・生放送の記事生成で利用できます。";
   } catch (_) {}
 }
-void loadArticleWhisperSettings();
 async function downloadArticleWhisper() {
   const button = byId("manual-article-whisper-auto-button");
   const status = byId("manual-article-whisper-download-status");
@@ -3840,7 +3752,7 @@ async function openPublicEditionInstaller(edition) {
   const latest = (editionReleaseState[edition] || [])[0];
   if (!latest || typeof api.openEditionInstaller !== "function") return;
   if (edition === "stable" && !window.confirm(
-    "製品版を取得しますか？\n\n製品版には放送記事・無料AI記事生成が含まれません。" +
+    "製品版を取得しますか？\n\n製品版は安定した機能を提供します。" +
     "\n製品版のアプリ内からβ版へ戻す機能はありません。\n\n公式インストーラーのダウンロードページを開きます。"
   )) return;
   const button = byId("edition-" + edition + "-download");
@@ -3878,7 +3790,7 @@ async function refreshUpdateChannelSettings() {
     select.disabled = !state.autoUpdateSupported;
     button.disabled = !state.autoUpdateSupported;
     note.textContent = state.autoUpdateSupported
-      ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版を利用していたユーザーだけは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。"
+      ? "製品版へ切り替えると、β版専用機能は利用できなくなります。元々β版を利用していたユーザーだけは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。"
       : "ZIP版ではアプリ内の自動切り替えを利用できません。希望する版のGitHub Releasesからインストーラーを手動でインストールしてください。製品版からβ版へ戻す機能はありません。";
     button.textContent = select.value === "latest" ? "製品版へ切り替えて再起動" : "β版へ切り替えて再起動";
   } catch (error) {
@@ -3902,7 +3814,7 @@ async function switchUpdateChannel() {
     }
   } catch (_) {}
   const detail = nextChannel === "latest"
-    ? "製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版ユーザーだった場合は製品版から戻すこともできます。"
+    ? "製品版へ切り替えると、β版専用機能は利用できなくなります。元々β版ユーザーだった場合は製品版から戻すこともできます。"
     : "β版へ切り替えると、開発中の機能と更新を受け取ります。";
   if (!window.confirm(targetLabel + "へ切り替えますか？\n\n" + detail + "\n\n録画・コメント取得を終了してアプリを再起動します。")) return;
   button.disabled = true;
@@ -4002,105 +3914,14 @@ try {
   if (channel === "comments:exports" && payload && Array.isArray(payload.paths)) {
     addMonitorActivity("コメント形式の追加ファイルを保存しました：" + payload.paths.join(" / "));
   }
-  if (channel === "ollama:setup-progress" && payload) {
-    const message = byId("ollama-status-message");
-    if (message) {
-      if (payload.stage === "installer") {
-        const received = (Number(payload.received) || 0) / 1024 / 1024;
-        const total = (Number(payload.total) || 0) / 1024 / 1024;
-        message.textContent = "Ollamaインストーラーをダウンロード中… " + received.toFixed(1) + " MB" + (total ? " / " + total.toFixed(1) + " MB（" + (Number(payload.percent) || 0) + "%）" : "");
-      } else if (payload.stage === "model") {
-        const completed = Number(payload.completed) || 0;
-        const total = Number(payload.total) || 0;
-        message.textContent = "モデル " + payload.model + " を取得中… " + (payload.status || "準備中") + (total ? "（" + Math.round(completed / total * 100) + "%）" : "");
-      }
-    }
-  }
-  if (channel === "whisper:download-progress" && payload) {
-    const status = byId("manual-article-whisper-download-status");
-    const stage = payload.stage === "runtime" ? "Whisper.cpp実行ファイル" : payload.stage === "model" ? "日本語モデル（ggml-base.bin）" : "セットアップ";
-    if (payload.stage === "complete") status.textContent = "ダウンロード・検証・配置が完了しました。";
-    else {
-      const received = (Number(payload.received) || 0) / 1024 / 1024;
-      const total = (Number(payload.total) || 0) / 1024 / 1024;
-      status.textContent = stage + "をダウンロード中… " + received.toFixed(1) + " MB" + (total ? " / " + total.toFixed(1) + " MB（" + (Number(payload.percent) || 0) + "%）" : "");
-    }
-  }
   if (channel === "update:state") renderUpdateState(payload);
   if (channel === "streamlink:update-state") renderStreamlinkUpdateState(payload);
   if (channel === "monitor:state") renderMonitorState(payload);
   if (channel === "monitor:target-status") {
     monitorStatuses.set(payload.userId, payload);
     renderMonitorTargets();
-    void refreshLiveArticlePreviews();
-  }
+    }
   if (channel === "monitor:live-detected") handleMonitorLiveDetected(payload);
-  if (channel === "articles:live-state" && payload) {
-    const status = byId("manual-article-live-status");
-    const frameCount = Number(payload.frameCount) || 0;
-    if (payload.state === "capturing") {
-      status.textContent = "生放送中：映像フレーム " + frameCount + "枚を保持中（" + (payload.videoSource === "streamlink" ? "配信ストリーム直接取得" : "視聴ページから取得") + "）。" + (payload.audioCapturing ? " Whisper.cppで音声も逐次解析中。" : "");
-    } else if (payload.state === "generating") {
-      status.textContent = "生放送中：コメント " + "と映像 " + frameCount + " 枚を使って記事を更新しています…" + (payload.audioCapturing ? " 音声も取得中です。" : "");
-    } else if (payload.state === "updated") {
-      status.textContent = payload.generated
-        ? "生放送中：記事を更新しました。映像フレーム " + frameCount + " 枚を保持中。次回も約2分後に更新します。"
-        : "生放送中：記事の材料を取得中です。コメント・番組情報が揃うと記事を生成します。";
-    } else if (payload.state === "capture-error") {
-      status.textContent = "映像フレームの取得に失敗しました：" + (payload.message || "不明なエラー") + "。コメント取得は継続します。";
-    } else if (payload.state === "video-capturing") {
-      status.textContent = "配信映像を直接取得中（15秒ごと）。" +
-        (payload.audioCapturing ? "音声もWhisper.cpp用に取り込み中。" : "Whisper未設定のため音声解析は省略。") +
-        "コメントも受信中です。";
-    } else if (payload.state === "video-error" || payload.state === "video-warning") {
-      status.textContent = "配信映像取得の注意：" + (payload.message || "ストリームを確認しています。");
-    } else if (payload.state === "audio-capturing") {
-      status.textContent = "生放送中：音声を約25秒ごとに分割し、Whisper.cppで逐次文字起こししています。";
-    } else if (payload.state === "audio-transcribing") {
-      status.textContent = "生放送の音声をWhisper.cppで日本語文字起こししています。完了した区間から記事へ反映します…";
-    } else if (payload.state === "audio-progress") {
-      status.textContent = "生放送中：音声をリアルタイム文字起こし中（" + (Number(payload.segmentCount) || 0) + "区間）。コメントも受信時に保存し、記事へ反映します。";
-    } else if (payload.state === "audio-finalizing") {
-      status.textContent = "音声の最後の区間を文字起こししています…";
-    } else if (payload.state === "audio-complete") {
-      status.textContent = "Whisper.cppの音声文字起こしが完了しました（" + (Number(payload.segmentCount) || 0) + "区間）。最終記事へ反映します。";
-    } else if (payload.state === "audio-disabled") {
-      status.textContent = payload.message || "Whisper.cpp未設定のため、生放送の音声解析はスキップします。映像とコメントの取得は継続します。";
-    } else if (payload.state === "audio-error") {
-      status.textContent = "生放送の音声解析に失敗しました：" + (payload.message || "不明なエラー") + "。映像とコメントの記事生成は継続します。";
-    } else if (payload.state === "error") {
-      status.textContent = "記事更新エラー：" + (payload.message || "不明なエラー") + "。次回更新時に再試行します。";
-    }
-  }
-  if (channel === "articles:analysis-state" && payload) {
-    const status = byId("manual-article-status");
-    const stages = {
-      starting: "録画の記事解析を準備中…",
-      video: "録画映像を全体から抽出しています…",
-      audio: "録画の音声を2分ごとに分割して文字起こししています…",
-      ai: "映像・音声・コメントをOllamaで照合して記事を生成中…",
-      complete: "録画の映像・音声・コメントを使った記事生成が完了しました。"
-    };
-    if (payload.state === "audio-progress") {
-      status.textContent = "録画音声を文字起こし中：" + (Number(payload.processed) || 0) +
-        " / " + (Number(payload.total) || 0) + "区間";
-    } else if (payload.state === "error") {
-      status.textContent = "録画記事の解析に失敗：" + (payload.message || "不明なエラー");
-      addMonitorActivity(status.textContent, "error");
-    } else if (stages[payload.state]) {
-      status.textContent = stages[payload.state];
-      if (payload.state === "complete" && !byId("articles-panel").hidden) loadBroadcastArticles();
-    }
-  }
-  if (channel === "articles:generated") {
-    void refreshLiveArticlePreviews(true);
-    if (!byId("articles-panel").hidden) loadBroadcastArticles();
-    const article = payload && payload.article;
-    addMonitorActivity("放送記事を生成しました：" + (article && (article.programTitle || article.liveId) || ""));
-  }
-  if (channel === "articles:skipped" && payload && payload.reason) {
-    addMonitorActivity("放送記事は生成対象外です：" + payload.reason);
-  }
   if (channel === "monitor:error") addMonitorActivity(
     (payload.name || payload.userId || "ユーザー") + " の状態確認エラー：" + (payload.error || ""),
     "error"
@@ -4211,37 +4032,6 @@ byId("settings-button").addEventListener("click", openSettings);
 byId("close-settings-button").addEventListener("click", closeSettings);
 byId("cancel-settings-button").addEventListener("click", closeSettings);
 byId("save-settings-button").addEventListener("click", saveSettings);
-byId("ollama-check-button").addEventListener("click", () => void checkOllamaStatus());
-byId("ollama-install-button").addEventListener("click", async () => {
-  const button = byId("ollama-install-button");
-  const message = byId("ollama-status-message");
-  button.disabled = true;
-  if (message) message.textContent = "公式Ollamaインストーラーをダウンロードしています…";
-  try {
-    const result = await api.downloadOllamaInstaller();
-    if (message) message.textContent = "インストーラーを起動しました。画面の案内に沿ってインストールし、完了後に「Ollama接続を確認」を押してください。";
-    showToast("Ollamaインストーラーを起動しました。");
-  } catch (error) {
-    if (message) message.textContent = error.message || "Ollamaのダウンロードに失敗しました。";
-    showToast(message.textContent, true);
-  } finally { button.disabled = false; }
-});
-byId("ollama-pull-model-button").addEventListener("click", async () => {
-  const button = byId("ollama-pull-model-button");
-  const model = byId("setting-ai-article-model").value.trim() || "qwen2.5:3b";
-  const message = byId("ollama-status-message");
-  button.disabled = true;
-  if (message) message.textContent = model + " をダウンロードしています…";
-  try {
-    await api.pullOllamaModel(model);
-    if (message) message.textContent = model + " のダウンロードが完了しました。";
-    await checkOllamaStatus();
-    showToast(model + " をOllamaに追加しました。");
-  } catch (error) {
-    if (message) message.textContent = error.message || "モデルのダウンロードに失敗しました。";
-    showToast(message.textContent, true);
-  } finally { button.disabled = false; }
-});
 byId("settings-modal").addEventListener("click", (event) => {
   if (event.target === byId("settings-modal")) closeSettings();
 });
@@ -4294,21 +4084,6 @@ setActivePage("dashboard");
 byId("library-refresh-button").addEventListener("click", loadCaptureLibrary);
 byId("library-search").addEventListener("input", renderCaptureLibrary);
 byId("library-filter").addEventListener("change", renderCaptureLibrary);
-byId("articles-refresh-button").addEventListener("click", loadBroadcastArticles);
-byId("manual-article-generate-button").addEventListener("click", generateManualBroadcastArticle);
-byId("manual-article-video-select-button").addEventListener("click", selectManualArticleVideo);
-byId("manual-article-whisper-auto-button").addEventListener("click", downloadArticleWhisper);
-byId("manual-article-whisper-cli-button").addEventListener("click", selectArticleWhisperCli);
-byId("manual-article-whisper-model-button").addEventListener("click", selectArticleWhisperModel);
-byId("manual-article-live-start-button").addEventListener("click", startLiveArticleSession);
-byId("manual-article-live-stop-button").addEventListener("click", stopLiveArticleSession);
-byId("manual-article-file").addEventListener("change", () => {
-  const file = byId("manual-article-file").files?.[0];
-  byId("manual-article-file-name").textContent = file ? file.name + "（" + formatLibraryBytes(file.size) + "）" : "ファイル未選択。番組情報だけでも記事を生成できます。";
-});
-byId("articles-search").addEventListener("input", renderBroadcastArticles);
-byId("articles-status-filter").addEventListener("change", renderBroadcastArticles);
-byId("articles-sort").addEventListener("change", renderBroadcastArticles);
 byId("library-open-folder-button").addEventListener("click", async () => {
   try {
     const result = await api.openDataFolder();

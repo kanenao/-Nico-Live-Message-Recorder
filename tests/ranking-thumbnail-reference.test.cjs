@@ -150,3 +150,14 @@ test("hover preview result never replaces or blocks the ordinary poster cache",a
  assert.ok(proxy.status("lv123456").revision>0);
  assert.match(await proxy.get("lv123456","poster"),/^data:image\/jpeg;base64,/);
 });
+
+test("explicit Chikuwa listing screenshot can be fetched through the bounded image proxy",async()=>{
+ const url="https://www.chikuwachan.com/live/images/lv123456.jpg";
+ const proxy=createRankingImageProxy({fetchImpl:async(value,options)=>{
+   assert.equal(value,url);assert.equal(options.headers.Referer,"https://www.chikuwachan.com/live/NCU/");
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ proxy.update([{liveId:"lv123456",thumbnailUrl:url}]);
+ assert.match(await proxy.get("lv123456",url),/^data:image\/jpeg;base64,/);
+ assert.equal(await proxy.get("lv123456","https://www.chikuwachan.com/live/usericon/a.jpg"),null);
+});

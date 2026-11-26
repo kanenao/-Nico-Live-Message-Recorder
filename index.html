@@ -19,7 +19,7 @@
         </div>
       </div>
       <div class="top-actions">
-        <span class="version" id="version">v1.2.1-beta.164</span>
+        <span class="version" id="version">v1.3.0-beta.165</span>
         <button class="button button-quiet button-small" id="check-update-button" type="button">更新を確認</button>
         <button class="button button-quiet button-small" id="settings-button" type="button">⚙ 設定</button>
         <button class="button button-quiet" id="login-button">ニコニコにログイン</button>
@@ -62,9 +62,6 @@
           <button class="nav-item" type="button" id="open-folder-button" data-page-target="library">
             <span class="nav-icon">▣</span><span class="nav-text">録画ライブラリ</span>
           </button>
-          <button class="nav-item" type="button" id="articles-nav-button" data-page-target="articles">
-            <span class="nav-icon">▤</span><span class="nav-text">放送記事</span>
-          </button>
         </div>
         <div class="nav-group">
           <div class="side-label">アプリ</div>
@@ -87,7 +84,7 @@
         <div class="sidebar-bottom">
           <div class="side-label">β版の注意</div>
           <p>映像は配信ストリームから直接保存します。画面キャプチャは使用しません。</p>
-          <div class="small-version">BUILD <span id="build-version">1.2.1-beta.164</span></div>
+          <div class="small-version">BUILD <span id="build-version">1.3.0-beta.165</span></div>
         </div>
       </aside>
 
@@ -167,72 +164,6 @@
           <p class="hint">配信者のユーザーIDとアイコンは、録画時の番組情報・コメントログ・放送IDから自動取得します。特定できない場合のみ手動設定できます。動画ごとのサムネイルは録画ファイルの映像からFFmpegで取得します。「動画内を見る」で動画の代表的な場面を複数表示し、画像を選んで拡大できます。実際の再生はWindowsの既定のプレーヤーで行います。動画とコメント（JSONL・CSV・ASS）はそれぞれの「削除」から1ファイルずつ確認して削除できます。録画動画とAI記事は連動削除されません。取得中のコメントファイルは削除できません。</p>
         </section>
 
-        <section class="panel broadcast-articles-panel kick-article-layout" id="articles-panel" hidden data-page="articles">
-          <div class="panel-heading library-heading">
-            <div>
-              <div class="eyebrow">BROADCAST JOURNAL / LOCAL ARCHIVE</div>
-              <h2>放送記事・無料AI記事生成</h2>
-              <p class="session-description">録画済み動画と生放送の両方で、映像・音声・コメントを総合してニュース形式の記事を作れます。録画終了後の自動解析にも対応します。</p>
-            </div>
-            <div class="library-heading-actions">
-              <button class="button button-primary button-small" id="articles-refresh-button" type="button">記事を更新</button>
-            </div>
-          </div>
-          <section class="article-manual-generator" aria-labelledby="article-manual-title">
-            <div class="article-manual-heading"><div><h3 id="article-manual-title">登録なしで記事を生成</h3><p>配信者を監視リストに追加せず、記事生成だけ利用できます。</p></div><span class="update-state-badge" data-state="downloaded">無料・ローカルAI対応</span></div>
-            <div class="article-manual-grid">
-              <label>配信者名（任意）<input id="manual-article-broadcaster" type="text" maxlength="80" placeholder="未入力でも生成できます"></label>
-              <label>放送ID / 視聴URL（任意）<input id="manual-article-live-id" type="text" maxlength="2048" placeholder="lv123456789 または https://live.nicovideo.jp/watch/lv123456789" autocomplete="url"></label>
-              <label class="article-manual-wide">番組タイトル<input id="manual-article-title" type="text" maxlength="300" placeholder="番組・配信のタイトル"></label>
-              <label class="article-manual-wide">番組説明<textarea id="manual-article-description" rows="3" maxlength="3000" placeholder="配信内容や紹介文（任意）"></textarea></label>
-              <label class="article-manual-wide">コメントログ（JSONL・任意）<input id="manual-article-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson,application/json"><small id="manual-article-file-name">ファイル未選択でも録画動画を選べば同じ放送の保存コメントを自動的に探します。番組情報だけでも記事を生成できます。</small></label>
-              <div class="article-manual-wide article-video-picker"><span>録画済み動画（任意・映像と音声をAI分析）</span><div><button class="button button-secondary" id="manual-article-video-select-button" type="button">動画を選択</button><small id="manual-article-video-name">動画未選択。最大12枚の代表フレームと、2分区切りで録画全体の音声を分析します。</small></div></div>
-              <div class="article-manual-wide article-audio-tools">
-                <strong>無料の音声文字起こし（Whisper.cpp）</strong>
-                <div class="article-audio-tool-row"><button class="button button-primary button-small" id="manual-article-whisper-auto-button" type="button">Whisper.cppと日本語モデルを自動ダウンロード</button><small id="manual-article-whisper-download-status" role="status">初回のみ約160MBをダウンロードします。</small></div>
-                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-cli-button" type="button">whisper-cli.exeを手動選択</button><small id="manual-article-whisper-cli-name">未設定</small></div>
-                <div class="article-audio-tool-row"><button class="button button-secondary button-small" id="manual-article-whisper-model-button" type="button">日本語モデルを手動選択</button><small id="manual-article-whisper-model-name">未設定（ggml-base.bin推奨）</small></div>
-                <p class="hint">自動セットアップは公式whisper.cppのWindows x64実行ファイルとHugging Faceの日本語対応baseモデルを取得し、SHA-256／SHA-1を検証してPC内に保存します。音声はPC内で文字起こしし、Ollamaへ渡します。未設定でも映像・コメントの記事生成は利用できます。</p>
-              </div>
-              <div class="article-manual-wide article-live-generator"><strong>生放送から直接記事を生成</strong><p>放送IDまたは視聴URLを入力すると、視聴ページは画面に表示せず、録画ファイルを残さず記事生成専用の取得を開始します。StreamlinkとFFmpegで実際の放送映像を15秒間隔のJPEG画像として抽出し、コメントをリアルタイム保存します。Whisper.cppを設定していれば、同じ配信の音声を約25秒ごとに分割して日本語文字起こしします。映像・音声・コメントを約2分ごとにOllamaへ渡して更新し、終了時に最終記事へ反映します。音声解析用データは一時保存し、終了後に削除します。AI処理はPC内で行い、有料APIは使用しません。映像の直接取得ができない場合は視聴ページの画像取得に切り替わり、音声解析は利用できないことがあります。</p><div class="article-live-actions"><button class="button button-primary" id="manual-article-live-start-button" type="button">生放送の記事生成を開始</button><button class="button button-secondary" id="manual-article-live-stop-button" type="button" hidden>生放送の記事生成を停止・保存</button><small id="manual-article-live-status" role="status">未接続。ニコニコにログインしてから開始してください。</small></div></div>
-            </div>
-            <div class="article-manual-actions"><span id="manual-article-status" role="status">Ollamaが利用可能なら映像・音声・コメントを照合した記事を作成します。映像分析は qwen2.5vl:3b、音声認識はWhisper.cpp＋日本語モデルを使用します。未導入の処理は未解析として表示し、取得できた情報のみで記事を作ります。録画終了後の自動解析の結果は記事一覧に反映されます。</span><button class="button button-primary" id="manual-article-generate-button" type="button">この記事を生成</button></div>
-            <p class="hint">コメントログを使う場合はJSONL形式を選択してください。配信者のAI利用禁止・転載禁止等の指定がある場合は生成しません。</p>
-          </section>
-          <div class="library-summary article-summary">
-            <div class="library-summary-card"><span>記事数</span><strong id="articles-total">0</strong></div>
-            <div class="library-summary-card"><span>配信者数</span><strong id="articles-broadcaster-count">0</strong></div>
-            <div class="library-summary-card"><span>記事対象コメント</span><strong id="articles-comment-total">0</strong></div>
-          </div>
-          <div class="library-toolbar article-library-toolbar">
-            <label class="library-search-field" for="articles-search">
-              <span>記事を検索（本文・要約・話題も対象）</span>
-              <input id="articles-search" type="search" placeholder="配信者名・番組タイトル・放送ID・本文・話題">
-            </label>
-            <label class="article-filter-field">記事の種類
-              <select id="articles-status-filter">
-                <option value="all">すべての記事</option>
-                <option value="live">ライブ記事</option>
-                <option value="ended">配信終了記事</option>
-                <option value="manual">登録なし・手動生成</option>
-                <option value="ai">AI生成済み</option>
-              </select>
-            </label>
-            <label class="article-filter-field">並び順
-              <select id="articles-sort">
-                <option value="newest">新しい順</option>
-                <option value="oldest">古い順</option>
-                <option value="comments">コメント数が多い順</option>
-              </select>
-            </label>
-            <span id="articles-filter-count" class="article-filter-count" aria-live="polite">0 件表示</span>
-          </div>
-          <div class="broadcast-articles-list" id="articles-list">
-            <div class="article-empty">放送記事を読み込んでいます…</div>
-          </div>
-          <p class="hint">コメントログだけで生成した記事は、配信者の発言を文字起こししたものではありません。記事はこのPC内に保存されます。番組説明に転載・切り抜き・AI利用などを禁止する指定がある場合は生成しません。音声はWhisperの自動文字起こしを利用できます。認識誤りがあるため元配信で確認してください。</p>
-        </section>
-
         <section class="panel update-panel" id="update-panel" aria-live="polite" hidden data-page="dashboard">
           <div class="update-panel-content">
             <div class="update-copy">
@@ -289,7 +220,7 @@
             <div><div class="eyebrow">NICO LIVE / RANKING</div><h2>ニコニコ生放送ランキング</h2></div>
             <button class="button button-primary button-small" id="ranking-refresh" type="button">更新</button>
           </div>
-          <p class="ranking-intro">独自の総合ランキング TOP 100 <span>10秒自動更新対応</span></p><details class="ranking-help"><summary>採点・観測・画像の説明</summary><p class="hint">総合順位は勢いpt・来場者数・コメント数・コメント増加/分・来場者増加/分を独自に相対評価します。ローカルOllama（qwen2.5:3b）が利用できる場合は匿名の集計値から共通配点を調整し、利用できない場合は統計配点を使用します。アクティブ・広告・ギフトは全候補で比較可能な場合だけ採点に加えます。未取得指標は加点せず充足率を表示。総合ptには主な加点理由を表示し、マウスを合わせると全指標の採点内訳を確認できます。アクティブ人数は現在コメント接続中の番組と上位10番組の直近5分間の観測投稿者数です。観測が5分未満でも人数を表示し、観測中の注記を付けます。公開コメント接続のみ、ログイン不要。接続不可・観測対象外を区別します。ランキング画面を閉じると観測を停止します。広告・ギフトの累計は既存視聴接続の統計通知または取得元の明示値を表示し、受信ギフトの直近5分の観測小計は別表示します。公式順位ではありません。順位グラフは同じ取得条件で連続した最大約1時間の履歴（アプリ実行中）です。画像と配信者情報はランキング更新を止めずに公式番組情報から順次補完します。サムネイルにマウスを合わせると最大10秒間、取得した画像を同じサイズでコマ送り表示します（試験）。配信記事のStreamlink映像取得中は同じ番組の新しい実映像フレームを優先表示します。</p></details>
+          <p class="ranking-intro">独自の総合ランキング TOP 100 <span>10秒自動更新対応</span></p><details class="ranking-help"><summary>採点・観測・画像の説明</summary><p class="hint">総合順位は勢いpt・来場者数・コメント数・コメント増加/分・来場者増加/分を独自に相対評価します。ローカルOllama（qwen2.5:3b）が利用できる場合は匿名の集計値から共通配点を調整し、利用できない場合は統計配点を使用します。アクティブ・広告・ギフトは全候補で比較可能な場合だけ採点に加えます。未取得指標は加点せず充足率を表示。総合ptには主な加点理由を表示し、マウスを合わせると全指標の採点内訳を確認できます。アクティブ人数は現在コメント接続中の番組と上位10番組の直近5分間の観測投稿者数です。観測が5分未満でも人数を表示し、観測中の注記を付けます。公開コメント接続のみ、ログイン不要。接続不可・観測対象外を区別します。ランキング画面を閉じると観測を停止します。広告・ギフトの累計は既存視聴接続の統計通知または取得元の明示値を表示し、受信ギフトの直近5分の観測小計は別表示します。公式順位ではありません。順位グラフは同じ取得条件で連続した最大約1時間の履歴（アプリ実行中）です。画像と配信者情報はランキング更新を止めずに公式番組情報から順次補完します。サムネイルにマウスを合わせると最大10秒間、取得した画像を同じサイズでコマ送り表示します（試験）。</p></details>
           <div class="ranking-toolbar">
             <label>検索 <input id="ranking-search" type="search" placeholder="上位100位を検索"></label>
             <label>並び順 <select id="ranking-sort"><option value="compositeScore">総合ポイント（AI／独自統計）</option><option value="points">勢いポイント</option><option value="visitors">来場者数</option><option value="comments">コメント数</option><option value="commentRate">コメント増加 / 分（同一取得元比較）</option><option value="activePeople">アクティブ人数</option><option value="adPoints">広告pt</option><option value="giftPoints">ギフトpt</option><option value="startedAt">新着順</option></select></label>
@@ -706,7 +637,7 @@
           <div class="version-update-summary">
             <div class="settings-version-row">
               <span>インストール中のバージョン</span>
-              <strong id="app-current-version">v1.2.1-beta.164</strong>
+              <strong id="app-current-version">v1.3.0-beta.165</strong>
               <small>このPCのアプリ</small>
             </div>
             <div class="settings-version-row settings-latest-version" id="settings-latest-version-row">
@@ -817,7 +748,7 @@
               <button class="button button-primary button-small" id="update-channel-switch-button" type="button">チャンネルを切り替えて再起動</button>
             </div>
             <p class="update-channel-status" id="update-channel-status" role="status" aria-live="polite">現在の更新先を確認しています…</p>
-            <p class="update-channel-note" id="update-channel-note">製品版へ切り替えると、放送記事・無料AI記事生成などβ版専用機能は利用できなくなります。元々β版を使っていたユーザーは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。</p>
+            <p class="update-channel-note" id="update-channel-note">製品版へ切り替えると、β版専用機能は利用できなくなります。元々β版を使っていたユーザーは、製品版からβ版に戻せます。切り替え時は録画・コメント取得を終了して再起動します。</p>
           </section>
 
           <p class="settings-help">自動更新はWindows NSISインストーラー版に対応しています。ZIP版ではGitHub Releasesから最新版をダウンロードしてください。</p>
@@ -892,7 +823,7 @@
         </section>
 
         <footer class="footer">
-          <span>Nico Live Message Recorder <span id="footer-version">v1.2.1-beta.164</span></span>
+          <span>Nico Live Message Recorder <span id="footer-version">v1.3.0-beta.165</span></span>
           <span id="notice">画面キャプチャは使用せず、配信データをこのPC内に直接保存します。</span>
         </footer>
       </main>
@@ -1026,28 +957,7 @@
           </div>
         </section>
 
-        <section class="settings-section" aria-live="polite">
-          <div class="settings-section-heading">
-            <div><h3>無料AI記事生成（Ollama）</h3><p>AIをPC内で実行します。OpenAI APIキー・API料金は不要です。</p></div>
-            <span class="update-state-badge" id="ollama-status-badge" data-state="idle">未確認</span>
-          </div>
-          <label class="settings-checkbox">
-            <input type="checkbox" id="setting-ai-article-enabled" checked>
-            <span>配信記事をOllamaで自動生成する（利用できない場合は従来方式に切り替え）</span>
-          </label>
-          <label class="settings-field">AIモデル名
-            <input type="text" id="setting-ai-article-model" value="qwen2.5:3b" maxlength="100" placeholder="qwen2.5:3b">
-          </label>
-          <div class="app-update-status" id="ollama-status-message" role="status">接続先： http://127.0.0.1:11434</div>
-          <div class="app-update-actions">
-            <button class="button button-primary button-small" id="ollama-install-button" type="button">Ollamaを自動ダウンロード</button>
-            <button class="button button-outline button-small" id="ollama-pull-model-button" type="button">選択中のAIモデルをダウンロード</button>
-            <button class="button button-outline button-small" id="ollama-check-button" type="button">Ollama接続を確認</button>
-          </div>
-          <p class="settings-help">初回は「Ollamaを自動ダウンロード」を押すと公式インストーラーを取得して起動します。インストール画面でセットアップを完了後、モデル名（例：qwen2.5:3b／映像分析対応 qwen2.5vl:3b）を指定して「選択中のAIモデルをダウンロード」を押してください。モデルはPC内に保存されます。</p>
-        </section>
-
-        <section class="settings-section" aria-label="バージョン更新">
+<section class="settings-section" aria-label="バージョン更新">
           <div class="settings-section-heading">
             <div><h3>バージョン更新</h3><p>更新確認とバージョンごとの変更履歴は、左メニューの「バージョン更新」から確認できます。</p></div>
           </div>

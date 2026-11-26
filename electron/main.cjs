@@ -727,6 +727,9 @@ async function enhanceBroadcastArticleWithOllama(article, records, articleContex
 }
 
 async function createAndSaveBroadcastArticle(commentPath, context = {}, options = {}) {
+  return {status:"skipped",reason:"放送記事機能は廃止されました。"};
+/* Legacy implementation retained for source cleanup only. */
+
   if (!commentPath || !fs.existsSync(commentPath)) {
     return { status: "skipped", reason: "コメントログが見つかりません。" };
   }
@@ -834,6 +837,8 @@ async function extractArticleVideoFrames(videoPath) {
 }
 
 async function generateStandaloneBroadcastArticle(input = {}) {
+  throw new Error("放送記事機能は廃止されました。");
+
   const commentsText = String(input.commentsText || "");
   if (commentsText.length > 8 * 1024 * 1024) throw new Error("コメントログは8MB以下のJSONLファイルを指定してください。");
   const records = parseCommentLog(commentsText);
@@ -935,6 +940,8 @@ async function generateStandaloneBroadcastArticle(input = {}) {
 const recordedArticleAnalysisInFlight = new Map();
 let recordedArticleAnalysisQueue = Promise.resolve();
 function queueRecordedArticleAnalysis(articlePath, options = {}) {
+  return Promise.resolve({status:"skipped",reason:"放送記事機能は廃止されました。"});
+
   const key = path.resolve(String(articlePath || ""));
   if (recordedArticleAnalysisInFlight.has(key)) return recordedArticleAnalysisInFlight.get(key);
   const job = recordedArticleAnalysisQueue.catch(() => {}).then(() => analyzeSavedRecordedArticle(key, options));
@@ -1184,14 +1191,7 @@ function openCommentWriter(liveId, displayName = "", broadcasterId = "") {
     ...currentProgramInfo
   });
   send("comments:file", { path: commentFilePath });
-  if (articleUpdateTimer) clearInterval(articleUpdateTimer);
-  articleUpdateTimer = setInterval(() => {
-    void refreshLiveBroadcastArticle();
-  }, 60 * 1000);
-  if (typeof articleUpdateTimer.unref === "function") articleUpdateTimer.unref();
-  if (currentProgramInfo.programTitle || currentProgramInfo.description) {
-    void refreshLiveBroadcastArticle();
-  }
+
 }
 
 function updateCurrentBroadcaster(metadata, liveId) {
@@ -1280,6 +1280,8 @@ function appendMarker(type, fields = {}) {
 }
 
 async function refreshLiveBroadcastArticle(options = {}) {
+  return null;
+
   if (!commentWriter || !commentFilePath) return null;
   if (articleUpdateInProgress) {
     // Keep one refresh queued while Ollama is busy; metadata or comment bursts
@@ -1390,31 +1392,11 @@ async function closeCommentWriter(options = {}) {
   while (articleUpdateInProgress) await new Promise(resolve => setTimeout(resolve, 200));
   try {
     commentFilePath = await moveCommentLogToBroadcasterFolder(oldPath);
-    relocateArticleForRenamedComment(oldPath, commentFilePath);
     send("comments:file", { path: commentFilePath });
     await exportCommentSidecars(commentFilePath);
   } catch (error) {
     if (!commentFilePath || !fs.existsSync(commentFilePath)) commentFilePath = oldPath;
     send("app:error", "コメントファイルの整理・形式変換に失敗しました: " + error.message);
-  }
-  if (options.skipArticle === true) return;
-  try {
-    const savedArticle = await createAndSaveBroadcastArticle(commentFilePath, articleContext, {
-      force: liveArticleSessionActive,
-      deferAiForRecordedVideo: !liveArticleSessionActive,
-      images: liveArticleSessionActive ? liveArticleFrames.slice(-LIVE_ARTICLE_MAX_FRAMES) : [],
-      audioTranscript: liveArticleAudioTranscript ? liveArticleAudioTranscript.text : "",
-      audioTranscriptSegmentCount: liveArticleAudioTranscript ? liveArticleAudioTranscript.segmentCount : 0
-    });
-    if (!liveArticleSessionActive && savedArticle && savedArticle.status === "generated" &&
-        savedArticle.videoFile && getMonitorSettings().aiArticleEnabled !== false) {
-      // Finish video+comment capture first; media analysis continues without
-      // blocking the Stop button or starting another capture process.
-      void queueRecordedArticleAnalysis(savedArticle.articlePath).catch(error =>
-        send("app:error", "録画の映像・音声・コメント記事化に失敗しました: " + error.message));
-    }
-  } catch (error) {
-    send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
   }
   } finally {
     commentFinalizing = false;
@@ -2254,6 +2236,8 @@ async function stopLiveArticleAudioCapture(liveId) {
   }
 }
 async function startLiveArticleSession(input = {}) {
+  throw new Error("放送記事機能は廃止されました。");
+
   if (chaseStartPending || chaseRecordingActive) throw new Error("追っかけ録画を終了してから生放送記事を開始してください。");
   if (timeshiftCommentFetchActive) throw new Error("過去配信のコメント取得中は生放送記事を開始できません。");
   if (provider || commentWriter || liveArticleSessionActive) throw new Error("別のコメント取得セッションが実行中です。先に切断してください。");
@@ -2331,8 +2315,10 @@ async function stopLiveArticleSession() {
   return { stopped: true, liveId };
 }
 
-ipcMain.handle("articles:live-start", (_event, input) => startLiveArticleSession(input));
-ipcMain.handle("articles:live-stop", () => stopLiveArticleSession());
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:live-start", (_event, input) => startLiveArticleSession(input));
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:live-stop", () => stopLiveArticleSession());
 
 ipcMain.handle("live:connect", async (_event, value, options = {}) => {
   if (captureStopPromise) throw new Error("録画とコメントの停止完了後に再接続してください。");
@@ -2461,7 +2447,7 @@ const DEFAULT_MONITOR_SETTINGS = Object.freeze({
   ...normalizeAssMotion(),
   autoUpdateStreamlink: true,
   notifyOnLive: true,
-  aiArticleEnabled: true,
+  aiArticleEnabled: false,
   aiArticleModel: "qwen2.5:3b",
   targets: []
 });
@@ -2491,7 +2477,7 @@ function getMonitorSettings() {
     ...normalizeAssMotion(stored),
     autoUpdateStreamlink: stored.autoUpdateStreamlink !== false,
     notifyOnLive: stored.notifyOnLive !== false,
-    aiArticleEnabled: stored.aiArticleEnabled !== false,
+    aiArticleEnabled: false,
     aiArticleModel: typeof stored.aiArticleModel === "string" && stored.aiArticleModel.trim() ? stored.aiArticleModel.trim().slice(0, 100) : "qwen2.5:3b",
     targets: targets
       .filter((target) => target && /^\d{5,}$/.test(String(target.userId || "")))
@@ -2526,7 +2512,7 @@ function saveMonitorSettings(nextSettings) {
     ...normalizeAssMotion(candidate),
     autoUpdateStreamlink: candidate.autoUpdateStreamlink !== false,
     notifyOnLive: candidate.notifyOnLive !== false,
-    aiArticleEnabled: candidate.aiArticleEnabled !== false,
+    aiArticleEnabled: false,
     aiArticleModel: typeof candidate.aiArticleModel === "string" && candidate.aiArticleModel.trim() ? candidate.aiArticleModel.trim().slice(0, 100) : "qwen2.5:3b",
     targets: current.targets
   };
@@ -3016,8 +3002,10 @@ ipcMain.handle("ranking:open-user-profile", async (_event, liveId) => {
   return {opened:true};
 });
 ipcMain.handle("monitor:get-state", () => getMonitorState());
-ipcMain.handle("ollama:get-status", () => getOllamaStatus());
-ipcMain.handle("ollama:download-installer", async () => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("ollama:get-status", () => getOllamaStatus());
+// retired article IPC (not registered)
+if (false) ipcMain.handle("ollama:download-installer", async () => {
   const installerPath = await downloadOllamaInstaller({
     directory: path.join(app.getPath("userData"), "ollama"),
     onProgress: (progress) => send("ollama:setup-progress", progress)
@@ -3026,7 +3014,8 @@ ipcMain.handle("ollama:download-installer", async () => {
   if (launchError) throw new Error("Ollamaインストーラーを起動できませんでした: " + launchError);
   return { installerPath, launched: true };
 });
-ipcMain.handle("ollama:pull-model", async (_event, input) => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("ollama:pull-model", async (_event, input) => {
   const settings = getMonitorSettings();
   const model = String(input && input.model || settings.aiArticleModel || "qwen2.5:3b").trim();
   const result = await pullOllamaModel({
@@ -3234,21 +3223,6 @@ async function finalizeStreamlinkRecording(exit) {
       });
     } catch (error) {
       send("app:error", "コメントログの終了マーカー保存に失敗しました: " + error.message);
-    }
-  }
-
-  if (hasFinalOutput && commentWriter && commentFilePath && streamlinkLiveId) {
-    try {
-      await createAndSaveBroadcastArticle(commentFilePath, {
-        liveId: streamlinkLiveId,
-        broadcasterName: streamlinkBroadcasterName || currentBroadcasterName,
-        broadcasterId: streamlinkBroadcasterId || currentBroadcasterId,
-        ...currentProgramInfo,
-        liveStatus: commentWriter && provider ? "live" : "unknown",
-        videoFile: finalPath
-      });
-    } catch (error) {
-      send("app:error", "放送記事の自動生成に失敗しました: " + error.message);
     }
   }
 
@@ -4316,20 +4290,6 @@ function listCaptureLibrary() {
     item.liveId = indexed && /^lv\d{5,}$/i.test(String(indexed.liveId || ""))
       ? indexed.liveId : (matchedLogs.get(key) || "");
   }
-  const savedArticles = listBroadcastArticles().items;
-  for (const item of items) {
-    if (item.type !== "video") continue;
-    const article = savedArticles.find(candidate =>
-      (candidate.videoFile && path.resolve(candidate.videoFile) === path.resolve(item.path)) ||
-      (candidate.liveId && item.liveId && String(candidate.liveId).toLowerCase() === item.liveId.toLowerCase())
-    );
-    if (article) item.article = {
-      articlePath: article.articlePath || "",
-      title: article.title || article.programTitle || article.liveId || "放送記事",
-      summary: article.summary || (Array.isArray(article.paragraphs) ? article.paragraphs[0] : "") || "",
-      topics: Array.isArray(article.topics) ? article.topics.slice(0, 5).map(topic => topic.term).filter(Boolean) : []
-    };
-  }
   items.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
   return {
     root,
@@ -4571,8 +4531,10 @@ async function getArticleThumbnail(articlePath) {
   if (articleThumbnailCache.size > 80) articleThumbnailCache.delete(articleThumbnailCache.keys().next().value);
   return promise;
 }
-ipcMain.handle("articles:thumbnail", (_event, articlePath) => getArticleThumbnail(articlePath));
-ipcMain.handle("articles:video-preview", async (_event, articlePath) => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:thumbnail", (_event, articlePath) => getArticleThumbnail(articlePath));
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:video-preview", async (_event, articlePath) => {
   const filePath = resolveBroadcastArticlePath(articlePath);
   const article = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
   if (!article || article.status !== "generated") {
@@ -4683,7 +4645,8 @@ function resolveBroadcastArticlePath(value) {
   if (!realRelative || realRelative.startsWith("..") || path.isAbsolute(realRelative)) throw new Error("記事保存フォルダー外のファイルは削除できません。");
   return realTarget;
 }
-ipcMain.handle("articles:delete", async (_event, value) => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:delete", async (_event, value) => {
   const target = resolveBroadcastArticlePath(value);
   const confirmation = await dialog.showMessageBox(mainWindow, {
     type: "warning", buttons: ["キャンセル", "記事だけ削除"], defaultId: 0, cancelId: 0,
@@ -4694,12 +4657,16 @@ ipcMain.handle("articles:delete", async (_event, value) => {
   await fs.promises.unlink(target);
   return { deleted: true, fileName: path.basename(target) };
 });
-ipcMain.handle("articles:list", () => listBroadcastArticles());
-ipcMain.handle("articles:live-previews", (_event, liveIds) =>
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:list", () => listBroadcastArticles());
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:live-previews", (_event, liveIds) =>
   selectLiveArticlePreviews(listBroadcastArticles().items, liveIds));
-ipcMain.handle("articles:reanalyze", (_event, articlePath) =>
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:reanalyze", (_event, articlePath) =>
   queueRecordedArticleAnalysis(articlePath, { force: true }));
-ipcMain.handle("articles:export-html", async (_event, article) => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:export-html", async (_event, article) => {
   if (!article || typeof article !== "object" || Array.isArray(article)) throw new Error("記事データが正しくありません。");
   const safeTitle = String(article.title || article.programTitle || "放送記事")
     .replace(/[\\\\/:*?"<>|]/g, "_").trim().slice(0, 100) || "放送記事";
@@ -4713,26 +4680,33 @@ ipcMain.handle("articles:export-html", async (_event, article) => {
   await fs.promises.writeFile(target, articleExport.renderArticleHtml(article), "utf8");
   return { saved: true, filePath: target };
 });
-ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
-ipcMain.handle("articles:generate-manual", (_event, input) => generateStandaloneBroadcastArticle(input));
-ipcMain.handle("articles:select-video", async () => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:generate-from-comment", (_event, value) => generateArticleFromCommentFile(value));
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:generate-manual", (_event, input) => generateStandaloneBroadcastArticle(input));
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:select-video", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: "記事生成に使う動画を選択", properties: ["openFile"], filters: [{ name: "動画ファイル", extensions: ["mp4", "mkv", "webm", "mov", "m4v", "ts", "avi"] }] });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   return { canceled: false, path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
 });
-ipcMain.handle("articles:get-whisper-settings", () => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:get-whisper-settings", () => {
   const settings = readAppSettings();
   return { cliPath: settings.articleWhisperCliPath || "", modelPath: settings.articleWhisperModelPath || "", managed: Boolean(settings.articleWhisperManaged) };
 });
-ipcMain.handle("articles:download-whisper", async () => installWhisperAutomatically());
-ipcMain.handle("articles:select-whisper-cli", async () => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:download-whisper", async () => installWhisperAutomatically());
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:select-whisper-cli", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: "whisper-cli実行ファイルを選択", properties: ["openFile"], filters: [{ name: "実行ファイル", extensions: process.platform === "win32" ? ["exe"] : ["*"] }] });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   const selectedPath = result.filePaths[0];
   writeAppSettings({ articleWhisperCliPath: selectedPath });
   return { canceled: false, path: selectedPath, name: path.basename(selectedPath) };
 });
-ipcMain.handle("articles:select-whisper-model", async () => {
+// retired article IPC (not registered)
+if (false) ipcMain.handle("articles:select-whisper-model", async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: "Whisper日本語モデル(ggml-*.bin)を選択", properties: ["openFile"], filters: [{ name: "Whisperモデル", extensions: ["bin"] }] });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   const selectedPath = result.filePaths[0];

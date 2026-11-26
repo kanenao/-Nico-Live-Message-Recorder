@@ -59,21 +59,17 @@ test("LIVE preview excludes full article, local paths, large images and transcri
   assert.equal(article.audioTranscript, undefined);
 });
 
-test("LIVE dashboard displays article previews without disturbing recording and watch controls", () => {
-  assert.match(main, /ipcMain\.handle\("articles:live-previews"/);
-  assert.match(main, /liveId: String\(input\.liveId \|\| ""\)\.trim\(\) \? safeLiveId\(input\.liveId\)/);
-  assert.match(preload, /getLiveArticlePreviews:.*ipcRenderer\.invoke\("articles:live-previews"/);
-  assert.match(renderer, /function renderLiveBroadcasts\(/);
-  assert.match(renderer, /liveArticlePreviews\.get\(String\(status\.liveId/);
-  assert.match(renderer, /live-broadcast-ai-article/);
-  assert.match(renderer, /記事を読む/);
-  assert.match(renderer, /記事を作成/);
-  assert.match(renderer, /byId\("manual-article-live-id"\)\.value = status\.liveId/);
-  assert.match(renderer, /byId\("articles-search"\)\.value = hasArticle \? status\.liveId/);
-  assert.match(renderer, /startVideoRecording\(\{\s*liveId: status\.liveId/);
-  assert.match(renderer, /api\.openWatch\(status\.liveId\)/);
-  assert.match(renderer, /refreshLiveArticlePreviews\(true\)/);
-  assert.match(renderer, /channel === "articles:generated"/);
-  assert.match(css, /\.live-broadcast-ai-article/);
-  assert.match(html, /AI記事の見出し・要約/);
+
+test("retired article features cannot be accessed from dashboard or preload",()=>{
+ const fs=require("node:fs"),path=require("node:path"),root=path.join(__dirname,"..");
+ const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+ const preload=fs.readFileSync(path.join(root,"electron/preload.cjs"),"utf8");
+ const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
+ const main=fs.readFileSync(path.join(root,"electron/main.cjs"),"utf8");
+ assert.doesNotMatch(html,/id="articles-nav-button"|id="articles-panel"|id="setting-ai-article-enabled"/);
+ assert.doesNotMatch(preload,/ipcRenderer\.invoke\("(?:articles:|ollama:)/);
+ assert.doesNotMatch(main,/^ipcMain\.handle\("(?:articles:|ollama:)/m);
+ assert.doesNotMatch(renderer,/card\.append\(top, broadcaster, title, meta, articlePreview/);
+ assert.match(renderer,/card\.append\(top, broadcaster, title, meta, footer\)/);
+ assert.match(main,/aiArticleEnabled: false/);
 });
