@@ -2998,14 +2998,23 @@ ipcMain.handle("ranking:list", async (_event,options={}) => {
     return {...row,adPoints:measured?.adPoints??row.adPoints??null,giftPoints:measured?.giftPoints??row.giftPoints??null,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),giftObservedPoints:measured?.giftObservedPoints??null,giftObservedCount:measured?.giftObservedCount??null,giftObservationComplete:measured?.giftObservationComplete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
   });
   rankingImageProxy.update(rows);
-  return {...snapshot,rows};
+  if(options?.thumbnails===true&&!snapshot.stale&&!isQuitting)void rankingImageProxy.prefetch().catch(()=>{});
+  return {...snapshot,rows:rows.map(row=>({...row,thumbnailRevision:rankingImageProxy.status(row.liveId).revision,thumbnailAttempted:rankingImageProxy.status(row.liveId).attempted}))};
 });
-ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
-  resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
+function resolvePublicRankingUser(liveId){
+  return resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
     timeoutMs: 6500,
     fetchImpl: (url, options) => fetch(url, { ...options, redirect: "error" })
-  }))
-);
+  }));
+}
+ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) => resolvePublicRankingUser(liveId));
+ipcMain.handle("ranking:open-user-profile", async (_event, liveId) => {
+  const {userId}=await resolvePublicRankingUser(liveId);
+  const profileUrl=nicoUserPageUrl(userId);
+  if(!profileUrl)throw new Error("公式のユーザーページを確認できませんでした。");
+  await shell.openExternal(profileUrl);
+  return {opened:true};
+});
 ipcMain.handle("monitor:get-state", () => getMonitorState());
 ipcMain.handle("ollama:get-status", () => getOllamaStatus());
 ipcMain.handle("ollama:download-installer", async () => {

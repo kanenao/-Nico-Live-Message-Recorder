@@ -489,7 +489,8 @@ test("ranking hides per-source badges without disabling collection or freshness 
   assert.doesNotMatch(css,/\.ranking-sources?\b/);
   assert.match(html,/id="ranking-status"/);
   assert.match(renderer,/rankingStatusText\(rankingSnapshot,rankingVisibleCount/);
-  assert.match(renderer,/api\.getLiveRanking\(\{observe\}\)/);
+  assert.match(renderer,/api\.getLiveRanking\(\{observe,thumbnails\}\)/);
+  assert.match(renderer,/const thumbnails=document\.querySelector\("\.content"\)\?\.dataset\.activePage==="ranking"/);
   assert.equal(SOURCES.length,3);
 });
 
@@ -860,4 +861,43 @@ test("desktop ranking does not wait for thumbnail detail requests and does not o
   now+=10000;const second=await ranking();assert.equal(details,1);assert.equal(second.rows[0].thumbnailUrl,"");
   resolveDetail();await new Promise(r=>setImmediate(r));
   now+=10000;const third=await ranking();assert.equal(third.rows[0].thumbnailUrl,"https://cdn.nimg.jp/a.jpg");assert.equal(details,1);
+});
+
+test("ranking top 100 display preserves true ranks and never fabricates missing programs",()=>{
+ const vm=require("node:vm"),src=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const code=src.slice(src.indexOf("function rankingTopRows("),src.indexOf("function updateRankingCoverage("));
+ const top=vm.runInNewContext(code+"\nrankingTopRows");
+ const rows=Array.from({length:156},(_,i)=>({rank:156-i,liveId:"lv"+(123456+i)}));
+ assert.equal(top(rows).length,100);assert.equal(top(rows)[0].rank,1);assert.equal(top(rows).at(-1).rank,100);
+ assert.equal(top(rows.filter(r=>r.rank<40)).length,39);
+ assert.equal(rows[0].rank,156);
+});
+test("ranking profile opens only through official verified program identity",()=>{
+ const main=fs.readFileSync(path.join(__dirname,"..","electron/main.cjs"),"utf8");
+ const preload=fs.readFileSync(path.join(__dirname,"..","electron/preload.cjs"),"utf8");
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ assert.match(main,/ipcMain\.handle\("ranking:open-user-profile", async \(_event, liveId\) => \{\s*const \{userId\}=await resolvePublicRankingUser\(liveId\);\s*const profileUrl=nicoUserPageUrl\(userId\);/);
+ assert.match(preload,/openRankingUserProfile: \(liveId\) => ipcRenderer\.invoke\("ranking:open-user-profile",liveId\)/);
+ assert.match(renderer,/api\.openRankingUserProfile\(item\.liveId\)/);
+});
+test("official watch enrichment extracts missing viewer and comment counts without assuming zero",()=>{
+ const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const row=parseOfficialRankingDetails(officialPage({nicoliveProgramId:"lv123456",title:"番組",statistics:{watchCount:0,commentCount:22}}),"lv123456");
+ assert.equal(row.visitors,0);assert.equal(row.comments,22);
+ const missing=parseOfficialRankingDetails(officialPage({nicoliveProgramId:"lv123456",title:"番組"}),"lv123456");
+ assert.equal(missing.visitors,null);assert.equal(missing.comments,null);
+});
+
+test("ranking layout keeps all seven metrics groups and adapts to content width",()=>{
+ const html=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
+ const css=fs.readFileSync(path.join(__dirname,"..","styles.css"),"utf8");
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const ranking=html.slice(html.indexOf('id="ranking-panel"'),html.indexOf('data-page="record"',html.indexOf('id="ranking-panel"')));
+ assert.match(ranking,/<details class="ranking-help"><summary>/);
+ assert.match(ranking,/<details class="ranking-help ranking-help-bottom"><summary>/);
+ assert.equal((ranking.match(/<th>/g)||[]).length,7);
+ assert.match(css,/@container \(max-width: 940px\)/);
+ for(const group of ["ranking-total-score","ranking-view-metrics","ranking-active-metric","ranking-support-metrics"])assert.ok(renderer.includes(group)&&css.includes(group));
+ assert.match(renderer,/actions\.append\(record,watch,monitor,chase,preview\)/);
+ assert.match(renderer,/cell\.colSpan=7/);
 });
