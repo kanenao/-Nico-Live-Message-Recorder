@@ -31,3 +31,14 @@ test("bounded redirect accepts official CDN only and rejects branding",async()=>
  assert.equal(await fetchRankingImage("https://live.simg.jp/default.jpg",async()=>{throw Error("must not fetch");}),null);
  assert.deepEqual(programThumbnailCandidates({thumbnail:{screenshot:{large:{src:good},small:"https://live.simg.jp/default.jpg"}}}),[good]);
 });
+
+test("channel NCF listing contributes only matching program artwork",async()=>{
+ const {fetchChannelListingImages,mergeNicoFeedImages}=require("../electron/live-ranking.cjs");
+ const images=await fetchChannelListingImages(async url=>{
+  assert.equal(url,"https://www.chikuwachan.com/live/NCF/");
+  return new Response('<a href="https://live.nicovideo.jp/watch/'+id+'" title="channel"><img src="/live/images/'+id+'.jpg"></a>');
+ });
+ assert.equal(images.get(id),"https://www.chikuwachan.com/live/images/"+id+".jpg");
+ const rows=mergeNicoFeedImages([{liveId:id},{liveId:other}],images);
+ assert.equal(rows[0].thumbnailUrl,images.get(id));assert.equal(rows[1].thumbnailUrl,undefined);
+});
