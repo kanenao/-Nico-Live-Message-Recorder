@@ -31,11 +31,12 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
   async function get(id,url){
     // Empty URL requests a fresh official lookup for a currently listed program.
     // Never turn a renderer-supplied URL into an arbitrary network request.
-    const lookup=url==="";
+    const preview=url==="preview";
+    const lookup=url===""||preview;
     const safe=lookup?"":rankingImageUrl(url);
     if(!/^lv\d{5,15}$/.test(String(id))||!allowed.has(id)||(!lookup&&(!safe||!allowed.get(id).has(safe))))return null;
     const key=id+" "+(lookup?"official":safe),old=cache.get(key),at=now();
-    if(old&&at>=old.at&&at-old.at<30000)return old.data;
+    if(old&&at>=old.at&&at-old.at<(preview?2000:30000))return old.data;
     if(pending.has(key))return pending.get(key);
     if(pending.size>=4)return null;
     const load=async()=>{
