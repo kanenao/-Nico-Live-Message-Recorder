@@ -22,16 +22,17 @@ function summarize(rows,keys){
   }));
 }
 function createAiWeightAdvisor({fetchImpl=globalThis.fetch,now=Date.now,model="qwen2.5:3b",interval=120000}={}){
-  let lastAt=-Infinity,pending=null,cached=null,signature="";
+  let lastAt=-Infinity,pending=null,cached=null,signature="",generation=0;
   function get(rows,keys){
     const sig=keys.join(",");
-    if(signature!==sig){signature=sig;cached=null;lastAt=-Infinity;}
+    if(signature!==sig){signature=sig;generation++;cached=null;lastAt=-Infinity;}
     const at=now();
     if(!pending&&(at-lastAt>=interval||at<lastAt)){
       lastAt=at;
+      const requestGeneration=generation;
       const stats=summarize(rows,keys);
       const defaults=Object.fromEntries(keys.map(k=>[k,BASE[k]]));
-      pending=(async()=>{
+      pending=Promise.resolve().then(async()=>{
         try{
           const response=await fetchImpl("http://127.0.0.1:11434/api/chat",{method:"POST",redirect:"error",signal:AbortSignal.timeout(8000),headers:{"Content-Type":"application/json"},body:JSON.stringify({
             model,stream:false,format:"json",options:{temperature:0,num_predict:180},messages:[
@@ -41,9 +42,9 @@ function createAiWeightAdvisor({fetchImpl=globalThis.fetch,now=Date.now,model="q
           if(!response.ok)return;
           const data=await response.json();
           const weights=validateWeights(JSON.parse(data.message?.content||""),keys);
-          if(weights&&signature===sig)cached={weights,method:"ollama",at:now()};
+          if(weights&&signature===sig&&generation===requestGeneration)cached={weights,method:"ollama",at:now()};
         }catch{}finally{pending=null;}
-      })();
+      });
     }
     if(cached&&at>=cached.at&&at-cached.at<=interval*3)return cached;
     return {weights:Object.fromEntries(keys.map(k=>[k,BASE[k]])),method:"statistical"};

@@ -34,3 +34,30 @@ test("AI advisor is nonblocking, caches validated aggregate-only weights and fal
  await new Promise(r=>setImmediate(r));
  assert.equal(bad.get(rows,keys).method,"statistical");
 });
+
+test("synchronous AI transport failure does not lock future attempts",async()=>{
+  let calls=0,now=1000;
+  const rows=[sample,sample],keys=eligibleMetrics(rows);
+  const weights=Object.fromEntries(keys.map(k=>[k,BASE[k]]));
+  const advisor=createAiWeightAdvisor({now:()=>now,interval:100,fetchImpl:()=>{
+    calls++;if(calls===1)throw Error("transport");
+    return Promise.resolve(new Response(JSON.stringify({message:{content:JSON.stringify(weights)}})));
+  }});
+  assert.equal(advisor.get(rows,keys).method,"statistical");
+  await new Promise(r=>setImmediate(r));now+=101;
+  assert.equal(advisor.get(rows,keys).method,"statistical");
+  await new Promise(r=>setImmediate(r));
+  assert.equal(advisor.get(rows,keys).method,"ollama");assert.equal(calls,2);
+});
+test("AI response from a previous metric generation is discarded",async()=>{
+  const rows=[sample,sample],keys=eligibleMetrics(rows);
+  const reduced=eligibleMetrics([sample,{...sample,activePeopleComplete:false}]);
+  let resolveFirst,calls=0;
+  const advisor=createAiWeightAdvisor({fetchImpl:()=>{calls++;return new Promise(r=>{if(calls===1)resolveFirst=r;});}});
+  advisor.get(rows,keys);
+  await new Promise(r=>setImmediate(r));
+  advisor.get(rows,reduced);advisor.get(rows,keys);
+  resolveFirst(new Response(JSON.stringify({message:{content:JSON.stringify(Object.fromEntries(keys.map(k=>[k,BASE[k]])))}})));
+  await new Promise(r=>setImmediate(r));
+  assert.equal(advisor.get(rows,keys).method,"statistical");
+});
