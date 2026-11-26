@@ -61,3 +61,26 @@ test("AI response from a previous metric generation is discarded",async()=>{
   await new Promise(r=>setImmediate(r));
   assert.equal(advisor.get(rows,keys).method,"statistical");
 });
+
+test("integer score breakdown always adds to total and preserves missing versus zero",()=>{
+  const rows=Array.from({length:30},(_,i)=>({...sample,points:i*7,visitors:i*13,comments:i*3,commentRate:i/7,visitorRate:i/9,activePeople:i,giftPoints:0,adPoints:0}));
+  rows[1].comments=null;
+  for(const row of applyCompositeScores(rows)){
+    assert.equal(Object.values(row.scoreParts).reduce((sum,n)=>sum+(n??0),0),row.compositeScore);
+    assert.ok(row.compositeScore>=0&&row.compositeScore<=1000);
+    assert.equal(row.scoreParts.giftPoints,0);
+  }
+  assert.equal(applyCompositeScores(rows)[1].scoreParts.comments,null);
+});
+test("score explanation distinguishes excluded metrics from measured zero and missing values",()=>{
+  const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm");
+  const text=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+  const start=text.indexOf("function rankingScoreBreakdown("),end=text.indexOf("function rankingRowKey(",start);
+  assert.ok(start>=0&&end>start);
+  const explain=vm.runInNewContext(text.slice(start,end)+"\nrankingScoreBreakdown");
+  const result=explain({scoreWeights:{points:.3,visitors:.2,comments:.2,adPoints:.05},scoreParts:{points:200,visitors:30,comments:null,adPoints:0}});
+  assert.match(result.summary,/勢い 200pt・来場者 30pt/);
+  assert.match(result.detail,/コメント：未取得/);
+  assert.match(result.detail,/広告：0pt/);
+  assert.match(result.detail,/ギフト：比較条件不足・対象外/);
+});

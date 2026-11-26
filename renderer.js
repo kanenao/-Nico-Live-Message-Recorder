@@ -2016,9 +2016,18 @@ function rankingMediaKey(item, now=Date.now()) {
   const fresh=typeof item.videoFrame==="string"&&Number.isFinite(at)&&now>=at&&now-at<=90000;
   return JSON.stringify([item.thumbnailUrl||"",fresh?item.videoFrameAt:null]);
 }
+function rankingScoreBreakdown(item) {
+  const names={points:"勢い",visitors:"来場者",comments:"コメント",commentRate:"コメント増加/分",visitorRate:"来場者増加/分",activePeople:"アクティブ",adPoints:"広告",giftPoints:"ギフト"};
+  const weights=item.scoreWeights||{},parts=item.scoreParts||{};
+  const entries=Object.keys(names).map(key=>({key,label:names[key],weight:Number.isFinite(weights[key])?weights[key]:null,points:Number.isFinite(parts[key])?parts[key]:null}));
+  const top=entries.filter(e=>e.points>0).sort((a,b)=>b.points-a.points).slice(0,2);
+  const summary=top.length?"主な加点："+top.map(e=>e.label+" "+e.points+"pt").join("・"):"加点なし";
+  const detail=entries.map(e=>e.label+"："+(e.weight===null?"比較条件不足・対象外":(e.points===null?"未取得":e.points+"pt")+" / 配点 "+(e.weight*100).toFixed(1)+"%")).join("\n");
+  return {summary,detail};
+}
 function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commentState) {
   return JSON.stringify([item.liveId,item.rank,item.rankChange,item.rankNew,item.previousRank,item.rankHistory,
-    item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,item.scoreMethod,item.scorePolicy,
+    item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,item.scoreMethod,item.scorePolicy,item.scoreParts,
     item.points,item.pointDelta,item.visitors,item.visitorDelta,item.comments,item.commentDelta,
     item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
     busy,fresh,pending,isRecording,commentState]);
@@ -2096,8 +2105,11 @@ function renderIndependentRanking() {
     const coverage=document.createElement("small");coverage.className="ranking-delta";
     coverage.textContent=(item.scoreMethod==="ollama"?"AI配点":"統計配点")+" / 指標充足 "+rankingNumber(item.scoreCoverage)+"%";
     score.appendChild(coverage);
-    const scoreNames={points:"勢い",visitors:"来場者",comments:"コメント",commentRate:"コメント増加/分",visitorRate:"来場者増加/分",activePeople:"アクティブ",adPoints:"広告",giftPoints:"ギフト"};
-    score.title=Object.entries(item.scoreWeights||{}).map(([k,w])=>(scoreNames[k]||k)+" "+(w*100).toFixed(1)+"%").join(" / ")+"。未取得は加点なし。アクティブ・広告・ギフトは全候補で比較可能なときのみ採用。";
+    const breakdown=rankingScoreBreakdown(item);
+    const summary=document.createElement("small");summary.className="ranking-delta";
+    summary.textContent=breakdown.summary;score.appendChild(summary);
+    score.title=breakdown.detail;
+    score.setAttribute("aria-label","総合 "+rankingNumber(item.compositeScore)+"pt。"+breakdown.detail);
     appendRankingDelta(rankingCell(tr,rankingNumber(item.points),"ranking-points"),item.pointDelta,"pt");
     appendRankingDelta(rankingCell(tr,rankingNumber(item.visitors)),item.visitorDelta,"人");
     appendRankingDelta(rankingCell(tr,rankingNumber(item.comments)),item.commentDelta,"件");

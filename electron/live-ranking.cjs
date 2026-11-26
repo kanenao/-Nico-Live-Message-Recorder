@@ -344,15 +344,21 @@ function applyCompositeScores(rows,advisor){
   }
   return rows.map(row=>{
     let sum=0,coverage=0;
-    const scoreParts={};
+    const scoreParts={},rawParts={};
     for(const key of keys){
       const weight=weights[key],value=row[key];
       if(!Number.isFinite(value)||value<0){scoreParts[key]=null;continue;}
       const normalized=Math.min(1,Math.log1p(value)/Math.log1p(scales[key]));
-      scoreParts[key]=Math.round(normalized*weight*1000);
+      rawParts[key]=normalized*weight*1000;
+      scoreParts[key]=Math.floor(rawParts[key]);
       sum+=normalized*weight;coverage+=weight;
     }
-    return {...row,compositeScore:Math.round(sum*1000),scoreCoverage:Math.round(coverage*100),scoreParts,scoreWeights:weights,scoreMethod:policy.method,scorePolicy:JSON.stringify(weights)};
+    // Largest-remainder rounding ensures the displayed breakdown adds up exactly.
+    const compositeScore=Math.min(1000,Math.round(sum*1000));
+    const order=keys.filter(k=>Object.hasOwn(rawParts,k)).sort((a,b)=>(rawParts[b]-scoreParts[b])-(rawParts[a]-scoreParts[a]));
+    const remainder=compositeScore-order.reduce((n,k)=>n+scoreParts[k],0);
+    for(let i=0;i<remainder;i++)scoreParts[order[i]]++;
+    return {...row,compositeScore,scoreCoverage:Math.round(coverage*100),scoreParts,scoreWeights:weights,scoreMethod:policy.method,scorePolicy:JSON.stringify(weights)};
   });
 }
 // Only reuse frames from the same running Streamlink article session.
