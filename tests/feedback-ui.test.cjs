@@ -26,7 +26,7 @@ test("feedback URL cannot redirect or leak raw sessions and secrets", () => {
   assert.throws(() => buildFeedbackIssueUrl({...item,details:"x".repeat(501)}), TypeError);
   assert.throws(() => buildFeedbackIssueUrl({...item,version:"1.0.2#evil"}), TypeError);
 });
-test("app feedback page exists and is gated by explicit GitHub submission", () => {
+test("app feedback page exists and requires explicit in-app submission", () => {
   const root = path.join(__dirname,"..");
   const html = fs.readFileSync(path.join(root,"index.html"),"utf8");
   const renderer = fs.readFileSync(path.join(root,"renderer.js"),"utf8");
@@ -43,8 +43,8 @@ test("app feedback page exists and is gated by explicit GitHub submission", () =
   assert.match(renderer,/api\.openFeedback\(kind, details\)/);
   assert.match(preload,/openFeedback:/);
   assert.match(main,/ipcMain\.handle\("app:open-feedback"/);
-  assert.match(main,/buildFeedbackIssueUrl\(/);
-  assert.match(html,/GitHubで内容を確認して送信/);
+  assert.match(main,/submitFeedback\(/);
+  assert.match(html,/公開GitHub Issuesに掲載/);
 });
 
 test("separate feedback drafts and submission statuses are independent",async()=>{
@@ -58,15 +58,17 @@ test("separate feedback drafts and submission statuses are independent",async()=
     elements["feedback-"+kind+"-count"]={};
     elements["feedback-"+kind+"-note"]={textContent:"initial"};
   }
-  const fn=vm.runInNewContext(code+"\n({open:openFeedbackReport,update:updateFeedbackForm});",{byId:id=>elements[id],api:{openFeedback:async(...args)=>calls.push(args)},showToast:()=>{}});
+  const fn=vm.runInNewContext(code+"\n({open:openFeedbackReport,update:updateFeedbackForm});",{byId:id=>elements[id],api:{openFeedback:async(...args)=>{calls.push(args);return {number:42}}},showToast:()=>{}});
   await fn.open("bug");
   assert.deepEqual(calls,[["bug","bug draft"]]);
+  assert.equal(elements["feedback-bug-details"].value,"");
+  assert.match(elements["feedback-bug-note"].textContent,/#42/);
   assert.equal(elements["feedback-feature-note"].textContent,"initial");
   assert.equal(elements["feedback-feature-details"].value,"feature draft");
   await fn.open("feature");
   assert.deepEqual(calls[1],["feature","feature draft"]);
   elements["feedback-bug-details"].value="   ";
   fn.update("bug");assert.equal(elements["feedback-bug-button"].disabled,true);
-  assert.equal(elements["feedback-feature-button"].disabled,false);
+  assert.equal(elements["feedback-feature-button"].disabled,true);
   await fn.open("invalid");assert.equal(calls.length,2);
 });

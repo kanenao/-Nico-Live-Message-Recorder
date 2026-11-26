@@ -3971,10 +3971,13 @@ async function openFeedbackReport(kind) {
   }
   form.button.dataset.busy="true";updateFeedbackForm(kind);
   try {
-    await api.openFeedback(kind, details);
-    form.note.textContent="GitHubの報告フォームを開きました。送信はGitHubで確認して実行してください。";
+    const result = await api.openFeedback(kind, details);
+    if (!Number.isSafeInteger(result?.number) || result.number < 1) throw Error("受付番号を確認できませんでした。");
+    if (String(form.details.value||"").trim()===details) form.details.value="";
+    form.note.textContent="送信完了：受付 #"+result.number+"。AI分類・開発側の確認対象になりました。";
+    showToast("報告を受け付けました #"+result.number);
   } catch (error) {
-    const message="報告フォームを開けませんでした："+(error.message||error);
+    const message="送信できませんでした（入力は保持されます）："+(error.message||error);
     form.note.textContent=message;showToast(message,true);
   } finally {
     delete form.button.dataset.busy;updateFeedbackForm(kind);

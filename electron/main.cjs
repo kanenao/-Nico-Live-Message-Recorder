@@ -1488,11 +1488,12 @@ function makeWindow() {
 ipcMain.handle("app:version", () => app.getVersion());
 
 ipcMain.handle("app:open-feedback", async (_event, kind, details) => {
-  const { buildFeedbackIssueUrl } = require("./feedback-url.cjs");
-  const edition = require("../package.json").nicoEdition === "product" ? "product" : "beta";
-  const url = buildFeedbackIssueUrl({ kind, details, edition, version: app.getVersion() });
-  await shell.openExternal(url);
-  return true;
+  const { submitFeedback } = require("./feedback-submit.cjs");
+  const config = require("../package.json");
+  const edition = config.nicoEdition === "product" ? "product" : "beta";
+  return submitFeedback({ kind, details, edition, version: app.getVersion() }, {
+    endpoint: config.feedbackEndpoint || process.env.NICO_FEEDBACK_ENDPOINT
+  });
 });
 
 ipcMain.handle("app:open-releases", async () => {
