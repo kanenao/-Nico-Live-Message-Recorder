@@ -91,7 +91,7 @@ function programThumbnailCandidates(p={},raw={}){
   const values=[];
   for(const obj of [p,raw]){
     if(!obj||typeof obj!=="object")continue;
-    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
+    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot?.urls,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
       if(typeof item==="string"){values.push(item);continue;}
       if(!item||typeof item!=="object")continue;
       for(const k of ["large","huge","middle","small","normal","url","uri","uri640x360","uri320x180","uri160x90"]){
@@ -111,15 +111,19 @@ function jsonRow(raw) {
   const status=String(p.schedule?.status??p.liveStatus??p.status??"").toUpperCase();
   if(status&&!["ON_AIR","ONAIR","LIVE","ON AIR"].includes(status))return null;
   if(p.isOnAir===false)return null;
-  const provider=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
+  const providerRaw=p.programProvider??p.provider??p.supplier??raw.programProvider??raw.provider??raw.supplier??{};
+  const declaredType=String(p.providerType??raw.providerType??"").trim().toLowerCase();
+  const supplierType=String(providerRaw.programProviderType??providerRaw.supplierType??providerRaw.type??"").trim().toLowerCase();
+  const conflictingType=Boolean(declaredType&&supplierType&&declaredType!==supplierType);
+  const providerType=supplierType||declaredType;
+  const provider={...providerRaw,programProviderType:providerType};
   const statistics=p.statistics??p.stats??raw.statistics??raw.stats??{};
-  const providerType=String(provider.programProviderType??provider.supplierType??provider.type??"").trim().toLowerCase();
   const numeric=String(provider.id??p.userId??"").trim();
   // Official-format providers include programProviderId and a provider type.
   // Keep the legacy untyped numeric-ID format for ranking lists only.
   // A named channel must never be treated as a user.
   const hasIdentityLink=[provider.url,provider.pageUrl,provider.userPageUrl,provider.profileUrl].some(v=>typeof v==="string"&&v);
-  const broadcasterId=providerType||hasIdentityLink?officialSupplierUserId(provider):
+  const broadcasterId=conflictingType?"":providerType||hasIdentityLink?officialSupplierUserId(provider):
     /^\d{1,15}$/.test(numeric)?numeric:"";
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
     broadcasterId,
@@ -158,7 +162,7 @@ function unique(rows) {
       if((old[field]==null||old[field]==="")&&row[field]!=null&&row[field]!=="")old[field]=row[field];
     }
     if(!conflict){
-      for(const field of ["name","broadcasterId","iconUrl"]){
+      for(const field of ["name","broadcasterId","iconUrl","thumbnailHistoryUserId"]){
         if(!old[field]&&row[field])old[field]=row[field];
       }
     }
@@ -211,6 +215,11 @@ function parseRankingPage(html,sourceUrl="") {
   const result=structured||unique(rows);
   if(sourceUrl==="https://www.chikuwachan.com/live/NCU/"){
     const byId=new Map(result.map(row=>[row.liveId,row]));
+    const hints=parseChikuwaUserHints(safeHtml);
+    for(const row of result){
+      const hint=hints.get(row.liveId);
+      if(hint&&(!row.broadcasterId||row.broadcasterId===hint))row.thumbnailHistoryUserId=hint;
+    }
     for(const tag of safeHtml.matchAll(/<img\b[^>]*>/gi)){
       for(const key of ["data-src","data-original","data-lazy-src","src"]){
         const url=rankingListingImage(htmlAttribute(tag[0],key),sourceUrl);
@@ -224,6 +233,47 @@ function parseRankingPage(html,sourceUrl="") {
     }
   }
   return result;
+}
+// Only read an explicit NCU_<numeric user ID> label inside an unambiguous
+// single-program container. This hint is for exact-program history lookup,
+// never a verified account identity or an image URL.
+function parseChikuwaUserHints(html){
+  const root={name:"",parent:null,ids:new Set(),users:new Set()},stack=[root],links=[],out=new Map(),conflicts=new Set();
+  let tokens=0;
+  for(const [token] of String(html||"").matchAll(/<!--[\s\S]*?-->|<(?:[^>"']|"[^"]*"|'[^']*')+>/g)){
+    if(++tokens>50000)break;
+    if(token.startsWith("<!--"))continue;
+    const tag=token.match(/^<(\/?)([a-z][\w-]*)/i);if(!tag)continue;
+    const name=tag[2].toLowerCase();
+    if(tag[1]){let i=stack.length-1;while(i>0&&stack[i].name!==name)i--;if(i>0)stack.length=i;continue;}
+    if(stack.length>80)continue;
+    const node={name,parent:stack.at(-1),ids:new Set(),users:new Set()};
+    if(name==="a"){
+      const id=liveId(htmlAttribute(token,"href"));
+      if(id){links.push({id,node});for(let p=node;p;p=p.parent)if(p.ids.size<2)p.ids.add(id);}
+    }
+    if(name==="img"){
+      const label=htmlAttribute(token,"alt")||htmlAttribute(token,"title");
+      const match=/^NCU_(\d{5,15})$/i.exec(label);
+      // Channel markers also invalidate ambiguous user/channel containers.
+      const user=match?.[1]||(/^NCU_ch\d+$/i.test(label)?"channel":"");
+      if(user)for(let p=node;p;p=p.parent)if(p.users.size<2)p.users.add(user);
+    }
+    if(!/^(?:img|input|br|hr|meta|link|source|area|base|col|embed|param|track|wbr)$/.test(name)&&!token.endsWith("/>"))stack.push(node);
+  }
+  for(const {id,node} of links){
+    for(let p=node;p&&p!==root&&p.ids.size===1;p=p.parent){
+      if(p.users.size>1){conflicts.add(id);break;}
+      if(p.users.size===1){
+        const user=[...p.users][0];
+        if(user==="channel"||(out.has(id)&&out.get(id)!==user))conflicts.add(id);
+        else out.set(id,user);
+        break;
+      }
+    }
+  }
+  for(const id of conflicts)out.delete(id);
+  return out;
 }
 async function readBounded(response) {
   if(Number(response.headers?.get?.("content-length")||0)>MAX_BYTES)throw Error("取得上限超過");
@@ -269,7 +319,7 @@ function parseOfficialRankingDetails(html,id) {
       const data=JSON.parse(raw.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
       const p=data?.program;
       if(!p||typeof p!=="object"||!clean(p.title))continue;
-      const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id);
+      const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id?.value??p.id);
       if(declared&&declared!==id)return null;
       // Some public watch payloads carry supplier metadata next to program.
       // Use it only for an explicitly matching program, never an unrelated page.
@@ -373,7 +423,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
     for(let i=0;i<wanted.length;i+=2){
       await Promise.all(wanted.slice(i,i+2).map(async row=>{
         let details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
-        const userId=details?.broadcasterId||(!details?row.broadcasterId:"");
+        const userId=details?.broadcasterId||row.broadcasterId||row.thumbnailHistoryUserId;
         if(userId&&!details?.thumbnailUrl&&!row.thumbnailUrl){
           const candidates=await fetchUserRankingThumbnails(userId,row.liveId,fetchImpl);
           if(candidates.length)details={...(details||row),thumbnailUrl:candidates[0],thumbnailCandidates:candidates};
@@ -544,7 +594,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
       for(const field of ["startedAt","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
       const identityConflict=item.broadcasterId&&row.broadcasterId&&item.broadcasterId!==row.broadcasterId;
       if(!identityConflict){
-        for(const field of ["name","broadcasterId","iconUrl"])if(!item[field]&&row[field])item[field]=row[field];
+        for(const field of ["name","broadcasterId","iconUrl","thumbnailHistoryUserId"])if(!item[field]&&row[field])item[field]=row[field];
       }
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments","adPoints","giftPoints"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
@@ -736,4 +786,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints};
