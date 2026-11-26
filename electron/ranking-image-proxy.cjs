@@ -1,5 +1,5 @@
 "use strict";
-const {rankingImageUrl}=require("./live-ranking.cjs");
+const {rankingImageUrl,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
 const MAX=1024*1024;
 async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   const safe=rankingImageUrl(url);
@@ -29,16 +29,42 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(rankingImageUrl).filter(Boolean))]));
   }
   async function get(id,url){
-    const safe=rankingImageUrl(url);
-    if(!safe||!allowed.get(id)?.has(safe))return null;
-    const key=id+" "+safe,old=cache.get(key),at=now();
+    // Empty URL requests a fresh official lookup for a currently listed program.
+    // Never turn a renderer-supplied URL into an arbitrary network request.
+    const lookup=url==="";
+    const safe=lookup?"":rankingImageUrl(url);
+    if(!/^lv\d{5,15}$/.test(String(id))||!allowed.has(id)||(!lookup&&(!safe||!allowed.get(id).has(safe))))return null;
+    const key=id+" "+(lookup?"official":safe),old=cache.get(key),at=now();
     if(old&&at>=old.at&&at-old.at<30000)return old.data;
     if(pending.has(key))return pending.get(key);
     if(pending.size>=4)return null;
-    const task=fetchRankingImage(safe,fetchImpl).then(data=>{
+    const load=async()=>{
+      if(!lookup)return fetchRankingImage(safe,fetchImpl);
+      const details=await fetchOfficialRankingDetails(id,fetchImpl);
+      if(!details||!allowed.has(id))return null;
+      const tried=new Set();
+      async function attempt(values){
+        for(const value of values){
+          const candidate=rankingImageUrl(value);
+          if(!candidate||tried.has(candidate)||!allowed.has(id))continue;
+          tried.add(candidate);
+          const data=await fetchRankingImage(candidate,fetchImpl);
+          if(data)return data;
+          if(tried.size>=3)break;
+        }
+        return null;
+      }
+      let data=await attempt([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean).slice(0,2));
+      if(!data&&details.broadcasterId&&allowed.has(id)){
+        const history=await fetchUserRankingThumbnails(details.broadcasterId,id,fetchImpl);
+        data=await attempt(history.slice(0,1));
+      }
+      return data;
+    };
+    const task=load().then(data=>{
       cache.delete(key);cache.set(key,{at:now(),data});
       while(cache.size>24)cache.delete(cache.keys().next().value);
-      return allowed.get(id)?.has(safe)?data:null;
+      return allowed.has(id)&&(lookup||allowed.get(id).has(safe))?data:null;
     }).finally(()=>pending.delete(key));
     pending.set(key,task);return task;
   }

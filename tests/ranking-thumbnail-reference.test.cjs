@@ -28,3 +28,38 @@ test("image proxy restricts URLs to current program and deduplicates requests",a
  assert.equal(values[0],values[1]);assert.equal(calls,1);
  proxy.update([]);assert.equal(await proxy.get("lv123456",image),null);
 });
+
+test("program-ID fallback fetches official screenshot without an existing URL",async()=>{
+ const image="https://live.simg.jp/live/fresh.jpg";
+ const calls=[];
+ const proxy=createRankingImageProxy({fetchImpl:async(url,opts)=>{
+   calls.push(url);
+   if(url==="https://live.nicovideo.jp/watch/lv123456"){
+     const data=JSON.stringify({program:{nicoliveProgramId:"lv123456",title:"番組",thumbnail:{screenshot:{large:image}}}}).replaceAll('"',"&quot;");
+     return new Response('<script id="embedded-data" data-props="'+data+'"></script>');
+   }
+   assert.equal(url,image);assert.equal(opts.headers.Referer,"https://live.nicovideo.jp/");
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ proxy.update([{liveId:"lv123456"}]);
+ assert.equal(await proxy.get("lv999999",""),null);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
+ assert.equal(calls.length,2);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
+ assert.equal(calls.length,2);
+});
+test("program-ID fallback tries verified user broadcast history if image candidates fail",async()=>{
+ const bad="https://live.simg.jp/live/old.jpg",good="https://live.simg.jp/live/new.jpg";
+ const proxy=createRankingImageProxy({fetchImpl:async(url)=>{
+   if(url.includes("/watch/")){
+     const data=JSON.stringify({program:{nicoliveProgramId:"lv123456",title:"番組",supplier:{supplierType:"user",programProviderId:"123456"},thumbnail:{screenshot:bad}}}).replaceAll('"',"&quot;");
+     return new Response('<script id="embedded-data" data-props="'+data+'"></script>');
+   }
+   if(url===bad)return new Response("missing",{status:404});
+   if(url.includes("/user-broadcast-history"))return new Response(JSON.stringify({data:{programsList:[{id:{value:"lv123456"},thumbnail:{screenshot:good}}]}}));
+   assert.equal(url,good);
+   return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});
+ }});
+ proxy.update([{liveId:"lv123456"}]);
+ assert.match(await proxy.get("lv123456",""),/^data:image\/jpeg;base64,/);
+});

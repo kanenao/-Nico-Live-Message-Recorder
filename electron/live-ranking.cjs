@@ -685,4 +685,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages};

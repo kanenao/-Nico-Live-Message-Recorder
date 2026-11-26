@@ -1966,18 +1966,34 @@ async function registerRankingMonitor(item) {
   }
 }
 function appendRankingImage(parent,url,className,label,alternatives=[],liveId="") {
-  if(!url&&!alternatives.length)return;
+  const canLookup=Boolean(liveId&&typeof api!=="undefined"&&typeof api.getRankingThumbnail==="function");
+  if(!url&&!alternatives.length&&!canLookup)return;
   try{
     const candidates=[...new Set([url,...alternatives])].filter(value=>{
       try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&((u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp"))||(u.origin==="https://www.chikuwachan.com"&&u.pathname.startsWith("/live/")&&/\.(?:jpe?g|png|webp)$/i.test(u.pathname)&&!/(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(u.pathname)));}catch{return false;}
     }).slice(0,8);
-    if(!candidates.length)return;
+    if(!candidates.length&&!canLookup)return;
     const img=document.createElement("img");let index=0;
     img.className=className;img.alt=label;img.loading="lazy";img.referrerPolicy="no-referrer";
-    let proxied=false;
-    const advance=()=>{proxied=false;index++;if(index<candidates.length){img.src=candidates[index];return;}parent.dataset.imageFailedAt=String(Date.now());img.remove();};
+    let proxied=false,lookedUp=false,lookupPending=false;
+    const isImage=data=>typeof data==="string"&&data.length<=1400000&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data);
+    const failed=()=>{parent.dataset.imageFailedAt=String(Date.now());img.remove();};
+    const lookup=()=>{
+      if(!canLookup||lookedUp||lookupPending){failed();return;}
+      lookedUp=true;lookupPending=true;
+      Promise.resolve().then(()=>api.getRankingThumbnail(liveId,"")).then(data=>{
+        lookupPending=false;
+        if(!parent.isConnected)return;
+        if(!isImage(data)){failed();return;}
+        if(!img.isConnected)parent.appendChild(img);
+        img.src=data;
+      }).catch(()=>{lookupPending=false;failed();});
+    };
+    const advance=()=>{proxied=false;index++;if(index<candidates.length){img.src=candidates[index];return;}lookup();};
     img.addEventListener("error",()=>{
-      if(!proxied&&liveId&&typeof api!=="undefined"&&typeof api.getRankingThumbnail==="function"){
+      if(lookupPending)return;
+      if(lookedUp&&index>=candidates.length){failed();return;}
+      if(!proxied&&canLookup&&index<candidates.length){
         proxied=true;
         Promise.resolve().then(()=>api.getRankingThumbnail(liveId,candidates[index])).then(data=>{
           if(typeof data==="string"&&data.length<=1400000&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data)){img.src=data;return;}
@@ -1987,7 +2003,18 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
       advance();
     });
     img.addEventListener("load",()=>{delete parent.dataset.imageFailedAt;});
-    img.src=candidates[0];parent.appendChild(img);
+    if(candidates.length){img.src=candidates[0];parent.appendChild(img);}
+    else if(canLookup){
+      // Missing URLs are resolved only for visible rows, not all 200 at once.
+      requestAnimationFrame(()=>{
+        if(!parent.isConnected)return;
+        const rect=parent.getBoundingClientRect();
+        if(rect.bottom<=0||rect.top>=innerHeight||rect.width<=0||rect.height<=0){
+          parent.dataset.imageFailedAt=String(Date.now()-20000);return;
+        }
+        lookup();
+      });
+    }
   }catch{}
 }
 function appendRankingTrend(cell,item) {
