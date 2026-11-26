@@ -844,3 +844,20 @@ test("chikuwa artwork inside exact watch link supplements the program",()=>{
  const rows=parseRankingPage('<a href="https://live.nicovideo.jp/watch/lv123456" title="番組"><img data-src="/live/images/actual.jpg"></a>',source);
  assert.equal(rows[0].thumbnailUrl,"https://www.chikuwachan.com/live/images/actual.jpg");
 });
+
+test("desktop ranking does not wait for thumbnail detail requests and does not overlap batches",async()=>{
+  const {createRankingService}=require("../electron/live-ranking.cjs");
+  let now=1700000000000,details=0,resolveDetail;
+  const ranking=createRankingService({now:()=>now,enrichDetails:true,backgroundDetails:true,fetchImpl:async(url)=>{
+    if(url.includes("/watch/")){
+      details++;
+      if(details===1)await new Promise(r=>{resolveDetail=r;});
+      return {ok:true,text:async()=>officialPage({nicoliveProgramId:"lv123456",title:"番組",thumbnail:{large:"https://cdn.nimg.jp/a.jpg"}})};
+    }
+    return {ok:true,text:async()=>page([program("lv123456")])};
+  }});
+  const first=await ranking();assert.equal(first.rows.length,1);assert.equal(first.rows[0].thumbnailUrl,"");assert.equal(details,1);
+  now+=10000;const second=await ranking();assert.equal(details,1);assert.equal(second.rows[0].thumbnailUrl,"");
+  resolveDetail();await new Promise(r=>setImmediate(r));
+  now+=10000;const third=await ranking();assert.equal(third.rows[0].thumbnailUrl,"https://cdn.nimg.jp/a.jpg");assert.equal(details,1);
+});

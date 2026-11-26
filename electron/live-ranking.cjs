@@ -599,7 +599,7 @@ function createRankingService(options={}) {
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   const now=options.now||Date.now;
   const enrich=options.enrichDetails===true?createRankingDetailEnricher(fetchImpl,now):null;
-  let pending=null,lastAttempt=0,lastDetailAt=null,snapshot=null,previousAt=0,previous=[],previousSourceIds=[];
+  let pending=null,detailPending=null,lastAttempt=0,lastDetailAt=null,snapshot=null,previousAt=0,previous=[],previousSourceIds=[];
   return async function getRanking(){
     if(pending)return pending;
     const at=now();
@@ -613,10 +613,20 @@ function createRankingService(options={}) {
       let rows=buildRanking(results,previous,checkedAt,previousAt,previousSourceIds,{advisor:options.advisor,activity:options.activity});
       if(healthy.length){
         if(enrich){
-          // Keep the more expensive watch/profile lookup cadence unchanged.
-          const due=lastDetailAt===null||checkedAt<lastDetailAt||checkedAt-lastDetailAt>=DETAIL_REFRESH_MS;
-          if(due)lastDetailAt=checkedAt;
-          rows=await enrich(rows,due);
+          // Desktop: one bounded batch per refresh, without blocking rank delivery.
+          // Preserve the synchronous mode for diagnostics and existing callers.
+          const interval=options.backgroundDetails===true?REFRESH_MS:DETAIL_REFRESH_MS;
+          const due=lastDetailAt===null||checkedAt<lastDetailAt||checkedAt-lastDetailAt>=interval;
+          if(options.backgroundDetails===true){
+            if(due&&!detailPending){
+              lastDetailAt=checkedAt;
+              detailPending=enrich(rows,true).catch(()=>{}).finally(()=>{detailPending=null;});
+            }
+            rows=await enrich(rows,false);
+          }else{
+            if(due)lastDetailAt=checkedAt;
+            rows=await enrich(rows,due);
+          }
         }
         previous=rows;previousAt=checkedAt;previousSourceIds=healthy.map(s=>s.id);
       }
