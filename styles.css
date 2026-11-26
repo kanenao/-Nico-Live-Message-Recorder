@@ -1646,3 +1646,70 @@ button, .button {
 
 /* Profile navigation remains distinct from program preview and recording. */
 .ranking-profile-link{appearance:none;background:none;border:0;padding:0;color:#8ab6e5;text-align:left;text-decoration:underline;text-underline-offset:2px;font:inherit;cursor:pointer;white-space:normal;overflow-wrap:anywhere}.ranking-profile-link:hover{color:#b7d8ff}.ranking-profile-link:focus-visible{outline:2px solid #5da9eb;outline-offset:2px}.ranking-profile-link:disabled{opacity:.65;cursor:wait}
+
+/* Readable ranking: scoped to this screen, adapt to actual content width. */
+.ranking-panel{container-type:inline-size;min-width:0}
+.ranking-panel .ranking-intro{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:#edf2ff}
+.ranking-panel .ranking-intro span{font-size:11px;font-weight:400;color:var(--muted)}
+.ranking-panel .ranking-toolbar{gap:8px 14px;align-items:center}
+.ranking-panel .ranking-toolbar label:first-child{flex:1 1 220px;min-width:0}
+.ranking-panel .ranking-toolbar input[type=search]{width:100%;min-width:0}
+.ranking-panel .ranking-toolbar select{max-width:220px}
+.ranking-panel .ranking-coverage{grid-template-columns:repeat(5,minmax(0,1fr))}
+.ranking-panel .ranking-coverage>div{padding:9px 10px;background:var(--panel-2)}
+.ranking-panel .ranking-coverage span{line-height:1.5;color:#aab7d2}
+.ranking-panel .ranking-coverage strong{font-size:17px}
+.ranking-panel .ranking-scroll{max-height:72vh;min-width:0;border:1px solid var(--line);border-radius:10px;scrollbar-gutter:stable}
+.ranking-panel .ranking-table{min-width:0;width:100%;font-size:13px;border-collapse:separate;border-spacing:0}
+.ranking-panel .ranking-table th{background:var(--panel-2);color:#b9c8e4;font-size:11px;padding:12px 8px;text-align:center}
+.ranking-panel .ranking-table td{padding:12px 8px;border-bottom:1px solid var(--line)}
+.ranking-panel .ranking-table tbody tr:hover{background:rgba(146,120,255,.06)}
+.ranking-panel .ranking-rank{font-size:18px;text-align:center}
+.ranking-panel .ranking-trend{margin:4px auto 0}
+.ranking-panel tr[data-podium="1"] .ranking-rank{color:#f3cd75}
+.ranking-panel tr[data-podium="2"] .ranking-rank{color:#d9e4f2}
+.ranking-panel tr[data-podium="3"] .ranking-rank{color:#e9b28f}
+.ranking-panel .ranking-program{min-width:190px!important;max-width:none}
+.ranking-panel .ranking-media{flex:0 0 112px;width:112px;height:63px;border-radius:7px}
+.ranking-panel .ranking-labels strong{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.ranking-panel .ranking-labels small{opacity:1;font-size:12px;margin-top:5px}
+.ranking-panel .ranking-profile-link{font-weight:600;color:#a1ccff}
+.ranking-panel .ranking-program-details{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.ranking-panel .ranking-total-score{font-size:21px;color:#bcb0ff;text-align:center}
+.ranking-panel .ranking-total-score .ranking-delta{color:var(--muted);font-size:11px}
+.ranking-panel .ranking-active-metric{font-size:15px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+.ranking-panel .ranking-missing{font-size:11px;font-weight:400;color:var(--muted)}
+.ranking-panel .ranking-metric-line{line-height:1.8;gap:6px}
+.ranking-panel .ranking-metric-line span{color:#aab7d2}
+.ranking-panel .ranking-metric-line strong{font-size:12px}
+.ranking-panel .ranking-actions{min-width:118px;max-width:154px}
+.ranking-panel .ranking-actions button{min-height:26px;padding:4px 6px;white-space:normal}
+.ranking-panel .ranking-actions button[data-ranking-record]{width:calc(100% - 4px);font-size:12px}
+.ranking-panel .ranking-help-bottom{margin-top:10px}
+/* The desktop app sidebar consumes width. Switch at panel width, not window width. */
+@container (max-width: 940px){
+  .ranking-panel .ranking-table,.ranking-panel .ranking-table tbody{display:block;width:100%;min-width:0}
+  .ranking-panel .ranking-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .ranking-panel .ranking-table tbody tr[data-live-id]{display:grid;grid-template-columns:64px minmax(0,1fr) minmax(100px,1fr) 112px;grid-template-areas:"rank program program score" "stats stats active support" "actions actions actions actions";align-items:center;gap:8px 12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .ranking-panel .ranking-table tbody td{display:block;min-width:0!important;max-width:none;padding:0;border:0;text-align:left;white-space:normal}
+  .ranking-panel .ranking-table td.ranking-rank{grid-area:rank;text-align:center}
+  .ranking-panel .ranking-table td.ranking-program{grid-area:program;min-width:0!important}
+  .ranking-panel .ranking-table td.ranking-total-score{grid-area:score;text-align:center}
+  .ranking-panel .ranking-table td.ranking-total-score::before{content:"総合pt";display:block;color:var(--muted);font-size:11px;font-weight:400}
+  .ranking-panel .ranking-table td.ranking-view-metrics{grid-area:stats;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 10px}
+  .ranking-panel .ranking-table td.ranking-active-metric{grid-area:active;text-align:center}
+  .ranking-panel .ranking-table td.ranking-active-metric::before{content:"アクティブ人数";display:block;color:var(--muted);font-size:11px;font-weight:400;margin-bottom:2px}
+  .ranking-panel .ranking-table td.ranking-support-metrics{grid-area:support}
+  .ranking-panel .ranking-table td.ranking-actions{grid-area:actions;display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid var(--line);padding-top:7px}
+  .ranking-panel .ranking-actions button{margin:0;min-height:27px;padding:4px 9px}
+  .ranking-panel .ranking-actions button[data-ranking-record]{width:auto}
+  .ranking-panel .ranking-actions button+button{margin-left:0}
+  .ranking-panel .ranking-table tr:not([data-live-id]){display:block;padding:16px}
+}
+@container (max-width: 630px){
+ .ranking-panel .ranking-coverage{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .ranking-panel .ranking-table tbody tr[data-live-id]{grid-template-columns:48px minmax(0,1fr) 92px;grid-template-areas:"rank program score" "stats stats stats" "active support support" "actions actions actions";gap:8px}
+ .ranking-panel .ranking-table td.ranking-view-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .ranking-panel .ranking-media{flex-basis:88px;width:88px;height:50px}
+ .ranking-panel .ranking-total-score{font-size:18px}
+}

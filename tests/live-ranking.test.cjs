@@ -886,3 +886,17 @@ test("official watch enrichment extracts missing viewer and comment counts witho
  const missing=parseOfficialRankingDetails(officialPage({nicoliveProgramId:"lv123456",title:"番組"}),"lv123456");
  assert.equal(missing.visitors,null);assert.equal(missing.comments,null);
 });
+
+test("ranking layout keeps all seven metrics groups and adapts to content width",()=>{
+ const html=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
+ const css=fs.readFileSync(path.join(__dirname,"..","styles.css"),"utf8");
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const ranking=html.slice(html.indexOf('id="ranking-panel"'),html.indexOf('data-page="record"',html.indexOf('id="ranking-panel"')));
+ assert.match(ranking,/<details class="ranking-help"><summary>/);
+ assert.match(ranking,/<details class="ranking-help ranking-help-bottom"><summary>/);
+ assert.equal((ranking.match(/<th>/g)||[]).length,7);
+ assert.match(css,/@container \(max-width: 940px\)/);
+ for(const group of ["ranking-total-score","ranking-view-metrics","ranking-active-metric","ranking-support-metrics"])assert.ok(renderer.includes(group)&&css.includes(group));
+ assert.match(renderer,/actions\.append\(record,watch,monitor,chase,preview\)/);
+ assert.match(renderer,/cell\.colSpan=7/);
+});

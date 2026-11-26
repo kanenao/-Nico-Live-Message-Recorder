@@ -1914,7 +1914,7 @@ function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
   const checked=Number.isFinite(at)?new Date(at).toLocaleString("ja-JP"):"未取得";
   const fresh=isRankingFresh(snapshot,now);
   const total=Array.isArray(snapshot.rows)?snapshot.rows.length:0;
-  const topCount=rankingTopRows(snapshot.rows).length;
+  const topCount=Array.isArray(snapshot.rows)?snapshot.rows.filter(row=>Number.isInteger(row.rank)&&row.rank>=1&&row.rank<=100).length:0;
   const state=snapshot.stale?"更新失敗 / 前回データ（録画無効）":
     !fresh?"更新待ち / 古いデータ（録画無効）":
     (snapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+total+"番組";
@@ -2154,6 +2154,7 @@ function renderIndependentRanking() {
     if(old&&old.dataset.renderKey===rowKey&&!retryImage){desired.push(old);continue;}
     const tr = document.createElement("tr");
     tr.dataset.liveId=item.liveId;tr.dataset.renderKey=rowKey;
+    if(item.rank<=3)tr.dataset.podium=String(item.rank);
     const rankCell=rankingCell(tr, item.rank+"位", "ranking-rank");
     const movement=document.createElement("small");movement.className="ranking-movement";
     movement.textContent=rankingMovement(item);
@@ -2162,7 +2163,7 @@ function renderIndependentRanking() {
     rankCell.appendChild(movement);
     appendRankingTrend(rankCell,item);
     const info = rankingCell(tr,null,"ranking-program");
-    const title=document.createElement("strong");title.textContent=item.title||item.liveId;
+    const title=document.createElement("strong");title.textContent=item.title||item.liveId;title.title=item.title||item.liveId;
     const meta=document.createElement("small");
     const profile=document.createElement("button");
     profile.type="button";profile.className="ranking-profile-link";
@@ -2178,13 +2179,15 @@ function renderIndependentRanking() {
         showToast(error.message||"ユーザーページを確認できませんでした。",true);
       }finally{profile.disabled=false;}
     });
-    meta.append(profile," · "+item.liveId);
+    meta.append(profile);
+    const programDetails=document.createElement("span");programDetails.className="ranking-program-details";programDetails.textContent=item.liveId;
+    meta.append(programDetails);
     if(item.startedAt){
       const elapsed=document.createElement("span");
       elapsed.className="live-broadcast-elapsed";
       elapsed.dataset.startedAt=item.startedAt;
       elapsed.textContent=formatBroadcastElapsed(item.startedAt);
-      meta.append(" · ",elapsed);
+      programDetails.append(" · ",elapsed);
     }
     const identity=document.createElement("div");identity.className="ranking-identity";
     let picture=old?.querySelector(".ranking-media");
@@ -2211,18 +2214,19 @@ function renderIndependentRanking() {
     }
     const labels=document.createElement("div");labels.className="ranking-labels";labels.append(title,meta);
     identity.append(picture,labels);info.appendChild(identity);
-    const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points");
+    const score=rankingCell(tr,rankingNumber(item.compositeScore),"ranking-points ranking-total-score");
     const coverage=document.createElement("small");coverage.className="ranking-delta";
     coverage.textContent=(item.scoreMethod==="ollama"?"AI":"統計")+" · "+rankingNumber(item.scoreCoverage)+"%";
     score.appendChild(coverage);
     const breakdown=rankingScoreBreakdown(item);
     score.title=breakdown.summary+"\n"+breakdown.detail;
     score.setAttribute("aria-label","総合 "+rankingNumber(item.compositeScore)+"pt。"+breakdown.detail);
-    const stats=rankingCell(tr,null,"ranking-metric-group");
+    const stats=rankingCell(tr,null,"ranking-metric-group ranking-view-metrics");
     const addMetric=(parent,label,value,delta=null,unit="")=>{
       const line=document.createElement("div");line.className="ranking-metric-line";
       const name=document.createElement("span");name.textContent=label;
       const number=document.createElement("strong");number.textContent=rankingNumber(value)+(Number.isFinite(value)?unit:"");
+      if(!Number.isFinite(value))number.classList.add("ranking-missing");
       line.append(name,number);parent.appendChild(line);
       if(Number.isFinite(delta))line.title="前回比 "+(delta>0?"+":"")+rankingNumber(delta)+unit;
       return line;
@@ -2236,10 +2240,11 @@ function renderIndependentRanking() {
       ?"同一取得元のコメント増加数 / 分（比較可能な取得元 "+sampleCount+" 件）"
       :"比較可能なコメント数が不足、または取得間隔が対象外です。";
     const activityLabel=item.activityStatus==="connecting"?"接続中…":item.activityStatus==="unavailable"?"接続不可":item.activityStatus==="outside"?"観測対象外":"未取得";
-    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+"人":activityLabel);
+    const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+"人":activityLabel,"ranking-active-metric");
+    if(!Number.isFinite(item.activePeople))activeCell.classList.add("ranking-missing");
     activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位10番組の公開コメント観測。5分未満は観測開始後の人数であり、5分全体の人数ではありません。";
     if(Number.isFinite(item.activePeople)&&!item.activePeopleComplete){const note=document.createElement("small");note.className="ranking-delta";note.textContent="観測中";activeCell.appendChild(note);}
-    const contribution=rankingCell(tr,null,"ranking-metric-group");
+    const contribution=rankingCell(tr,null,"ranking-metric-group ranking-support-metrics");
     const adCell=addMetric(contribution,"広告",item.adPoints,null,"pt");
     adCell.title="視聴接続の統計通知または取得元に明示された累計広告ポイント。未取得を0とは扱いません。";
     const giftCell=addMetric(contribution,"ギフト",item.giftPoints,null,"pt");
