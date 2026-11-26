@@ -59,7 +59,7 @@ function rankingListingImage(value,sourceUrl=""){
   if(typeof value!=="string"||value.length>2048)return "";
   try{
     const source=new URL(sourceUrl);
-    if(source.origin!=="https://www.chikuwachan.com"||source.pathname!=="/live/NCU/")return "";
+    if(source.origin!=="https://www.chikuwachan.com"||!["/live/NCU/","/live/NCF/"].includes(source.pathname))return "";
     const url=new URL(value,source);
     if(url.origin!=="https://www.chikuwachan.com"||url.username||url.password||
       !url.pathname.startsWith("/live/")||!/\.(?:jpe?g|png|webp)$/i.test(url.pathname)||
@@ -233,9 +233,9 @@ function parseRankingPage(html,sourceUrl="") {
   // Some listings place an image outside the watch anchor. Associate it only
   // if its own explicit image URL contains the exact program ID, never user ID.
   const result=structured||unique(rows);
-  if(sourceUrl==="https://www.chikuwachan.com/live/NCU/"){
+  if(["https://www.chikuwachan.com/live/NCU/","https://www.chikuwachan.com/live/NCF/"].includes(sourceUrl)){
     const byId=new Map(result.map(row=>[row.liveId,row]));
-    const hints=parseChikuwaUserHints(safeHtml);
+    const hints=sourceUrl.endsWith("/NCU/")?parseChikuwaUserHints(safeHtml):new Map();
     for(const row of result){
       const hint=hints.get(row.liveId);
       if(hint&&(!row.broadcasterId||row.broadcasterId===hint))row.thumbnailHistoryUserId=hint;
@@ -710,6 +710,20 @@ function parseRankingCardImages(html){
   }
   return result;
 }
+// Website reference also checks the channel-specific public NCF listing.
+async function fetchChannelListingImages(fetchImpl){
+  const url="https://www.chikuwachan.com/live/NCF/";
+  try{
+    const response=await fetchImpl(url,{redirect:"error",signal:AbortSignal.timeout(4000),headers:{accept:"text/html","user-agent":"Nico-Live-Message-Recorder"}});
+    if(!response?.ok)return new Map();
+    const html=await readBounded(response);
+    const result=new Map();
+    for(const row of parseRankingPage(html,url)){
+      if(row.thumbnailUrl&&!isRankingBrandImage(row.thumbnailUrl))result.set(row.liveId,row.thumbnailUrl);
+    }
+    return result;
+  }catch{return new Map();}
+}
 async function fetchRankingCardImages(fetchImpl){
   try{
     const response=await fetchImpl("https://ikioi-ranking.com/v/nico",{redirect:"error",signal:AbortSignal.timeout(4000),headers:{accept:"text/html","user-agent":"Nico-Live-Message-Recorder"}});
@@ -758,7 +772,7 @@ function createRankingService(options={}) {
     lastAttempt=at;
     pending=(async()=>{
       const useFeed=options.feedImages===true&&(feedAt===null||at<feedAt||at-feedAt>=30000);
-      const [results,feed]=await Promise.all([Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl))),useFeed?Promise.all([fetchNicoFeedImages(fetchImpl),fetchRankingCardImages(fetchImpl)]).then(([rss,cards])=>new Map([...cards,...rss])):Promise.resolve(null)]);
+      const [results,feed]=await Promise.all([Promise.all(SOURCES.map(s=>fetchSource(s,fetchImpl))),useFeed?Promise.all([fetchNicoFeedImages(fetchImpl),fetchRankingCardImages(fetchImpl),fetchChannelListingImages(fetchImpl)]).then(([rss,cards,channels])=>new Map([...cards,...channels,...rss])):Promise.resolve(null)]);
       if(feed){feedImages=feed;feedAt=at;}
       const checkedAt=now();
       const healthy=results.filter(s=>s.ok);
@@ -807,4 +821,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage,fetchChannelListingImages};
