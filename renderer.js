@@ -2020,7 +2020,7 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
   return JSON.stringify([item.liveId,item.rank,item.rankChange,item.rankNew,item.previousRank,item.rankHistory,
     item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,
     item.points,item.pointDelta,item.visitors,item.visitorDelta,item.comments,item.commentDelta,
-    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,
+    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
     busy,fresh,pending,isRecording,commentState]);
 }
 function renderIndependentRanking() {
@@ -2108,6 +2108,16 @@ function renderIndependentRanking() {
     const activityLabel=item.activityStatus==="connecting"?"接続中…":item.activityStatus==="unavailable"?"接続不可":item.activityStatus==="outside"?"観測対象外":"未取得";
     const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+(item.activePeopleComplete?"人":"人以上"):activityLabel);
     activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位3番組の公開コメント観測。5分未満は観測下限。";
+    const adCell=rankingCell(tr,Number.isFinite(item.adPoints)?rankingNumber(item.adPoints)+"pt":"未取得");
+    adCell.title="取得元に明示された累計広告ポイントのみ。未取得を0とは扱いません。";
+    const giftCell=rankingCell(tr,Number.isFinite(item.giftPoints)?rankingNumber(item.giftPoints)+"pt":"未取得");
+    giftCell.title="取得元の累計ギフトポイント。受信イベントによる観測値とは別です。";
+    if(Number.isFinite(item.giftObservedPoints)){
+      const observed=document.createElement("small");observed.className="ranking-delta";
+      observed.textContent="観測5分: "+rankingNumber(item.giftObservedPoints)+"pt"+(item.giftObservationComplete?"":"以上");
+      observed.title="実際に受信したギフトイベントの直近5分の小計（重複除外）。番組累計ではありません。";
+      giftCell.appendChild(observed);
+    }
     const actions=rankingCell(tr,null,"ranking-actions");
     const record=document.createElement("button");record.type="button";record.className="button button-primary button-small";
     record.dataset.rankingRecord=item.liveId;record.textContent=isRecording?"● 録画中":"● 録画";record.disabled=busy||!isRankingFresh(rankingSnapshot);
@@ -2142,7 +2152,7 @@ function renderIndependentRanking() {
     actions.append(record,watch,monitor,chase,preview);
     desired.push(tr);
   }
-  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=9;desired.push(tr);}
+  if(!rows.length){const tr=document.createElement("tr");const cell=rankingCell(tr,rankingSnapshot.stale?"取得できませんでした。時間をおいて更新してください。":"該当する番組がありません。");cell.colSpan=11;desired.push(tr);}
   // Remove obsolete rows first, then move only rows whose position changed.
   const keep=new Set(desired);
   for(const row of Array.from(list.children))if(!keep.has(row))row.remove();

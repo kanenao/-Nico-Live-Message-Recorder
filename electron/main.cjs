@@ -2986,7 +2986,7 @@ ipcMain.handle("ranking:list", async (_event,options={}) => {
     const observed=observing?rankingObserver.snapshot(row.liveId):null;
     const measured=activity??observed?.activity;
     const frame=selectRankingVideoFrame(row.liveId,frameSession);
-    return {...row,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
+    return {...row,thumbnailUrl:row.thumbnailUrl||observed?.thumbnailUrl||"",activePeople:measured?.count??null,activePeopleComplete:measured?.complete??false,activityStatus:activity?"recording":observed?.status??(observing?"outside":"disabled"),giftObservedPoints:measured?.giftObservedPoints??null,giftObservedCount:measured?.giftObservedCount??null,giftObservationComplete:measured?.giftObservationComplete??false,videoFrame:frame?.image??null,videoFrameAt:frame?.capturedAt??null};
   })};
 });
 ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>

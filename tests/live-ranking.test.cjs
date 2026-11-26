@@ -66,7 +66,7 @@ test("ranking UI and IPC are wired to the existing recording pathway",()=>{
   assert.match(renderer,/await startVideoRecording\(\{liveId:item.liveId/);
   assert.match(renderer,/configureRankingRefresh\(activePage === "ranking"\)/);
   assert.match(renderer,/record.disabled\|\|!isRankingFresh\(rankingSnapshot\)/);
-  assert.match(preload,/ipcRenderer.invoke\("ranking:list"\)/);
+  assert.match(preload,/ipcRenderer.invoke\("ranking:list",options\)/);
   assert.match(main,/ipcMain.handle\("ranking:list",/);
 });
 
@@ -489,7 +489,7 @@ test("ranking hides per-source badges without disabling collection or freshness 
   assert.doesNotMatch(css,/\.ranking-sources?\b/);
   assert.match(html,/id="ranking-status"/);
   assert.match(renderer,/rankingStatusText\(rankingSnapshot,rankingVisibleCount/);
-  assert.match(renderer,/api\.getLiveRanking\(\)/);
+  assert.match(renderer,/api\.getLiveRanking\(\{observe\}\)/);
   assert.equal(SOURCES.length,3);
 });
 
@@ -779,4 +779,21 @@ test("official screenshot urlSet is preferred over static artwork and supplierTy
   assert.equal(row.thumbnailUrl,screenshot);
   assert.equal(row.broadcasterId,"123456");
   assert.equal(parseOfficialRankingDetails(officialPage({...p,screenshot:{urlSet:{large:"https://evil.example/a.jpg"}}}),"lv123456").thumbnailUrl,p.thumbnail.small);
+});
+
+
+test("ranking contribution totals remain separate and unknown is not zero",()=>{
+  const rows=parseRankingPage(page([{...program("lv123456",5,10),statistics:{totalNicoadPoints:120,totalGiftPoints:20}},{...program("lv234567",5,10),statistics:{totalNicoadPoints:0}}]));
+  assert.equal(rows[0].adPoints,120);assert.equal(rows[0].giftPoints,20);
+  assert.equal(rows[1].adPoints,0);assert.equal(rows[1].giftPoints,null);
+});
+test("gift observation is a bounded five-minute received-event subtotal",()=>{
+  const {createRankingActivityTracker}=require("../electron/live-ranking.cjs");
+  let now=1700000000000;const tracker=createRankingActivityTracker(()=>now);
+  tracker.state("lv123456",true);
+  const gift={type:"gift",liveId:"lv123456",point:100,itemId:"g",timestamp:new Date(now).toISOString()};
+  tracker.observe(gift);tracker.observe(gift);tracker.observe({...gift,isHistory:true});tracker.observe({...gift,liveId:"lv999999"});
+  assert.equal(tracker.snapshot("lv123456").giftObservedPoints,100);
+  assert.equal(tracker.snapshot("lv123456").giftObservedCount,1);
+  now+=300001;assert.equal(tracker.snapshot("lv123456").giftObservedPoints,0);
 });

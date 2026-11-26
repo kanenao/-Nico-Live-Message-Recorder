@@ -37,6 +37,9 @@ function createRankingObserver({createProvider,now=Date.now,limit=3,leaseMs=4500
       provider.on("comment",data=>{
         if(!entry.closed)entry.tracker.observe({type:"comment",liveId:entry.id,userId:data?.userId,isHistory:Boolean(data?.isHistory)});
       });
+      provider.on("gift",data=>{
+        if(!entry.closed)entry.tracker.observe({type:"gift",liveId:entry.id,point:data?.point,itemId:data?.itemId,userId:data?.userId,message:data?.message,timestamp:data?.timestamp,isHistory:Boolean(data?.isHistory)});
+      });
       const metadata=await provider.connect();
       if(entry.closed){provider.disconnect();return;}
       if(metadata?.status&&String(metadata.status).toUpperCase()!=="ON_AIR"){fail(entry);return;}

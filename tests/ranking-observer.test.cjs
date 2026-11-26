@@ -15,6 +15,8 @@ test("ranking observation counts actual distinct live commenters, respects limit
     observer.sync(rows);await settle();observer.sync(rows);await settle();observer.sync(rows);await settle();
     assert.equal(providers.size,2);
     const p=providers.get("lv123456");p.emit("comment",{userId:"a"});p.emit("comment",{userId:"a"});p.emit("comment",{userId:"b",isHistory:true});p.emit("comment",{userId:"c"});
+    p.emit("gift",{itemId:"g",point:50,timestamp:new Date(now)});
+    assert.equal(observer.snapshot("lv123456").activity.giftObservedPoints,50);
     assert.equal(observer.snapshot("lv123456").activity.count,2);
     assert.equal(observer.snapshot("lv123456").thumbnailUrl,"https://cdn.nimg.jp/screen.jpg");
     assert.equal(observer.snapshot("lv345678"),null);
