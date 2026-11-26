@@ -2,7 +2,7 @@
 const {rankingImageUrl,rankingListingImage,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
 const LISTING_URL="https://www.chikuwachan.com/live/NCU/";
 function safePosterUrl(value){
-  return rankingImageUrl(value)||rankingListingImage(value,LISTING_URL);
+  return rankingImageUrl(value)||(typeof value==="string"&&value.startsWith("https://www.chikuwachan.com/")?rankingListingImage(value,LISTING_URL):"");
 }
 const MAX=1024*1024;
 async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
@@ -64,12 +64,12 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       async function attempt(values){
         for(const value of values){
           const candidate=safePosterUrl(value);
-          if(!candidate||tried.has(candidate)||!allowed.has(id)||tried.size>=6)continue;
+          if(!candidate||tried.has(candidate)||!allowed.has(id)||tried.size>=7)continue;
           if(!rankingImageUrl(candidate)&&!allowed.get(id).has(candidate))continue;
           tried.add(candidate);
           const data=await fetchRankingImage(candidate,fetchImpl);
           if(data)return data;
-          if(tried.size>=6)break;
+          if(tried.size>=7)break;
         }
         return null;
       }
@@ -79,7 +79,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
       if(!allowed.has(id))return null;
       if(details){
-        data=await attempt([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean).slice(0,3));
+        data=await attempt([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean).slice(0,2));
         if(data)return data;
       }
       // A temporary watch-page failure must not block exact-ID history lookup.
@@ -89,7 +89,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
         data=await attempt((await fetchUserRankingThumbnails(userId,id,fetchImpl)).slice(0,2));
         if(data)return data;
       }
-      return preview?null:attempt(listed);
+      return preview?null:attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
     };
     const task=load().then(data=>{
       cache.delete(key);cache.set(key,{at:now(),data});
