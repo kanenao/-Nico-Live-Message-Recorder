@@ -43,3 +43,8 @@ test("renderer accepts official thumbnail paths without allowing arbitrary offic
  assert.equal(run("https://live.nicovideo.jp/watch/lv123456"),undefined);
  assert.equal(run("https://evil.example/liveimg/channel.jpg"),undefined);
 });
+
+test("static channel artwork may use nested thumbnail URL sets",()=>{
+ const {programThumbnailCandidates}=require("../electron/live-ranking.cjs");
+ assert.deepEqual(programThumbnailCandidates({thumbnail:{urlSet:{large:{url:image(1)}},urls:{small:image(2)}}}),[image(1),image(2)]);
+});
