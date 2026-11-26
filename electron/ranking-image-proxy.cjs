@@ -40,7 +40,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   }catch{return null;}
 }
 function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
-  let allowed=new Map(),users=new Map(),channels=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
+  let allowed=new Map(),users=new Map(),channels=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map(),workingSources=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
   function storePoster(id,data){
@@ -64,6 +64,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
+    for(const id of workingSources.keys())if(!topIds.has(id))workingSources.delete(id);
   }
   async function get(id,url){
     // Empty URL requests a fresh official lookup for a currently listed program.
@@ -78,8 +79,14 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     if(pending.has(key))return pending.get(key);
     if(lookup&&pending.has(id+" "+(preview?"official":"preview")))return null;
     if(pending.size>=4)return null;
+    let workingUrl="";
     const load=async()=>{
-      if(!lookup)return fetchRankingImage(safe,fetchImpl);
+      const saved=workingSources.get(id);
+      const savedUrl=saved&&at>=saved.at&&at-saved.at<120000?saved.url:"";
+      // Website hover mode reuses only a previously successful image URL.
+      // No watch-page or history lookup for every hover frame.
+      if(preview)return savedUrl?fetchRankingImage(savedUrl,fetchImpl):null;
+      if(!lookup){const data=await fetchRankingImage(safe,fetchImpl);if(data)workingUrl=safe;return data;}
       const tried=new Set();
       async function attempt(values){
         for(const value of values){
@@ -88,20 +95,24 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
           if(!rankingImageUrl(candidate)&&!allowed.get(id).has(candidate))continue;
           tried.add(candidate);
           const data=await fetchRankingImage(candidate,fetchImpl);
-          if(data)return data;
+          if(data){workingUrl=candidate;return data;}
           if(tried.size>=7)break;
         }
         return null;
       }
       let data=null;
       const listed=[...allowed.get(id)||[]];
-      if(!preview){data=await attempt(listed.filter(rankingImageUrl).slice(0,2));if(data)return data;}
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
       if(!allowed.has(id))return null;
       if(details){
-        const distinct=[...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))].filter(url=>!tried.has(url));
-        data=await attempt(distinct.slice(0,3));
+        data=await attempt((details.directThumbnailCandidates||[]).slice(0,3));
         if(data)return data;
+      }
+      if(savedUrl){data=await attempt([savedUrl]);if(data)return data;}
+      data=await attempt(listed.filter(rankingImageUrl).filter(url=>!tried.has(url)).slice(0,2));if(data)return data;
+      if(details){
+        const distinct=[...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))].filter(url=>!tried.has(url));
+        data=await attempt(distinct.slice(0,3));if(data)return data;
       }
       // A temporary watch-page failure must not block exact-ID history lookup.
       // History results are accepted only when their program ID matches id.
@@ -111,13 +122,18 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
         data=await attempt((await fetchUserRankingThumbnails(channelOwner||userId,id,fetchImpl,channelOwner?"channel":"user")).slice(0,2));
         if(data)return data;
       }
-      return preview?null:attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
+      return attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
     };
     const task=load().then(data=>{
       cache.delete(key);cache.set(key,{at:now(),data});
       while(cache.size>48)cache.delete(cache.keys().next().value);
       const accepted=allowed.has(id)&&(lookup||allowed.get(id).has(safe))?data:null;
-      if(!preview&&accepted)storePoster(id,accepted);
+      if(!preview&&accepted){
+        storePoster(id,accepted);
+        if(workingUrl&&topIds.has(id))workingSources.set(id,{url:workingUrl,at:now()});
+        // A newly acquired poster should make hover available immediately.
+        if(cache.get(id+" preview")?.data===null)cache.delete(id+" preview");
+      }
       return accepted;
     }).finally(()=>pending.delete(key));
     pending.set(key,task);return task;

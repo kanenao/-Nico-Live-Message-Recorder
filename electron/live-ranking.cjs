@@ -44,9 +44,9 @@ function time(v) {
 function rankingImageUrl(value) {
   if(typeof value!=="string"||value.length>2048)return "";
   try{
-    const u=new URL(value.startsWith("//")?"https:"+value:value);
+    const u=new URL(value.startsWith("//")?"https:"+value:value.replaceAll("&amp;","&"));
     if(u.protocol!=="https:"||u.username||u.password||u.port||
-       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp")||((u.hostname==="nicovideo.jp"||u.hostname.endsWith(".nicovideo.jp"))&&/(?:^|\/)(?:liveimg|live[-_]thumbnails?|video_thumbnails|thumbnails?)(?:\/|$)/i.test(u.pathname))))return "";
+       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname==="simg.jp"||u.hostname.endsWith(".simg.jp")||((u.hostname==="nicovideo.jp"||u.hostname.endsWith(".nicovideo.jp"))&&/(?:^|\/)(?:liveimg|live[-_]thumbnails?|video_thumbnails|thumbnails?)(?:\/|$)/i.test(u.pathname))))return "";
     return u.href;
   }catch{return "";}
 }
@@ -77,12 +77,39 @@ function officialOgImage(html,id,declared=""){
     if(["og:url","og:image","og:image:secure_url","twitter:image","og:title"].includes(key)&&!metadata.has(key))metadata.set(key,htmlAttribute(tag[0],"content"));
   }
   const ogId=liveId(metadata.get("og:url"));
-  if((ogId&&ogId!==id)||(!ogId&&declared!==id))return null;
-  const candidates=[...new Set(["og:image:secure_url","og:image","twitter:image"].map(k=>rankingImageUrl(metadata.get(k))).filter(url=>url&&!/(?:usericon|user-icon|avatar|profile|logo|\/icons?\/)/i.test(new URL(url).pathname)))];
+  if((metadata.has("og:url")&&ogId!==id)||(!ogId&&declared!==id))return null;
+  const candidates=[...new Set(["og:image","og:image:secure_url","twitter:image"].map(k=>directRankingImageUrl(metadata.get(k))).filter(url=>url&&!isRankingBrandImage(url)&&!/(?:usericon|user-icon|avatar|profile|logo|\/icons?\/)/i.test(new URL(url).pathname)))];
   if(!candidates.length)return null;
   return {title:clean(metadata.get("og:title")),thumbnailUrl:candidates[0],thumbnailCandidates:candidates};
 }
 
+// Website worker oldNicoPageImages: relative URLs and numeric IDs occur
+// in the fixed official watch response. Keep the desktop CDN allowlist.
+function directRankingImageUrl(value){
+  if(typeof value!=="string"||!value.trim()||value.length>2048)return "";
+  try{return rankingImageUrl(new URL(value.replaceAll("&amp;","&"),"https://live.nicovideo.jp").href);}catch{return "";}
+}
+function directRankingProgramId(value){
+  const s=String(value??"").trim();
+  return /^\d{5,15}$/.test(s)?"lv"+s:liveId(s);
+}
+function directImageValues(...items){
+  const out=[];
+  for(const item of items){
+    if(typeof item==="string"){out.push(item);continue;}
+    if(!item||typeof item!=="object")continue;
+    for(const key of ["large","middle","small","huge","normal","url","uri","src","uri640x360","uri320x180","uri160x90"]){
+      const v=item[key];out.push(typeof v==="object"&&v?v.url??v.uri??v.src:v);
+    }
+  }
+  return out;
+}
+function directRankingCandidates(p,html,id,declared,supplier={}){
+  const shot=p.thumbnail?.screenshot,screen=p.screenshot;
+  const brand=new Set(directImageValues(supplier.icon,supplier.iconUrl,supplier.icons,supplier.thumbnail,supplier.thumbnailUrl,supplier.profileImage,supplier.profileImageUrl,supplier.logo,supplier.logoUrl).map(directRankingImageUrl).filter(Boolean));
+  const values=[...directImageValues(shot,shot?.urlSet,shot?.urls,screen?.urlSet,screen?.urls,screen),...(officialOgImage(html,id,declared)?.thumbnailCandidates||[])];
+  return [...new Set(values.map(directRankingImageUrl).filter(url=>url&&!brand.has(url)&&!isRankingBrandImage(url)))].slice(0,8);
+}
 function firstRankingImage(...values){
   for(const value of values){const url=rankingImageUrl(value);if(url)return url;}
   return "";
@@ -338,25 +365,31 @@ function parseOfficialRankingDetails(html,id) {
     try{
       const data=JSON.parse(raw.replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"));
       const p=data?.program;
-      if(!p||typeof p!=="object"||!clean(p.title))continue;
-      const declared=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id?.value??p.id);
-      if(declared&&declared!==id)return null;
+      if(!p||typeof p!=="object")continue;
+      const rawId=p.nicoliveProgramId??p.programId??p.liveId??p.id?.value??p.id;
+      const declared=directRankingProgramId(rawId);
+      if(rawId!=null&&declared!==id)return null;
+      const pageTag=[...String(html||"").matchAll(/<meta\b[^>]*>/gi)].find(([tag])=>(htmlAttribute(tag,"property")||htmlAttribute(tag,"name")).toLowerCase()==="og:url");
+      if(pageTag&&liveId(htmlAttribute(pageTag[0],"content"))!==id)return null;
       // Some public watch payloads carry supplier metadata next to program.
       // Use it only for an explicitly matching program, never an unrelated page.
       const supplierRaw=p.supplier??p.programProvider??(declared===id?data.supplier??data.programProvider:null)??{};
       const supplier={...supplierRaw,programProviderType:supplierRaw.programProviderType??supplierRaw.supplierType??supplierRaw.type??p.providerType};
-      const candidates=[...new Set([...programThumbnailCandidates(p,declared===id?data:{}),...(officialOgImage(html,id,declared)?.thumbnailCandidates||[])])].slice(0,8);
+      const direct=directRankingCandidates(p,html,id,declared,supplier);
+      const brand=new Set(directImageValues(supplier.icon,supplier.iconUrl,supplier.icons,supplier.thumbnail,supplier.thumbnailUrl,supplier.profileImage,supplier.profileImageUrl,supplier.logo,supplier.logoUrl).map(directRankingImageUrl).filter(Boolean));
+      const candidates=[...new Set([...direct,...programThumbnailCandidates(p,declared===id?data:{})])].filter(url=>!brand.has(url)&&!isRankingBrandImage(url)).slice(0,8);
+      if(!clean(p.title)&&!candidates.length)continue;
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
         broadcasterId:officialSupplierUserId(supplier),channelOwner:rankingChannelOwner(p,{supplier}),
         startedAt:time(p.beginTime??p.beginAt),
         visitors:count(p.statistics?.watchCount??p.statistics?.visitorCount??p.watchCount??p.visitorCount),
         comments:count(p.statistics?.commentCount??p.commentCount),
         iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.uri150x150,supplier.icons?.uri50x50,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
-        thumbnailUrl:candidates[0]||"",thumbnailCandidates:candidates,...readContributionStatistics(p)};
+        thumbnailUrl:candidates[0]||"",thumbnailCandidates:candidates,directThumbnailCandidates:direct,...readContributionStatistics(p)};
     }catch{}
   }
   const og=officialOgImage(html,id);
-  return og?{liveId:id,...og,name:"",broadcasterId:"",startedAt:"",iconUrl:""}:null;
+  return og?{liveId:id,...og,directThumbnailCandidates:og.thumbnailCandidates,name:"",broadcasterId:"",startedAt:"",iconUrl:""}:null;
 }
 async function fetchOfficialRankingDetails(id,fetchImpl) {
   if(!/^lv\d{5,15}$/.test(id))return null;
@@ -821,4 +854,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage,fetchChannelListingImages};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage,fetchChannelListingImages,directRankingImageUrl};
