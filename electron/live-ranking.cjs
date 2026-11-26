@@ -553,7 +553,7 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
       const cards=parseNicoRanCards(html),lookup=new Map(rows.map(r=>[r.liveId,r]));
       rows=cards.map(card=>{const result={...lookup.get(card.liveId)};for(const [key,value] of Object.entries(card))if(value!=null&&value!==""&&(!Array.isArray(value)||value.length))result[key]=value;return result;});
       // Generic watch links without program-level statistics are not a ranking.
-      const known=new Set(rows.map(r=>r.liveId));for(const row of lookup.values())if(!known.has(row.liveId)&&[row.adPoints,row.giftPoints,row.publicActive10m].some(v=>Number.isSafeInteger(v)&&v>=0))rows.push(row);
+      const known=new Set(rows.map(r=>r.liveId));for(const row of lookup.values())if(!known.has(row.liveId)&&[row.visitors,row.comments,row.adPoints,row.giftPoints,row.publicActive10m].some(v=>Number.isSafeInteger(v)&&v>=0))rows.push(row);
     }
     if(!rows.length)throw Error("番組ID付きのランキングを取得できません");
     return {id:source.id,name:source.name,ok:true,rows};
