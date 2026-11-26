@@ -39,7 +39,14 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     while(posterBytes>POSTER_BUDGET||posters.size>100)dropPoster(posters.keys().next().value);
   }
   function update(rows){
+    const previous=allowed;
     allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))]));
+    // Newly discovered program URLs should not be suppressed by a cached failure.
+    for(const [id,urls] of allowed){
+      if([...urls].some(url=>!previous.get(id)?.has(url))&&cache.get(id+" official")?.data===null){
+        cache.delete(id+" official");
+      }
+    }
     users=new Map(rows.map(r=>[r.liveId,String(r.broadcasterId||r.thumbnailHistoryUserId||"")]).filter(([,id])=>/^\d{5,15}$/.test(id)));
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
@@ -79,7 +86,8 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
       if(!allowed.has(id))return null;
       if(details){
-        data=await attempt([...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
+        const distinct=[...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))].filter(url=>!tried.has(url));
+        data=await attempt(distinct.slice(0,3));
         if(data)return data;
       }
       // A temporary watch-page failure must not block exact-ID history lookup.
