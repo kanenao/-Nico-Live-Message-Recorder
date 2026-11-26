@@ -7,6 +7,7 @@ const SOURCES = Object.freeze([
 ].map(Object.freeze));
 const {readContributionStatistics}=require("./ranking-statistics.cjs");
 const LIMIT=200;
+const TOP_DETAIL_LIMIT=100;
 const MAX_BYTES=6*1024*1024;
 const REFRESH_MS=10000;
 const DETAIL_REFRESH_MS=30000;
@@ -277,6 +278,8 @@ function parseOfficialRankingDetails(html,id) {
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
+        visitors:count(p.statistics?.watchCount??p.statistics?.visitorCount??p.watchCount??p.visitorCount),
+        comments:count(p.statistics?.commentCount??p.commentCount),
         iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.uri150x150,supplier.icons?.uri50x50,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
         thumbnailUrl:candidates[0]||"",thumbnailCandidates:candidates,...readContributionStatistics(p)};
     }catch{}
@@ -360,7 +363,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
     const at=now();
     // Retain expired entries to prioritize programs not yet checked.
     for(const [id,entry] of profileCache)if(entry.expiresAt<=at)profileCache.delete(id);
-    const wanted=(allowFetch?rows:[]).filter(row=>(cache.get(row.liveId)?.expiresAt??0)<=at&&(!row.iconUrl||!row.thumbnailUrl||!row.name))
+    const wanted=(allowFetch?rows:[]).filter(row=>(cache.get(row.liveId)?.expiresAt??0)<=at&&(!row.iconUrl||!row.thumbnailUrl||!row.name||!row.broadcasterId||row.visitors==null||row.comments==null))
       .sort((a,b)=>{
         const left=cache.get(a.liveId),right=cache.get(b.liveId);
         if(!left||!right)return Number(Boolean(left))-Number(Boolean(right));
@@ -376,7 +379,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
         }
         if(details?.broadcasterId&&!details.iconUrl)details.iconUrl=await getProfileIcon(details.broadcasterId);
         cache.delete(row.liveId);
-        cache.set(row.liveId,{details,expiresAt:now()+(details?.thumbnailUrl?1800000:60000)});
+        cache.set(row.liveId,{details,checkedAt:now(),expiresAt:now()+(details?.thumbnailUrl?1800000:60000)});
       }));
     }
     while(cache.size>400)cache.delete(cache.keys().next().value);
@@ -389,7 +392,10 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       // Prefer verified official identity; do not retain a mismatched name or icon.
       return {...row,title:d.title||row.title,name:d.name||(conflict?"":row.name),
         broadcasterId:d.broadcasterId||row.broadcasterId,startedAt:d.startedAt||row.startedAt,
-        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),adPoints:row.adPoints??d.adPoints??null,giftPoints:row.giftPoints??d.giftPoints??null,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl,thumbnailCandidates:[...new Set([...(d.thumbnailCandidates||[]),d.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8)};
+        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),
+        visitors:row.visitors??(now()-entry.checkedAt<=120000?d.visitors:null)??null,
+        comments:row.comments??(now()-entry.checkedAt<=120000?d.comments:null)??null,
+        adPoints:row.adPoints??d.adPoints??null,giftPoints:row.giftPoints??d.giftPoints??null,thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl,thumbnailCandidates:[...new Set([...(d.thumbnailCandidates||[]),d.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8)};
     });
   };
 }
@@ -695,7 +701,7 @@ function createRankingService(options={}) {
           if(options.backgroundDetails===true){
             if(due&&!detailPending){
               lastDetailAt=checkedAt;
-              detailPending=enrich(rows,true).catch(()=>{}).finally(()=>{detailPending=null;});
+              detailPending=enrich(rows.slice(0,TOP_DETAIL_LIMIT),true).catch(()=>{}).finally(()=>{detailPending=null;});
             }
             rows=await enrich(rows,false);
           }else{

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("nicoAPI", {
   getRankingThumbnail: (id,url) => ipcRenderer.invoke("ranking:thumbnail",id,url),
   stopRankingActivity: () => ipcRenderer.invoke("ranking:stop-activity"),
   resolveRankingMonitorTarget: (liveId) => ipcRenderer.invoke("ranking:resolve-monitor", liveId),
+  openRankingUserProfile: (liveId) => ipcRenderer.invoke("ranking:open-user-profile",liveId),
   getMonitorState: () => ipcRenderer.invoke("monitor:get-state"),
   getOllamaStatus: () => ipcRenderer.invoke("ollama:get-status"),
   downloadOllamaInstaller: () => ipcRenderer.invoke("ollama:download-installer"),

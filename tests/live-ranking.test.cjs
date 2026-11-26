@@ -861,3 +861,28 @@ test("desktop ranking does not wait for thumbnail detail requests and does not o
   resolveDetail();await new Promise(r=>setImmediate(r));
   now+=10000;const third=await ranking();assert.equal(third.rows[0].thumbnailUrl,"https://cdn.nimg.jp/a.jpg");assert.equal(details,1);
 });
+
+test("ranking top 100 display preserves true ranks and never fabricates missing programs",()=>{
+ const vm=require("node:vm"),src=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const code=src.slice(src.indexOf("function rankingTopRows("),src.indexOf("function updateRankingCoverage("));
+ const top=vm.runInNewContext(code+"\nrankingTopRows");
+ const rows=Array.from({length:156},(_,i)=>({rank:156-i,liveId:"lv"+(123456+i)}));
+ assert.equal(top(rows).length,100);assert.equal(top(rows)[0].rank,1);assert.equal(top(rows).at(-1).rank,100);
+ assert.equal(top(rows.filter(r=>r.rank<40)).length,39);
+ assert.equal(rows[0].rank,156);
+});
+test("ranking profile opens only through official verified program identity",()=>{
+ const main=fs.readFileSync(path.join(__dirname,"..","electron/main.cjs"),"utf8");
+ const preload=fs.readFileSync(path.join(__dirname,"..","electron/preload.cjs"),"utf8");
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ assert.match(main,/ipcMain\.handle\("ranking:open-user-profile", async \(_event, liveId\) => \{\s*const \{userId\}=await resolvePublicRankingUser\(liveId\);\s*const profileUrl=nicoUserPageUrl\(userId\);/);
+ assert.match(preload,/openRankingUserProfile: \(liveId\) => ipcRenderer\.invoke\("ranking:open-user-profile",liveId\)/);
+ assert.match(renderer,/api\.openRankingUserProfile\(item\.liveId\)/);
+});
+test("official watch enrichment extracts missing viewer and comment counts without assuming zero",()=>{
+ const {parseOfficialRankingDetails}=require("../electron/live-ranking.cjs");
+ const row=parseOfficialRankingDetails(officialPage({nicoliveProgramId:"lv123456",title:"番組",statistics:{watchCount:0,commentCount:22}}),"lv123456");
+ assert.equal(row.visitors,0);assert.equal(row.comments,22);
+ const missing=parseOfficialRankingDetails(officialPage({nicoliveProgramId:"lv123456",title:"番組"}),"lv123456");
+ assert.equal(missing.visitors,null);assert.equal(missing.comments,null);
+});

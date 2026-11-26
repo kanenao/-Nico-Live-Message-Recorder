@@ -23,7 +23,7 @@ const {createRankingService,createRankingDetailEnricher,rankingListingImage}=req
     }catch{checks.push("network-error");}
   }
   console.log(JSON.stringify({checkedAt:snapshot.checkedAt,stale:snapshot.stale,partial:snapshot.partial,
-    programs:rows.length,withVisitors:rows.filter(x=>x.visitors!=null).length,withComments:rows.filter(x=>x.comments!=null).length,
+    programs:rows.length,top100:rows.filter(x=>x.rank<=100).length,top100WithVisitors:rows.filter(x=>x.rank<=100&&x.visitors!=null).length,top100WithComments:rows.filter(x=>x.rank<=100&&x.comments!=null).length,top100WithUserIds:rows.filter(x=>x.rank<=100&&x.broadcasterId).length,top100WithThumbnails:rows.filter(x=>x.rank<=100&&x.thumbnailUrl).length,withVisitors:rows.filter(x=>x.visitors!=null).length,withComments:rows.filter(x=>x.comments!=null).length,
     withUserIds:rows.filter(x=>x.broadcasterId).length,withNames:rows.filter(x=>x.name).length,withIcons:rows.filter(x=>x.iconUrl).length,
     withThumbnails:rows.filter(x=>x.thumbnailUrl).length,thumbnailCoverageByBatch:stages,imageResponses:checks.filter(x=>x==="image-response").length,imageSampleCount:checks.length,imageChecks:checks,sources:snapshot.sources},null,2));
   if(snapshot.stale){console.error("No public ranking sources could be parsed in this environment.");process.exitCode=1;}

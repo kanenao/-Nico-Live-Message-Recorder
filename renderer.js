@@ -1914,11 +1914,12 @@ function rankingStatusText(snapshot,visibleCount,now=Date.now()) {
   const checked=Number.isFinite(at)?new Date(at).toLocaleString("ja-JP"):"未取得";
   const fresh=isRankingFresh(snapshot,now);
   const total=Array.isArray(snapshot.rows)?snapshot.rows.length:0;
+  const topCount=rankingTopRows(snapshot.rows).length;
   const state=snapshot.stale?"更新失敗 / 前回データ（録画無効）":
     !fresh?"更新待ち / 古いデータ（録画無効）":
     (snapshot.partial?"一部取得不可 / ":"")+"取得範囲 "+total+"番組";
   const ageLabel=Number.isFinite(age)&&age>=0?" ／ "+Math.floor(age/1000)+"秒前":"";
-  return state+" ／ "+checked+ageLabel+" ／ 表示 "+visibleCount+"件";
+  return state+" ／ "+checked+ageLabel+" ／ 上位 "+topCount+"/100件 ／ 表示 "+visibleCount+"件";
 }
 function liveRankingLabel(snapshot, liveId, now=Date.now()) {
   const id=String(liveId||"").trim().toLowerCase();
@@ -2112,8 +2113,11 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
     item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
     busy,fresh,pending,isRecording,commentState]);
 }
+function rankingTopRows(rows){
+  return (Array.isArray(rows)?rows:[]).filter(row=>Number.isInteger(row.rank)&&row.rank>=1&&row.rank<=100).sort((a,b)=>a.rank-b.rank);
+}
 function updateRankingCoverage(){
-  const rows=rankingSnapshot?.rows||[];
+  const rows=rankingTopRows(rankingSnapshot?.rows);
   const list=byId("ranking-list");
   const loaded=list?Array.from(list.querySelectorAll("tr[data-live-id]")).filter(row=>Array.from(row.querySelectorAll(".ranking-thumbnail,.ranking-video-frame")).some(img=>img.complete&&img.naturalWidth>0&&!img.hidden)).length:0;
   const visible=list?list.querySelectorAll("tr[data-live-id]").length:0;
@@ -2134,7 +2138,7 @@ function renderIndependentRanking() {
   const focusedMedia=Boolean(focusedId&&activeElement.matches(".ranking-media"));
   const q = byId("ranking-search").value.trim().toLowerCase();
   const sort = byId("ranking-sort").value;
-  const all = rankingSnapshot.rows || [];
+  const all = rankingTopRows(rankingSnapshot.rows);
   const rows = all.filter(item => [item.title,item.name,item.liveId].some(v=>String(v||"").toLowerCase().includes(q)));
   const key = item => sort === "startedAt" ? (Date.parse(item.startedAt)||null) : item[sort];
   rows.sort((a,b)=>(key(b)??-1)-(key(a)??-1)||a.rank-b.rank);
@@ -2159,7 +2163,22 @@ function renderIndependentRanking() {
     appendRankingTrend(rankCell,item);
     const info = rankingCell(tr,null,"ranking-program");
     const title=document.createElement("strong");title.textContent=item.title||item.liveId;
-    const meta=document.createElement("small");meta.textContent=(item.name||"配信者未取得")+" · "+item.liveId;
+    const meta=document.createElement("small");
+    const profile=document.createElement("button");
+    profile.type="button";profile.className="ranking-profile-link";
+    profile.textContent=item.name||"配信者を確認";
+    profile.title="公式番組情報で本人を確認してニコニコのユーザーページを開く";
+    profile.dataset.rankingProfile=item.liveId;
+    profile.addEventListener("click",async()=>{
+      if(profile.disabled)return;
+      profile.disabled=true;
+      try{
+        await api.openRankingUserProfile(item.liveId);
+      }catch(error){
+        showToast(error.message||"ユーザーページを確認できませんでした。",true);
+      }finally{profile.disabled=false;}
+    });
+    meta.append(profile," · "+item.liveId);
     if(item.startedAt){
       const elapsed=document.createElement("span");
       elapsed.className="live-broadcast-elapsed";

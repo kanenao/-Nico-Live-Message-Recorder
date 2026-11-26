@@ -3000,12 +3000,20 @@ ipcMain.handle("ranking:list", async (_event,options={}) => {
   rankingImageProxy.update(rows);
   return {...snapshot,rows};
 });
-ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) =>
-  resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
+function resolvePublicRankingUser(liveId){
+  return resolveRankingMonitorTarget(liveId, id => fetchTimeshiftProgramPage(id, "", {
     timeoutMs: 6500,
     fetchImpl: (url, options) => fetch(url, { ...options, redirect: "error" })
-  }))
-);
+  }));
+}
+ipcMain.handle("ranking:resolve-monitor", async (_event, liveId) => resolvePublicRankingUser(liveId));
+ipcMain.handle("ranking:open-user-profile", async (_event, liveId) => {
+  const {userId}=await resolvePublicRankingUser(liveId);
+  const profileUrl=nicoUserPageUrl(userId);
+  if(!profileUrl)throw new Error("公式のユーザーページを確認できませんでした。");
+  await shell.openExternal(profileUrl);
+  return {opened:true};
+});
 ipcMain.handle("monitor:get-state", () => getMonitorState());
 ipcMain.handle("ollama:get-status", () => getOllamaStatus());
 ipcMain.handle("ollama:download-installer", async () => {
