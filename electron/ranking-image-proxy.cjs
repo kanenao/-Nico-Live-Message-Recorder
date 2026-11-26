@@ -1,11 +1,15 @@
 "use strict";
-const {rankingImageUrl,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
+const {rankingImageUrl,rankingListingImage,fetchOfficialRankingDetails,fetchUserRankingThumbnails}=require("./live-ranking.cjs");
+const LISTING_URL="https://www.chikuwachan.com/live/NCU/";
+function safePosterUrl(value){
+  return rankingImageUrl(value)||rankingListingImage(value,LISTING_URL);
+}
 const MAX=1024*1024;
 async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
-  const safe=rankingImageUrl(url);
+  const safe=safePosterUrl(url);
   if(!safe)return null;
   try{
-    const r=await fetchImpl(safe,{redirect:"error",signal:AbortSignal.timeout(7000),headers:{Referer:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
+    const r=await fetchImpl(safe,{redirect:"error",signal:AbortSignal.timeout(7000),headers:{Referer:new URL(safe).origin==="https://www.chikuwachan.com"?LISTING_URL:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
     const type=(r.headers?.get("content-type")||"").split(";")[0].trim().toLowerCase();
     if(!r.ok||!/^image\/(?:jpeg|png|webp|gif|avif)$/.test(type)||Number(r.headers.get("content-length")||0)>MAX){await r.body?.cancel();return null;}
     if(!r.body?.getReader)return null;
@@ -24,7 +28,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   }catch{return null;}
 }
 function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
-  let allowed=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
+  let allowed=new Map(),users=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
   function storePoster(id,data){
@@ -35,7 +39,8 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     while(posterBytes>POSTER_BUDGET||posters.size>100)dropPoster(posters.keys().next().value);
   }
   function update(rows){
-    allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(rankingImageUrl).filter(Boolean))]));
+    allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))]));
+    users=new Map(rows.filter(r=>/^\d{5,15}$/.test(String(r.broadcasterId??""))).map(r=>[r.liveId,String(r.broadcasterId)]));
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
@@ -46,7 +51,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     if(url==="poster")return topIds.has(id)?posters.get(id)?.data??null:null;
     const preview=url==="preview";
     const lookup=url===""||preview;
-    const safe=lookup?"":rankingImageUrl(url);
+    const safe=lookup?"":safePosterUrl(url);
     if(!/^lv\d{5,15}$/.test(String(id))||!allowed.has(id)||(!lookup&&(!safe||!allowed.get(id).has(safe))))return null;
     const key=id+" "+(preview?"preview":lookup?"official":safe),old=cache.get(key),at=now();
     if(old&&at>=old.at&&at-old.at<(preview?2000:30000)){if(!preview&&old.data)storePoster(id,old.data);return old.data;}
@@ -58,25 +63,33 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       const tried=new Set();
       async function attempt(values){
         for(const value of values){
-          const candidate=rankingImageUrl(value);
-          if(!candidate||tried.has(candidate)||!allowed.has(id))continue;
+          const candidate=safePosterUrl(value);
+          if(!candidate||tried.has(candidate)||!allowed.has(id)||tried.size>=6)continue;
+          if(!rankingImageUrl(candidate)&&!allowed.get(id).has(candidate))continue;
           tried.add(candidate);
           const data=await fetchRankingImage(candidate,fetchImpl);
           if(data)return data;
-          if(tried.size>=5)break;
+          if(tried.size>=6)break;
         }
         return null;
       }
       let data=null;
-      if(!preview){data=await attempt([...allowed.get(id)||[]].slice(0,2));if(data)return data;}
+      const listed=[...allowed.get(id)||[]];
+      if(!preview){data=await attempt(listed.filter(rankingImageUrl).slice(0,2));if(data)return data;}
       const details=await fetchOfficialRankingDetails(id,fetchImpl);
-      if(!details||!allowed.has(id))return null;
-      data=await attempt([...new Set([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean))].slice(0,2));
-      if(!data&&details.broadcasterId&&allowed.has(id)){
-        const history=await fetchUserRankingThumbnails(details.broadcasterId,id,fetchImpl);
-        data=await attempt(history.slice(0,1));
+      if(!allowed.has(id))return null;
+      if(details){
+        data=await attempt([details.thumbnailUrl,...(details.thumbnailCandidates||[])].filter(Boolean).slice(0,3));
+        if(data)return data;
       }
-      return data;
+      // A temporary watch-page failure must not block exact-ID history lookup.
+      // History results are accepted only when their program ID matches id.
+      const userId=details?.broadcasterId||users.get(id);
+      if(userId&&allowed.has(id)){
+        data=await attempt((await fetchUserRankingThumbnails(userId,id,fetchImpl)).slice(0,2));
+        if(data)return data;
+      }
+      return preview?null:attempt(listed);
     };
     const task=load().then(data=>{
       cache.delete(key);cache.set(key,{at:now(),data});
@@ -91,7 +104,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
   // monopolize the queue. In-flight requests share the same global four slots.
   function prefetch(){
     const at=now();
-    const candidates=[...topIds].filter(id=>!pending.has(id+" official")&&!pending.has(id+" preview")&&(!attempted.has(id)||at<attempted.get(id)||at-attempted.get(id)>=90000))
+    const candidates=[...topIds].filter(id=>!pending.has(id+" official")&&!pending.has(id+" preview")&&(!attempted.has(id)||at<attempted.get(id)||at-attempted.get(id)>=(posters.has(id)?90000:30000)))
       .sort((a,b)=>(Number(attempted.has(a))-Number(attempted.has(b)))||(Number(posters.has(a))-Number(posters.has(b)))||((attempted.get(a)||0)-(attempted.get(b)||0)));
     const jobs=[];
     for(const id of candidates.slice(0,Math.max(0,4-pending.size))){
