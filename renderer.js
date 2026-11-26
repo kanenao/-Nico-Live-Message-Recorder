@@ -1971,7 +1971,7 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
   if(!url&&!alternatives.length&&!canLookup)return;
   try{
     const candidates=[...new Set([url,...alternatives])].filter(value=>{
-      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&((u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp"))||(u.origin==="https://www.chikuwachan.com"&&u.pathname.startsWith("/live/")&&/\.(?:jpe?g|png|webp)$/i.test(u.pathname)&&!/(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(u.pathname)));}catch{return false;}
+      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&((u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")||u.hostname.endsWith(".simg.jp")||((u.hostname==="nicovideo.jp"||u.hostname.endsWith(".nicovideo.jp"))&&/(?:^|\/)(?:liveimg|live[-_]thumbnails?|video_thumbnails|thumbnails?)(?:\/|$)/i.test(u.pathname)))||(u.origin==="https://www.chikuwachan.com"&&u.pathname.startsWith("/live/")&&/\.(?:jpe?g|png|webp)$/i.test(u.pathname)&&!/(?:usericon|user-icon|avatar|profile|badge|logo|\/icons?\/)/i.test(u.pathname)));}catch{return false;}
     }).slice(0,8);
     if(!candidates.length&&!canLookup)return;
     const img=document.createElement("img");let index=0;
