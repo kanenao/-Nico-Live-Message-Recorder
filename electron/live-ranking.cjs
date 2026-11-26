@@ -87,20 +87,40 @@ function firstRankingImage(...values){
   for(const value of values){const url=rankingImageUrl(value);if(url)return url;}
   return "";
 }
+// Adapted from the supplied website worker: exclude default and provider artwork.
+function isRankingBrandImage(value){
+  return typeof value==="string"&&/(?:^|[\/_-])(?:default|no[-_]?image|no[-_]?thumbnail|placeholder|dummy|fallback|initial|blank)(?:[\/_.?-]|$)|\/(?:usericon|user-icon|channelicon|channel-icon|profile|avatar|icons?)\/|\/nicochannel\/material\/design\/|\/channel\/(?:icon|logo)\/|\/comch\/channel-icon\//i.test(value);
+}
+function rankingChannelOwner(p={},raw={}){
+  const s=p.supplier??p.programProvider??p.provider??raw.supplier??raw.programProvider??raw.provider??{};
+  const types=[p.providerType,s.programProviderType,s.supplierType,s.type].filter(v=>typeof v==="string"&&v.trim()).map(v=>v.trim().toLowerCase());
+  if(types.includes("user"))return "";
+  const ids=new Set();
+  for(const value of [s.pageUrl,s.url,s.channelPageUrl]){
+    if(typeof value!=="string")continue;
+    try{const u=new URL(value);if(u.origin!=="https://ch.nicovideo.jp"||u.username||u.password)continue;
+      const m=/^\/ch([1-9]\d{0,14})(?:\/|$)/i.exec(u.pathname);if(m)ids.add(m[1]);
+    }catch{}
+  }
+  if(types.includes("channel")||ids.size){
+    const m=/^(?:ch)?([1-9]\d{0,14})$/i.exec(String(s.programProviderId??s.supplierId??s.id??""));if(m)ids.add(m[1]);
+  }
+  return ids.size===1?[...ids][0]:"";
+}
 function programThumbnailCandidates(p={},raw={}){
   const values=[];
   for(const obj of [p,raw]){
     if(!obj||typeof obj!=="object")continue;
-    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot?.urls,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail?.urlSet,obj.thumbnail?.urls,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
+    for(const item of [obj.thumbnail?.screenshot?.urlSet,obj.thumbnail?.screenshot?.urls,obj.thumbnail?.screenshot,obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail?.urlSet,obj.thumbnail?.urls,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls,obj.programThumbnail]){
       if(typeof item==="string"){values.push(item);continue;}
       if(!item||typeof item!=="object")continue;
-      for(const k of ["large","huge","middle","small","normal","url","uri","uri640x360","uri320x180","uri160x90"]){
-        const v=item[k];values.push(typeof v==="object"&&v?v.url??v.uri:v);
+      for(const k of ["large","huge","middle","small","normal","url","uri","src","uri640x360","uri320x180","uri160x90"]){
+        const v=item[k];values.push(typeof v==="object"&&v?v.url??v.uri??v.src:v);
       }
     }
-    values.push(obj.thumbnailUrl,obj.screenshotUrl);
+    values.push(obj.thumbnailUrl,obj.screenshotUrl,obj.programThumbnailUrl);
   }
-  return [...new Set(values.map(rankingImageUrl).filter(url=>url&&!/\/(?:usericon|user-icon|icons?)\//i.test(new URL(url).pathname)))].slice(0,8);
+  return [...new Set(values.map(rankingImageUrl).filter(url=>url&&!isRankingBrandImage(url)))].slice(0,8);
 }
 function jsonRow(raw) {
   if(!raw||typeof raw!=="object"||Array.isArray(raw)) return null;
@@ -126,7 +146,7 @@ function jsonRow(raw) {
   const broadcasterId=conflictingType?"":providerType||hasIdentityLink?officialSupplierUserId(provider):
     /^\d{1,15}$/.test(numeric)?numeric:"";
   return {liveId:id,title,name:clean(provider.name??p.broadcasterName??p.providerName,80),
-    broadcasterId,
+    broadcasterId,channelOwner:conflictingType?"":rankingChannelOwner(p,raw),
     startedAt:time(p.schedule?.beginTime??p.beginTime??p.beginAt??p.startTime??p.startedAt),
     iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.uri150x150,provider.icons?.uri50x50,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small,provider.thumbnailUrl),
     thumbnailUrl:programThumbnailCandidates(p,raw)[0]||"",thumbnailCandidates:programThumbnailCandidates(p,raw),
@@ -162,7 +182,7 @@ function unique(rows) {
       if((old[field]==null||old[field]==="")&&row[field]!=null&&row[field]!=="")old[field]=row[field];
     }
     if(!conflict){
-      for(const field of ["name","broadcasterId","iconUrl","thumbnailHistoryUserId"]){
+      for(const field of ["name","broadcasterId","iconUrl","thumbnailHistoryUserId","channelOwner"]){
         if(!old[field]&&row[field])old[field]=row[field];
       }
     }
@@ -327,7 +347,7 @@ function parseOfficialRankingDetails(html,id) {
       const supplier={...supplierRaw,programProviderType:supplierRaw.programProviderType??supplierRaw.supplierType??supplierRaw.type??p.providerType};
       const candidates=[...new Set([...programThumbnailCandidates(p,declared===id?data:{}),...(officialOgImage(html,id,declared)?.thumbnailCandidates||[])])].slice(0,8);
       return {liveId:id,title:clean(p.title),name:clean(supplier.name,80),
-        broadcasterId:officialSupplierUserId(supplier),
+        broadcasterId:officialSupplierUserId(supplier),channelOwner:rankingChannelOwner(p,{supplier}),
         startedAt:time(p.beginTime??p.beginAt),
         visitors:count(p.statistics?.watchCount??p.statistics?.visitorCount??p.watchCount??p.visitorCount),
         comments:count(p.statistics?.commentCount??p.commentCount),
@@ -373,18 +393,18 @@ async function fetchOfficialRankingProfileIcon(userId,fetchImpl) {
     return rankingImageUrl(require("./nico-profile.cjs").extractProfileImageUrl(await readBounded(response)));
   }catch{return "";}
 }
-async function fetchUserRankingThumbnails(userId,id,fetchImpl){
-  if(!/^\d{5,15}$/.test(String(userId))||!/^lv\d{5,15}$/.test(String(id)))return [];
-  for(const version of ["v2","v1"]){
+async function fetchUserRankingThumbnails(userId,id,fetchImpl,providerType="user"){
+  if(!["user","channel"].includes(providerType)||!(/^[1-9]\d{0,14}$/.test(String(userId)))||!/^lv\d{5,15}$/.test(String(id)))return [];
+  for(const version of providerType==="channel"?["v1"]:["v2","v1"]){
     try{
       const url=new URL("https://live.nicovideo.jp/front/api/"+version+"/user-broadcast-history");
-      url.search=new URLSearchParams({providerId:userId,providerType:"user",isIncludeNonPublic:"false",offset:"0",limit:"5",withTotalCount:"true"});
-      const response=await fetchImpl(url.href,{redirect:"error",headers:{accept:"application/json","user-agent":"Nico-Live-Message-Recorder"},signal:AbortSignal.timeout(4000)});
+      url.search=new URLSearchParams({providerId:userId,providerType,isIncludeNonPublic:"false",offset:"0",limit:providerType==="channel"?"10":"5",withTotalCount:"true"});
+      const response=await fetchImpl(url.href,{redirect:"error",headers:{accept:"application/json","user-agent":"Nico-Live-Message-Recorder","X-Frontend-Id":"9"},signal:AbortSignal.timeout(4000)});
       if(!response?.ok)continue;
       const payload=JSON.parse(await readBounded(response)),root=payload.data??payload;
       const list=root.programsList??root.programs;
       if(!Array.isArray(list))continue;
-      for(const entry of list.slice(0,5)){
+      for(const entry of list.slice(0,providerType==="channel"?10:5)){
         const p=entry?.program??entry;
         if(!p)continue;
         const claimed=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id?.value??p.id??entry.id?.value??entry.id);
@@ -423,9 +443,10 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
     for(let i=0;i<wanted.length;i+=2){
       await Promise.all(wanted.slice(i,i+2).map(async row=>{
         let details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
+        const channelOwner=details?.channelOwner||row.channelOwner;
         const userId=details?.broadcasterId||row.broadcasterId||row.thumbnailHistoryUserId;
-        if(userId&&!details?.thumbnailUrl&&!row.thumbnailUrl){
-          const candidates=await fetchUserRankingThumbnails(userId,row.liveId,fetchImpl);
+        if((channelOwner||userId)&&!details?.thumbnailUrl&&!row.thumbnailUrl){
+          const candidates=await fetchUserRankingThumbnails(channelOwner||userId,row.liveId,fetchImpl,channelOwner?"channel":"user");
           if(candidates.length)details={...(details||row),thumbnailUrl:candidates[0],thumbnailCandidates:candidates};
         }
         if(details?.broadcasterId&&!details.iconUrl)details.iconUrl=await getProfileIcon(details.broadcasterId);
@@ -442,7 +463,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       const conflict=d.broadcasterId&&row.broadcasterId&&d.broadcasterId!==row.broadcasterId;
       // Prefer verified official identity; do not retain a mismatched name or icon.
       return {...row,title:d.title||row.title,name:d.name||(conflict?"":row.name),
-        broadcasterId:d.broadcasterId||row.broadcasterId,startedAt:d.startedAt||row.startedAt,
+        broadcasterId:d.broadcasterId||row.broadcasterId,channelOwner:d.channelOwner||row.channelOwner,startedAt:d.startedAt||row.startedAt,
         iconUrl:d.iconUrl||(conflict?"":row.iconUrl),
         visitors:row.visitors??(now()-entry.checkedAt<=120000?d.visitors:null)??null,
         comments:row.comments??(now()-entry.checkedAt<=120000?d.comments:null)??null,
@@ -594,7 +615,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
       for(const field of ["startedAt","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
       const identityConflict=item.broadcasterId&&row.broadcasterId&&item.broadcasterId!==row.broadcasterId;
       if(!identityConflict){
-        for(const field of ["name","broadcasterId","iconUrl","thumbnailHistoryUserId"])if(!item[field]&&row[field])item[field]=row[field];
+        for(const field of ["name","broadcasterId","iconUrl","thumbnailHistoryUserId","channelOwner"])if(!item[field]&&row[field])item[field]=row[field];
       }
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments","adPoints","giftPoints"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
@@ -786,4 +807,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage};
