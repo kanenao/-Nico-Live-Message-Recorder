@@ -2160,9 +2160,16 @@ function updateRankingCoverage(){
   for(const [key,value] of Object.entries(values)){const el=byId("ranking-coverage-"+key);if(el)el.textContent=value;}
 }
 // Reconcile cells on the same program row instead of detaching/recreating it.
+function hasRankingRowLayout(row){
+  const expected=["ranking-rank","ranking-program","ranking-total-score","ranking-view-metrics","ranking-active-metric","ranking-support-metrics","ranking-actions"];
+  return Boolean(row&&row.cells.length===expected.length&&expected.every((name,index)=>row.cells[index].classList.contains(name))&&row.cells[1].querySelector(".ranking-media")&&row.cells[1].querySelector(".ranking-labels"));
+}
 function patchRankingRow(old,next,actionKey){
-  const oldIdentity=old.cells[1].querySelector(".ranking-identity");
-  const nextIdentity=next.cells[1].querySelector(".ranking-identity");
+  // HTMLTableRowElement.cells is live. Moving a cell out of next shifts its
+  // indexes immediately. Snapshot both collections before moving any cells.
+  const oldCells=Array.from(old.cells),nextCells=Array.from(next.cells);
+  const oldIdentity=oldCells[1].querySelector(".ranking-identity");
+  const nextIdentity=nextCells[1].querySelector(".ranking-identity");
   const nextPicture=nextIdentity.querySelector(".ranking-media");
   const oldPicture=oldIdentity.querySelector(".ranking-media");
   if(nextPicture&&nextPicture!==oldPicture)oldPicture.replaceWith(nextPicture);
@@ -2170,7 +2177,7 @@ function patchRankingRow(old,next,actionKey){
   const nextLabels=nextIdentity.querySelector(".ranking-labels");
   if(oldLabels.outerHTML!==nextLabels.outerHTML)oldLabels.replaceWith(nextLabels);
   for(const index of [0,2,3,4,5,6]){
-    const before=old.cells[index],after=next.cells[index];
+    const before=oldCells[index],after=nextCells[index];
     if((index===6&&old.dataset.actionKey!==actionKey)||before.outerHTML!==after.outerHTML)before.replaceWith(after);
   }
   old.dataset.renderKey=next.dataset.renderKey;
@@ -2213,7 +2220,9 @@ function renderIndependentRanking() {
   const busy = captureStopInProgress || recordStartInProgress || Boolean(recordStartedAt) ||
     videoCaptureState === "recording" || videoCaptureState === "stopping" || monitorAutoProcessing;
   for (const item of rows) {
-    const old=existing.get(item.liveId);
+    const cached=existing.get(item.liveId);
+    // A previously damaged row must be rebuilt, even when its data key matches.
+    const old=hasRankingRowLayout(cached)?cached:null;
     const mediaKey=rankingMediaKey(item);
     const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
     const rowKey=rankingRowKey(item,mediaKey,busy,isRankingFresh(rankingSnapshot),rankingMonitorPending.has(item.liveId),isRecording,commentCaptureState);
