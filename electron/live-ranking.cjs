@@ -42,7 +42,7 @@ function time(v) {
 function rankingImageUrl(value) {
   if(typeof value!=="string"||value.length>2048)return "";
   try{
-    const u=new URL(value);
+    const u=new URL(value.startsWith("//")?"https:"+value:value);
     if(u.protocol!=="https:"||u.username||u.password||u.port||
        !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")))return "";
     return u.href;
@@ -52,10 +52,25 @@ function firstRankingImage(...values){
   for(const value of values){const url=rankingImageUrl(value);if(url)return url;}
   return "";
 }
+function programThumbnailCandidates(p={},raw={}){
+  const values=[];
+  for(const obj of [p,raw]){
+    if(!obj||typeof obj!=="object")continue;
+    for(const item of [obj.screenshot?.urlSet,obj.screenshot?.urls,obj.screenshot,obj.thumbnail,obj.thumbnails,obj.thumbnailUrlSet,obj.thumbnailUrls]){
+      if(typeof item==="string"){values.push(item);continue;}
+      if(!item||typeof item!=="object")continue;
+      for(const k of ["large","huge","middle","small","normal","url","uri","uri640x360","uri320x180","uri160x90"]){
+        const v=item[k];values.push(typeof v==="object"&&v?v.url??v.uri:v);
+      }
+    }
+    values.push(obj.thumbnailUrl,obj.screenshotUrl);
+  }
+  return [...new Set(values.map(rankingImageUrl).filter(url=>url&&!/\/(?:usericon|user-icon|icons?)\//i.test(new URL(url).pathname)))].slice(0,8);
+}
 function jsonRow(raw) {
   if(!raw||typeof raw!=="object"||Array.isArray(raw)) return null;
   const p=raw.program&&typeof raw.program==="object"?raw.program:raw;
-  const id=liveId(p.liveId??p.programId??p.nicoliveProgramId??p.contentId??p.id?.value??p.id??p.watchPageUrl??p.watchUrl);
+  const id=liveId(p.liveId??p.programId??p.nicoliveProgramId??p.contentId??p.id?.value??p.id??p.watchPageUrl??p.watchUrl??raw.id?.value??raw.id);
   const title=clean(p.title??p.programTitle);
   if(!id||!title)return null;
   const status=String(p.schedule?.status??p.liveStatus??p.status??"").toUpperCase();
@@ -75,7 +90,7 @@ function jsonRow(raw) {
     broadcasterId,
     startedAt:time(p.schedule?.beginTime??p.beginTime??p.beginAt??p.startTime??p.startedAt),
     iconUrl:firstRankingImage(provider.icon,provider.iconUrl,provider.icons?.uri150x150,provider.icons?.uri50x50,provider.icons?.large,provider.icons?.small,provider.icon?.large,provider.icon?.small,provider.thumbnailUrl),
-    thumbnailUrl:firstRankingImage(p.screenshot?.urlSet?.large,p.screenshot?.urlSet?.middle,p.screenshot?.urlSet?.small,p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnail?.middle,p.thumbnails?.large,p.thumbnails?.small),
+    thumbnailUrl:programThumbnailCandidates(p,raw)[0]||"",thumbnailCandidates:programThumbnailCandidates(p,raw),
     visitors:count(statistics.watchCount??statistics.visitorCount??p.watchCount??p.visitorCount??p.viewCounter),
     comments:count(statistics.commentCount??p.commentCount??p.commentCounter),
     adPoints:count(statistics.totalNicoadPoints??statistics.totalAdPoints??p.totalNicoadPoints??p.totalAdPoints),
@@ -104,6 +119,7 @@ function unique(rows) {
     // records may contain metadata omitted from the first listing.
     // Never combine user identity or artwork across conflicting identities.
     const conflict=old.broadcasterId&&row.broadcasterId&&old.broadcasterId!==row.broadcasterId;
+    old.thumbnailCandidates=[...new Set([...(old.thumbnailCandidates||[]),old.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8);
     for(const field of ["startedAt","thumbnailUrl","visitors","comments","adPoints","giftPoints"]){
       if((old[field]==null||old[field]==="")&&row[field]!=null&&row[field]!=="")old[field]=row[field];
     }
@@ -211,7 +227,7 @@ function parseOfficialRankingDetails(html,id) {
         broadcasterId:officialSupplierUserId(supplier),
         startedAt:time(p.beginTime??p.beginAt),
         iconUrl:firstRankingImage(supplier.icon,supplier.iconUrl,supplier.icons?.uri150x150,supplier.icons?.uri50x50,supplier.icons?.large,supplier.icons?.small,supplier.icon?.large,supplier.icon?.small,supplier.thumbnailUrl),
-        thumbnailUrl:firstRankingImage(p.screenshot?.urlSet?.large,p.screenshot?.urlSet?.middle,p.screenshot?.urlSet?.small,p.thumbnailUrl,p.thumbnail,p.thumbnail?.large,p.thumbnail?.small,p.thumbnail?.huge,p.thumbnail?.url,p.thumbnails?.large)};
+        thumbnailUrl:programThumbnailCandidates(p,declared===id?data:{})[0]||"",thumbnailCandidates:programThumbnailCandidates(p,declared===id?data:{})};
     }catch{}
   }
   return null;
@@ -251,6 +267,29 @@ async function fetchOfficialRankingProfileIcon(userId,fetchImpl) {
     return rankingImageUrl(require("./nico-profile.cjs").extractProfileImageUrl(await readBounded(response)));
   }catch{return "";}
 }
+async function fetchUserRankingThumbnails(userId,id,fetchImpl){
+  if(!/^\d{5,15}$/.test(String(userId))||!/^lv\d{5,15}$/.test(String(id)))return [];
+  for(const version of ["v2","v1"]){
+    try{
+      const url=new URL("https://live.nicovideo.jp/front/api/"+version+"/user-broadcast-history");
+      url.search=new URLSearchParams({providerId:userId,providerType:"user",isIncludeNonPublic:"false",offset:"0",limit:"5",withTotalCount:"true"});
+      const response=await fetchImpl(url.href,{redirect:"error",headers:{accept:"application/json","user-agent":"Nico-Live-Message-Recorder"},signal:AbortSignal.timeout(4000)});
+      if(!response?.ok)continue;
+      const payload=JSON.parse(await readBounded(response)),root=payload.data??payload;
+      const list=root.programsList??root.programs;
+      if(!Array.isArray(list))continue;
+      for(const entry of list.slice(0,5)){
+        const p=entry?.program??entry;
+        if(!p)continue;
+        const claimed=liveId(p.nicoliveProgramId??p.programId??p.liveId??p.id?.value??p.id??entry.id?.value??entry.id);
+        if(claimed!==id)continue;
+        const urls=programThumbnailCandidates(p,entry);
+        if(urls.length)return urls;
+      }
+    }catch{}
+  }
+  return [];
+}
 function createRankingDetailEnricher(fetchImpl,now=Date.now) {
   const cache=new Map();
   const profileCache=new Map();
@@ -277,7 +316,12 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       }).slice(0,6);
     for(let i=0;i<wanted.length;i+=2){
       await Promise.all(wanted.slice(i,i+2).map(async row=>{
-        const details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
+        let details=await fetchOfficialRankingDetails(row.liveId,fetchImpl);
+        const userId=details?.broadcasterId||(!details?row.broadcasterId:"");
+        if(userId&&!details?.thumbnailUrl&&!row.thumbnailUrl){
+          const candidates=await fetchUserRankingThumbnails(userId,row.liveId,fetchImpl);
+          if(candidates.length)details={...(details||row),thumbnailUrl:candidates[0],thumbnailCandidates:candidates};
+        }
         if(details?.broadcasterId&&!details.iconUrl)details.iconUrl=await getProfileIcon(details.broadcasterId);
         cache.delete(row.liveId);
         cache.set(row.liveId,{details,expiresAt:now()+(details?1800000:300000)});
@@ -293,7 +337,7 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
       // Prefer verified official identity; do not retain a mismatched name or icon.
       return {...row,title:d.title||row.title,name:d.name||(conflict?"":row.name),
         broadcasterId:d.broadcasterId,startedAt:d.startedAt||row.startedAt,
-        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl};
+        iconUrl:d.iconUrl||(conflict?"":row.iconUrl),thumbnailUrl:d.thumbnailUrl||row.thumbnailUrl,thumbnailCandidates:[...new Set([...(d.thumbnailCandidates||[]),d.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8)};
     });
   };
 }
@@ -438,6 +482,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
       }
       // Do not sum cross-site counters: use the largest reported cumulative value.
       for(const field of ["visitors","comments","adPoints","giftPoints"])if(row[field]!=null&&(item[field]==null||row[field]>item[field]))item[field]=row[field];
+      item.thumbnailCandidates=[...new Set([...(item.thumbnailCandidates||[]),item.thumbnailUrl,...(row.thumbnailCandidates||[]),row.thumbnailUrl].filter(Boolean))].slice(0,8);
       item.sourceRanks[source.id]=i+1;
     });
   }
@@ -538,4 +583,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails};

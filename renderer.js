@@ -1965,16 +1965,22 @@ async function registerRankingMonitor(item) {
     renderIndependentRanking();
   }
 }
-function appendRankingImage(parent,url,className,label) {
+function appendRankingImage(parent,url,className,label,alternatives=[]) {
   if(!url)return;
   try{
-    const u=new URL(url);
-    if(u.protocol!=="https:"||u.username||u.password||u.port||
-       !(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp")))return;
-    const img=document.createElement("img");
+    const candidates=[...new Set([url,...alternatives])].filter(value=>{
+      try{const u=new URL(value);return u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&(u.hostname==="nimg.jp"||u.hostname.endsWith(".nimg.jp"));}catch{return false;}
+    }).slice(0,8);
+    if(!candidates.length)return;
+    const img=document.createElement("img");let index=0;
     img.className=className;img.alt=label;img.loading="lazy";img.referrerPolicy="no-referrer";
-    img.addEventListener("error",()=>img.remove(),{once:true});
-    img.src=u.href;parent.appendChild(img);
+    img.addEventListener("error",()=>{
+      index++;
+      if(index<candidates.length){img.src=candidates[index];return;}
+      parent.dataset.imageFailedAt=String(Date.now());img.remove();
+    });
+    img.addEventListener("load",()=>{delete parent.dataset.imageFailedAt;});
+    img.src=candidates[0];parent.appendChild(img);
   }catch{}
 }
 function appendRankingTrend(cell,item) {
@@ -2014,7 +2020,7 @@ function refreshRankingActions() {
 function rankingMediaKey(item, now=Date.now()) {
   const at=Date.parse(item.videoFrameAt);
   const fresh=typeof item.videoFrame==="string"&&Number.isFinite(at)&&now>=at&&now-at<=90000;
-  return JSON.stringify([item.thumbnailUrl||"",fresh?item.videoFrameAt:null]);
+  return JSON.stringify([item.thumbnailUrl||"",item.thumbnailCandidates||[],fresh?item.videoFrameAt:null]);
 }
 function rankingScoreBreakdown(item) {
   const names={points:"勢い",visitors:"来場者",comments:"コメント",commentRate:"コメント増加/分",visitorRate:"来場者増加/分",activePeople:"アクティブ",adPoints:"広告",giftPoints:"ギフト"};
@@ -2057,7 +2063,9 @@ function renderIndependentRanking() {
     const mediaKey=rankingMediaKey(item);
     const isRecording=Boolean((currentCaptureTarget?.liveId===item.liveId||(currentRecordingIsChase&&currentLiveId===item.liveId))&&recordStartedAt);
     const rowKey=rankingRowKey(item,mediaKey,busy,isRankingFresh(rankingSnapshot),rankingMonitorPending.has(item.liveId),isRecording,commentCaptureState);
-    if(old&&old.dataset.renderKey===rowKey){desired.push(old);continue;}
+    const failedAt=Number(old?.querySelector(".ranking-media")?.dataset.imageFailedAt||0);
+    const retryImage=failedAt>0&&Date.now()-failedAt>=30000;
+    if(old&&old.dataset.renderKey===rowKey&&!retryImage){desired.push(old);continue;}
     const tr = document.createElement("tr");
     tr.dataset.liveId=item.liveId;tr.dataset.renderKey=rowKey;
     const rankCell=rankingCell(tr, item.rank+"位", "ranking-rank");
@@ -2079,11 +2087,11 @@ function renderIndependentRanking() {
     }
     const identity=document.createElement("div");identity.className="ranking-identity";
     let picture=old?.querySelector(".ranking-media");
-    if(!picture||picture.dataset.mediaKey!==mediaKey){
+    if(!picture||picture.dataset.mediaKey!==mediaKey||retryImage){
     picture=document.createElement("div");picture.className="ranking-media";picture.dataset.mediaKey=mediaKey;
     const placeholder=document.createElement("span");placeholder.className="ranking-image-placeholder";placeholder.textContent="LIVE";
     picture.appendChild(placeholder);
-    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル");
+    appendRankingImage(picture,item.thumbnailUrl,"ranking-thumbnail","番組サムネイル",item.thumbnailCandidates||[]);
     const frameAt=Date.parse(item.videoFrameAt);
     if(typeof item.videoFrame==="string"&&item.videoFrame.length<=420023&&
         /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(item.videoFrame)&&

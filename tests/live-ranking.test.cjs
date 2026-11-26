@@ -797,3 +797,26 @@ test("gift observation is a bounded five-minute received-event subtotal",()=>{
   assert.equal(tracker.snapshot("lv123456").giftObservedCount,1);
   now+=300001;assert.equal(tracker.snapshot("lv123456").giftObservedPoints,0);
 });
+
+test("user live thumbnails accept nested and protocol-relative CDN variants and never user icons",()=>{
+ const {programThumbnailCandidates}=require("../electron/live-ranking.cjs");
+ assert.deepEqual(programThumbnailCandidates({screenshot:{urlSet:{large:{url:"//live.cdn.nimg.jp/a.jpg"},small:"https://live.cdn.nimg.jp/b.jpg"}},thumbnail:{large:"https://cdn.nimg.jp/usericon/1.jpg",small:"https://cdn.nimg.jp/static.jpg"}}),
+ ["https://live.cdn.nimg.jp/a.jpg","https://live.cdn.nimg.jp/b.jpg","https://cdn.nimg.jp/static.jpg"]);
+});
+test("user broadcast history fallback only selects the exact current program",async()=>{
+ const {fetchUserRankingThumbnails}=require("../electron/live-ranking.cjs");
+ const result=await fetchUserRankingThumbnails("123456","lv123456",async(url,options)=>{
+  assert.equal(new URL(url).searchParams.get("providerId"),"123456");assert.equal(options.redirect,"error");assert.equal(options.headers.cookie,undefined);
+  return new Response(JSON.stringify({data:{programsList:[{id:{value:"lv999999"},program:{thumbnail:{large:"https://cdn.nimg.jp/wrong.jpg"}}},{id:{value:"lv123456"},program:{thumbnail:{large:"https://cdn.nimg.jp/right.jpg"}}}]}}));
+ });
+ assert.deepEqual(result,["https://cdn.nimg.jp/right.jpg"]);
+});
+test("ranking image retries alternative URL and records a bounded retry time",()=>{
+ const vm=require("node:vm"),s=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const code=s.slice(s.indexOf("function appendRankingImage("),s.indexOf("function appendRankingTrend("));
+ const events={},img={addEventListener:(type,cb)=>events[type]=cb,remove(){this.removed=true;}};
+ const parent={dataset:{},appendChild(){}};
+ const append=vm.runInNewContext(code+"\nappendRankingImage",{URL,document:{createElement:()=>img},Date});
+ append(parent,"https://cdn.nimg.jp/a.jpg","thumb","番組",["https://evil.example/a","https://cdn.nimg.jp/b.jpg"]);
+ events.error();assert.equal(img.src,"https://cdn.nimg.jp/b.jpg");events.error();assert.ok(img.removed);assert.ok(Number(parent.dataset.imageFailedAt)>0);
+});
