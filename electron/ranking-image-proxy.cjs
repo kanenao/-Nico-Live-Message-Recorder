@@ -40,7 +40,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
   }catch{return null;}
 }
 function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
-  let allowed=new Map(),users=new Map(),channels=new Map(),topIds=new Set(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map(),workingSources=new Map();
+  let allowed=new Map(),users=new Map(),channels=new Map(),topIds=new Set(),members=new Map(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map(),workingSources=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
   function storePoster(id,data){
@@ -51,7 +51,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     while(posterBytes>POSTER_BUDGET||posters.size>100)dropPoster(posters.keys().next().value);
   }
   function update(rows){
-    const previous=allowed;
+    const previous=allowed,previousUsers=users,previousChannels=channels;
     allowed=new Map(rows.map(r=>[r.liveId,new Set([r.thumbnailUrl,...(r.thumbnailCandidates||[])].map(safePosterUrl).filter(Boolean))]));
     // Newly discovered program URLs should not be suppressed by a cached failure.
     for(const [id,urls] of allowed){
@@ -61,6 +61,16 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     }
     users=new Map(rows.map(r=>[r.liveId,String(r.broadcasterId||r.thumbnailHistoryUserId||"")]).filter(([,id])=>/^\d{5,15}$/.test(id)));
     channels=new Map(rows.map(r=>[r.liveId,String(r.channelOwner||"")]).filter(([,id])=>/^[1-9]\d{0,14}$/.test(id)));
+    members=new Map([...allowed.keys()].map(id=>[id,members.get(id)||{}]));
+    for(const key of cache.keys())if(!members.has(key.split(" ",1)[0]))cache.delete(key);
+    for(const id of allowed.keys()){
+      const changed=users.get(id)!==previousUsers.get(id)||channels.get(id)!==previousChannels.get(id);
+      const discovered=[...allowed.get(id)].some(url=>!previous.get(id)?.has(url));
+      if((changed||discovered)&&!posters.has(id)){
+        if(cache.get(id+" official")?.data===null)cache.delete(id+" official");
+        attempted.delete(id);
+      }
+    }
     topIds=new Set(rows.slice(0,100).map(r=>r.liveId));
     for(const id of posters.keys())if(!topIds.has(id))dropPoster(id);
     for(const id of attempted.keys())if(!topIds.has(id))attempted.delete(id);
@@ -74,6 +84,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
     const lookup=url===""||preview;
     const safe=lookup?"":safePosterUrl(url);
     if(!/^lv\d{5,15}$/.test(String(id))||!allowed.has(id)||(!lookup&&(!safe||!allowed.get(id).has(safe))))return null;
+    const membership=members.get(id);
     const key=id+" "+(preview?"preview":lookup?"official":safe),old=cache.get(key),at=now();
     if(old&&at>=old.at&&at-old.at<(preview?2000:30000)){if(!preview&&old.data)storePoster(id,old.data);return old.data;}
     if(pending.has(key))return pending.get(key);
@@ -125,6 +136,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       return attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
     };
     const task=load().then(data=>{
+      if(members.get(id)!==membership)return null;
       cache.delete(key);cache.set(key,{at:now(),data});
       while(cache.size>48)cache.delete(cache.keys().next().value);
       const accepted=allowed.has(id)&&(lookup||allowed.get(id).has(safe))?data:null;
