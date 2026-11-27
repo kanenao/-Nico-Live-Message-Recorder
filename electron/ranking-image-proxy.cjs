@@ -5,9 +5,13 @@ function safePosterUrl(value){
   if(isRankingBrandImage(value))return "";
   return rankingImageUrl(value)||(typeof value==="string"&&value.startsWith("https://www.chikuwachan.com/")?rankingListingImage(value,LISTING_URL):"");
 }
-const MAX=1024*1024;
-async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
-  const safe=safePosterUrl(url);
+const MAX=4*1024*1024;
+// Public image endpoint implemented in the user's supplied website worker.
+const WEBSITE_ORIGIN="https://kanachin-app-collection.kanenao0224.workers.dev";
+function websitePosterUrl(id){return /^lv\d{5,15}$/.test(id)?WEBSITE_ORIGIN+"/api/live-thumbnail?service=nico&id="+id:"";}
+async function fetchRankingImage(url,fetchImpl=globalThis.fetch,websiteId=""){
+  const website=Boolean(websiteId&&url===websitePosterUrl(websiteId));
+  const safe=website?url:safePosterUrl(url);
   if(!safe)return null;
   try{
     // Website worker follows a bounded redirect chain; revalidate every hop.
@@ -18,6 +22,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch){
       if(![301,302,303,307,308].includes(r.status))break;
       const location=r.headers?.get("location");await r.body?.cancel();
       if(!location||hop===2)return null;
+      if(website)return null; // Fixed endpoint: never follow third-party redirects.
       const next=safePosterUrl(new URL(location,target).href);
       if(!next||!rankingImageUrl(next))return null;
       target=next;
@@ -133,12 +138,18 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
         data=await attempt((await fetchUserRankingThumbnails(channelOwner||userId,id,fetchImpl,channelOwner?"channel":"user")).slice(0,2));
         if(data)return data;
       }
-      return attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
+      data=await attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
+      if(data)return data;
+      // Only a current public program ID is sent; never credentials, tokens,
+      // arbitrary URLs or recording data. The response uses the same byte checks.
+      if(members.get(id)!==membership)return null;
+      return fetchRankingImage(websitePosterUrl(id),fetchImpl,id);
     };
     const task=load().then(data=>{
       if(members.get(id)!==membership)return null;
       cache.delete(key);cache.set(key,{at:now(),data});
-      while(cache.size>48)cache.delete(cache.keys().next().value);
+      let bytes=0;for(const value of cache.values())bytes+=value.data?.length||0;
+      while(cache.size>48||bytes>POSTER_BUDGET){const k=cache.keys().next().value;bytes-=cache.get(k)?.data?.length||0;cache.delete(k);}
       const accepted=allowed.has(id)&&(lookup||allowed.get(id).has(safe))?data:null;
       if(!preview&&accepted){
         storePoster(id,accepted);
