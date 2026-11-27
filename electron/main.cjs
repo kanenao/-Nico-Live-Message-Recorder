@@ -2976,7 +2976,7 @@ const rankingObserver=require("./ranking-observer.cjs").createRankingObserver({l
   const {NiconicoProvider}=await import("nicomget");
   return new NiconicoProvider({liveId,fetchBacklog:false,maxRetries:0});
 }});
-const rankingImageProxy=require("./ranking-image-proxy.cjs").createRankingImageProxy();
+const rankingImageProxy=require("./ranking-image-proxy.cjs").createRankingImageProxy({websiteFallback:true});
 ipcMain.handle("ranking:thumbnail",(_event,id,url)=>rankingImageProxy.get(id,url));
 let rankingObserverEpoch=0;
 function stopRankingObservation(){rankingObserverEpoch++;rankingObserver.stop();}
