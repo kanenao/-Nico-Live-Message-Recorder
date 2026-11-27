@@ -2141,7 +2141,7 @@ function rankingRowKey(item, mediaKey, busy, fresh, pending, isRecording, commen
   return JSON.stringify([item.liveId,item.rank,item.rankChange,item.rankNew,item.previousRank,item.rankHistory,
     item.title,item.name,item.broadcasterId,item.startedAt,mediaKey,item.compositeScore,item.scoreCoverage,item.scoreMethod,item.scorePolicy,item.scoreParts,
     item.points,item.pointDelta,item.visitors,item.visitorDelta,item.comments,item.commentDelta,
-    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
+    item.commentRate,item.commentRateSourceCount,item.activePeople,item.activePeopleComplete,item.publicActive10m,item.activityStatus,item.adPoints,item.giftPoints,item.giftObservedPoints,item.giftObservedCount,item.giftObservationComplete,
     busy,fresh,pending,isRecording,commentState]);
 }
 function rankingTopRows(rows){
@@ -2156,7 +2156,7 @@ function updateRankingCoverage(){
   const ready=rows.filter(x=>x.thumbnailRevision>0).length;
   const progress=byId("ranking-image-progress");
   if(progress)progress.textContent="画像取得：試行 "+attempted+" / "+rows.length+"番組 · 取得済み "+ready+"番組 · 一覧で表示確認 "+loaded+" / "+visible+"番組";
-  const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
+  const values={programs:rows.length+"番組",active:rows.filter(x=>Number.isFinite(x.activePeople)||Number.isFinite(x.publicActive10m)).length+" / "+rows.length,ad:rows.filter(x=>Number.isFinite(x.adPoints)).length+" / "+rows.length,gift:rows.filter(x=>Number.isFinite(x.giftPoints)).length+" / "+rows.length,image:rows.filter(x=>x.thumbnailRevision>0).length+" / "+rows.length};
   for(const [key,value] of Object.entries(values)){const el=byId("ranking-coverage-"+key);if(el)el.textContent=value;}
 }
 // Reconcile cells on the same program row instead of detaching/recreating it.
@@ -2325,7 +2325,13 @@ function renderIndependentRanking() {
       :"比較可能なコメント数が不足、または取得間隔が対象外です。";
     const activityLabel=item.activityStatus==="connecting"?"接続中…":item.activityStatus==="unavailable"?"接続不可":item.activityStatus==="outside"?"観測対象外":"未取得";
     const activeCell=rankingCell(tr,Number.isFinite(item.activePeople)?rankingNumber(item.activePeople)+"人":activityLabel,"ranking-active-metric");
-    if(!Number.isFinite(item.activePeople))activeCell.classList.add("ranking-missing");
+    if(Number.isFinite(item.publicActive10m)){
+      const publicNote=document.createElement("small");publicNote.className="ranking-delta";
+      publicNote.textContent="公開10分 "+rankingNumber(item.publicActive10m)+"人";
+      publicNote.title="nico-ran.stream掲載値。アプリの5分間コメント観測とは別集計。";
+      if(!Number.isFinite(item.activePeople))activeCell.textContent="";
+      activeCell.appendChild(publicNote);
+    }else if(!Number.isFinite(item.activePeople))activeCell.classList.add("ranking-missing");
     activeCell.title="直近5分の受信コメントの重複しない投稿者ID数。録画接続と上位10番組の公開コメント観測。5分未満は観測開始後の人数であり、5分全体の人数ではありません。";
     if(Number.isFinite(item.activePeople)&&!item.activePeopleComplete){const note=document.createElement("small");note.className="ranking-delta";note.textContent="観測中";activeCell.appendChild(note);}
     const contribution=rankingCell(tr,null,"ranking-metric-group ranking-support-metrics");

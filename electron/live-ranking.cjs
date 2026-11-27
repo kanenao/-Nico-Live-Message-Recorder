@@ -504,6 +504,42 @@ function createRankingDetailEnricher(fetchImpl,now=Date.now) {
     });
   };
 }
+// Ported from the supplied website worker's parseNicoRanCards /
+// parseNicoPublicMetrics. Only a matching watch + viewer link can establish
+// a program card; never attach event totals or neighbouring card counters.
+function parseNicoRanCards(html){
+  if(typeof html!=="string"||html.length>MAX_BYTES)return [];
+  const safe=html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>|<style\b[^>]*>[\s\S]*?<\/style\s*>|<!--[\s\S]*?-->/gi,"");
+  const anchors=[...safe.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)].map(a=>{
+    const href=htmlAttribute(a[1],"href");
+    return {id:/^(?:https:\/\/live\.nicovideo\.jp)?\/watch\/(lv\d{5,15})\/?(?:[?#][^\s]*)?$/i.exec(href)?.[1].toLowerCase(),viewer:/^(?:https:\/\/nico-ran\.stream)?\/?viewer\.html\?lv=(lv\d{5,15})(?:&[^"']*)?$/i.exec(href)?.[1].toLowerCase(),start:a.index,end:a.index+a[0].length,raw:a[2],href};
+  });
+  const rows=[],seen=new Set();
+  const plain=s=>clean(s.replace(/&nbsp;|&#160;|&#xA0;/gi," "),16000);
+  for(let i=0;i<anchors.length&&rows.length<LIMIT;i++){
+    const a=anchors[i];if(!a.viewer||seen.has(a.viewer))continue;
+    let title=null;for(let j=i-1;j>=0;j--){if(anchors[j].viewer)break;if(anchors[j].id){if(anchors[j].id===a.viewer)title=anchors[j];break;}}
+    if(!title)continue;
+    let next=safe.length;for(let j=i+1;j<anchors.length;j++)if(anchors[j].id||anchors[j].viewer){next=anchors[j].start;break;}
+    if(next-a.end>16000)continue;
+    const block=plain(safe.slice(a.end,next));
+    const metric=(label,unit="")=>{
+      const re=new RegExp("(?:^|\\s)"+label+"\\s*[:：]?\\s*(\\d{1,3}(?:,\\d{3})+|\\d{1,12})(?![\\d,])\\s*"+unit+"(?=\\s|$)","gi");
+      const matches=[...block.matchAll(re)];
+      return matches.length===1?count(matches[0][1]):null;
+    };
+    const visitors=metric("来場者(?:数)?"),comments=metric("コメント(?:数)?");
+    const adPoints=metric("(?:ニコニ)?広告(?:\\s*(?:累計|ポイント|pt))?","(?:pt|ポイント)");
+    const giftPoints=metric("ギフト(?:\\s*(?:累計|ポイント|pt)|（累計pt）)?","(?:pt|ポイント)");
+    const publicActive10m=metric("アクティブ(?:人数)?(?:\\s*[（(](?:直近)?10分[）)])?","人\\s*[/／]\\s*10\\s*分")??metric("アクティブ(?:人数)?\\s*[（(](?:直近)?10分[）)]","人");
+    const titleText=plain(title.raw).slice(0,240);
+    if(!titleText||[visitors,comments,adPoints,giftPoints,publicActive10m].every(v=>v==null))continue;
+    const profiles=anchors.slice(0,i).filter(x=>x.start>=title.end&&/^https:\/\/(?:www\.)?nicovideo\.jp\/user\/[1-9]\d{0,14}\/?(?:[?#][^\s]*)?$/i.test(x.href));
+    const ids=[...new Set(profiles.map(x=>new URL(x.href).pathname.split("/")[2]))];
+    seen.add(a.viewer);rows.push({liveId:a.viewer,title:titleText,name:ids.length===1?plain(profiles[0].raw).slice(0,80):"",broadcasterId:ids.length===1?ids[0]:"",visitors,comments,adPoints,giftPoints,publicActive10m,startedAt:"",iconUrl:"",thumbnailUrl:"",thumbnailCandidates:[]});
+  }
+  return rows;
+}
 async function fetchSource(source,fetchImpl=globalThis.fetch) {
   try {
     // No account cookies, tokens or custom URL input are used on third-party sites.
@@ -513,6 +549,12 @@ async function fetchSource(source,fetchImpl=globalThis.fetch) {
     let rows=[];
     if(/^\s*[\[{]/.test(html)){try{rows=unique(extractJsonRows(JSON.parse(html)));}catch{}}
     if(!rows.length)rows=parseRankingPage(html,source.url);
+    if(source.id==="nicoran"){
+      const cards=parseNicoRanCards(html),lookup=new Map(rows.map(r=>[r.liveId,r]));
+      rows=cards.map(card=>{const result={...lookup.get(card.liveId)};for(const [key,value] of Object.entries(card))if(value!=null&&value!==""&&(!Array.isArray(value)||value.length))result[key]=value;return result;});
+      // Generic watch links without program-level statistics are not a ranking.
+      const known=new Set(rows.map(r=>r.liveId));for(const row of lookup.values())if(!known.has(row.liveId)&&[row.visitors,row.comments,row.adPoints,row.giftPoints,row.publicActive10m].some(v=>Number.isSafeInteger(v)&&v>=0))rows.push(row);
+    }
     if(!rows.length)throw Error("番組ID付きのランキングを取得できません");
     return {id:source.id,name:source.name,ok:true,rows};
   } catch(error) {
@@ -643,6 +685,7 @@ function buildRanking(results,previous=[],now=Date.now(),previousAt=0,previousSo
     unique(source.rows).forEach((row,i)=>{
       let item=byId.get(row.liveId);
       if(!item){item={...row,sourceRanks:{},commentSamples:{},visitorSamples:{},points:0};byId.set(row.liveId,item);}
+      if(source.id==="nicoran"&&Number.isSafeInteger(row.publicActive10m)&&row.publicActive10m>=0)item.publicActive10m=row.publicActive10m;
       if(row.comments!=null)item.commentSamples[source.id]=row.comments;
       if(row.visitors!=null)item.visitorSamples[source.id]=row.visitors;
       for(const field of ["startedAt","thumbnailUrl"])if(!item[field]&&row[field])item[field]=row[field];
@@ -854,4 +897,4 @@ async function resolveRankingMonitorTarget(value, fetchProgram) {
   if(!/^\d{5,15}$/.test(userId)||!name)throw Error("配信者のユーザーID・名前を確認できません。");
   return {userId,name};
 }
-module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage,fetchChannelListingImages,directRankingImageUrl};
+module.exports={SOURCES,REFRESH_MS,selectRankingVideoFrame,applyCompositeScores,createRankingActivityTracker,parseRankingPage,extractJsonRows,buildRanking,fetchSource,createRankingService,resolveRankingMonitorTarget,rankingImageUrl,parseOfficialRankingDetails,createRankingDetailEnricher,fetchOfficialRankingProfileIcon,programThumbnailCandidates,fetchUserRankingThumbnails,fetchOfficialRankingDetails,rankingListingImage,officialOgImage,parseNicoFeedImages,fetchNicoFeedImages,mergeNicoFeedImages,parseRankingCardImages,fetchRankingCardImages,parseChikuwaUserHints,rankingChannelOwner,isRankingBrandImage,fetchChannelListingImages,directRankingImageUrl,parseNicoRanCards};
