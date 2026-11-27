@@ -8,17 +8,17 @@ function safePosterUrl(value){
 const MAX=4*1024*1024;
 // Public image endpoint implemented in the user's supplied website worker.
 const WEBSITE_ORIGIN="https://kanachin-app-collection.kanenao0224.workers.dev";
-function websitePosterUrl(id){return /^lv\d{5,15}$/.test(id)?WEBSITE_ORIGIN+"/api/live-thumbnail?service=nico&id="+id:"";}
-async function fetchRankingImage(url,fetchImpl=globalThis.fetch,websiteId=""){
-  const website=Boolean(websiteId&&url===websitePosterUrl(websiteId));
+function websitePosterUrl(id,preview=false){return /^lv\d{5,15}$/.test(id)?WEBSITE_ORIGIN+"/api/live-thumbnail?service=nico&id="+id+(preview?"&preview=1":""):"";}
+async function fetchRankingImage(url,fetchImpl=globalThis.fetch,websiteId="",websitePreview=false){
+  const website=Boolean(websiteId&&url===websitePosterUrl(websiteId,websitePreview));
   const safe=website?url:safePosterUrl(url);
   if(!safe)return null;
   try{
     // Website worker follows a bounded redirect chain; revalidate every hop.
-    const signal=AbortSignal.timeout(7000);
-    let target=safe,r;
+    const signal=AbortSignal.timeout(website&&!websitePreview?45000:7000);
+    let target=website?safe+"&slot="+Math.floor(Date.now()/(websitePreview?2500:30000)):safe,r;
     for(let hop=0;hop<3;hop++){
-      r=await fetchImpl(target,{redirect:"manual",signal,headers:{Referer:new URL(target).origin==="https://www.chikuwachan.com"?LISTING_URL:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
+      r=await fetchImpl(target,{redirect:"manual",signal,...(website?{cache:"no-store"}:{}),headers:{Referer:new URL(target).origin==="https://www.chikuwachan.com"?LISTING_URL:"https://live.nicovideo.jp/",Accept:"image/jpeg,image/png,image/webp,image/gif,image/avif"}});
       if(![301,302,303,307,308].includes(r.status))break;
       const location=r.headers?.get("location");await r.body?.cancel();
       if(!location||hop===2)return null;
@@ -95,14 +95,25 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now,websit
     if(pending.has(key))return pending.get(key);
     if(lookup&&pending.has(id+" "+(preview?"official":"preview")))return null;
     if(pending.size>=4)return null;
-    let workingUrl="";
+    let workingUrl="",workingWebsite=false;
     const load=async()=>{
       const saved=workingSources.get(id);
-      const savedUrl=saved&&at>=saved.at&&at-saved.at<120000?saved.url:"";
+      const recent=saved&&at>=saved.at&&at-saved.at<120000;
+      const savedUrl=recent?saved.url:"";
       // Website hover mode reuses only a previously successful image URL.
       // No watch-page or history lookup for every hover frame.
-      if(preview)return savedUrl?fetchRankingImage(savedUrl,fetchImpl):null;
+      if(preview){
+        if(websiteFallback&&recent&&saved.website)return fetchRankingImage(websitePosterUrl(id,true),fetchImpl,id,true);
+        return savedUrl?fetchRankingImage(savedUrl,fetchImpl):null;
+      }
       if(!lookup){const data=await fetchRankingImage(safe,fetchImpl);if(data)workingUrl=safe;return data;}
+      // Match the reference web UI: the public program-image endpoint is
+      // primary, with local official/listing/history retrieval as fallback.
+      if(websiteFallback){
+        const data=await fetchRankingImage(websitePosterUrl(id),fetchImpl,id);
+        if(data){workingWebsite=true;return data;}
+        if(members.get(id)!==membership)return null;
+      }
       const tried=new Set();
       async function attempt(values){
         for(const value of values){
@@ -138,12 +149,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now,websit
         data=await attempt((await fetchUserRankingThumbnails(channelOwner||userId,id,fetchImpl,channelOwner?"channel":"user")).slice(0,2));
         if(data)return data;
       }
-      data=await attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
-      if(data)return data;
-      // Only a current public program ID is sent; never credentials, tokens,
-      // arbitrary URLs or recording data. The response uses the same byte checks.
-      if(!websiteFallback||members.get(id)!==membership)return null;
-      return fetchRankingImage(websitePosterUrl(id),fetchImpl,id);
+      return attempt([...listed.filter(url=>!rankingImageUrl(url)),...listed]);
     };
     const task=load().then(data=>{
       if(members.get(id)!==membership)return null;
@@ -153,7 +159,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now,websit
       const accepted=allowed.has(id)&&(lookup||allowed.get(id).has(safe))?data:null;
       if(!preview&&accepted){
         storePoster(id,accepted);
-        if(workingUrl&&topIds.has(id))workingSources.set(id,{url:workingUrl,at:now()});
+        if((workingUrl||workingWebsite)&&topIds.has(id))workingSources.set(id,{url:workingUrl,website:workingWebsite,at:now()});
         // A newly acquired poster should make hover available immediately.
         if(cache.get(id+" preview")?.data===null)cache.delete(id+" preview");
       }
