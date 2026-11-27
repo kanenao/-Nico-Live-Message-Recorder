@@ -1977,7 +1977,7 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
     const img=document.createElement("img");let index=0;
     img.className=className;img.alt=label;img.loading="lazy";img.referrerPolicy="no-referrer";
     let proxied=false,lookedUp=false,lookupPending=false;
-    const isImage=data=>typeof data==="string"&&data.length<=1400000&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data);
+    const isImage=data=>typeof data==="string"&&data.length<=5592500&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data);
     const failed=()=>{parent.dataset.imageFailedAt=String(Date.now());img.remove();};
     const lookup=()=>{
       if(!canLookup||lookedUp||lookupPending){failed();return;}
@@ -1997,7 +1997,7 @@ function appendRankingImage(parent,url,className,label,alternatives=[],liveId=""
       if(!proxied&&canLookup&&index<candidates.length){
         proxied=true;
         Promise.resolve().then(()=>api.getRankingThumbnail(liveId,candidates[index])).then(data=>{
-          if(typeof data==="string"&&data.length<=1400000&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data)){img.src=data;return;}
+          if(typeof data==="string"&&data.length<=5592500&&/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data)){img.src=data;return;}
           advance();
         }).catch(advance);return;
       }
@@ -2051,7 +2051,7 @@ function attachRankingHoverPreview(picture,liveId){
       if(pending||Date.now()-last<2000)return;
       pending=true;last=Date.now();
       Promise.resolve().then(()=>api.getRankingThumbnail(liveId,"preview")).then(async data=>{
-        if(stopped||!picture.isConnected||Date.now()>=deadline||typeof data!=="string"||data.length>1400000||!/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data))return;
+        if(stopped||!picture.isConnected||Date.now()>=deadline||typeof data!=="string"||data.length>5592500||!/^data:image\/(?:jpeg|png|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(data))return;
         const probe=new Image();probe.src=data;await probe.decode();
         if(stopped||!picture.isConnected||Date.now()>=deadline)return;
         if(history.at(-1)!==data){history.push(data);if(history.length>6)history.shift();}

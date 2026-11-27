@@ -17,7 +17,7 @@ test("official referer proxy preserves signed URL and rejects nonimage data",asy
  assert.match(await fetchRankingImage(image,fetchImpl),/^data:image\/jpeg;base64,/);
  assert.equal(await fetchRankingImage("https://evil.example/a.jpg",fetchImpl),null);
  assert.equal(await fetchRankingImage(image,async()=>new Response("html",{headers:{"Content-Type":"image/jpeg"}})),null);
- assert.equal(await fetchRankingImage(image,async()=>new Response(new Uint8Array(1048577),{headers:{"Content-Type":"image/jpeg"}})),null);
+ assert.equal(await fetchRankingImage(image,async()=>new Response(new Uint8Array(4194305),{headers:{"Content-Type":"image/jpeg"}})),null);
 });
 test("image proxy restricts URLs to current program and deduplicates requests",async()=>{
  let calls=0;const proxy=createRankingImageProxy({fetchImpl:async()=>{calls++;return new Response(Buffer.from([255,216,255,217]),{headers:{"Content-Type":"image/jpeg"}});}});

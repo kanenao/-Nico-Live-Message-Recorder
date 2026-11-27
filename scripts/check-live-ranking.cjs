@@ -18,7 +18,7 @@ const {summarizeRankingCoverage}=require("../electron/ranking-coverage.cjs");
     const data=await fetchRankingImage(candidate);
     checks.push(data?"image-response":"not-validated");
   }
-  const proxy=createRankingImageProxy();
+  const proxy=createRankingImageProxy({websiteFallback:true});
   proxy.update(rows.slice(0,100));
   for(let i=0;i<3&&!snapshot.stale;i++)await proxy.prefetch();
   const posterSamples=rows.slice(0,100).filter(x=>proxy.status(x.liveId).attempted);
