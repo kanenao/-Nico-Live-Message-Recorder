@@ -44,7 +44,7 @@ async function fetchRankingImage(url,fetchImpl=globalThis.fetch,websiteId=""){
     return valid?"data:"+type+";base64,"+b.toString("base64"):null;
   }catch{return null;}
 }
-function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
+function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now,websiteFallback=false}={}){
   let allowed=new Map(),users=new Map(),channels=new Map(),topIds=new Set(),members=new Map(),posterBytes=0,revision=0;const cache=new Map(),pending=new Map(),posters=new Map(),attempted=new Map(),workingSources=new Map();
   const POSTER_BUDGET=64*1024*1024;
   function dropPoster(id){const old=posters.get(id);if(old){posterBytes-=old.data.length;posters.delete(id);}}
@@ -142,7 +142,7 @@ function createRankingImageProxy({fetchImpl=globalThis.fetch,now=Date.now}={}){
       if(data)return data;
       // Only a current public program ID is sent; never credentials, tokens,
       // arbitrary URLs or recording data. The response uses the same byte checks.
-      if(members.get(id)!==membership)return null;
+      if(!websiteFallback||members.get(id)!==membership)return null;
       return fetchRankingImage(websitePosterUrl(id),fetchImpl,id);
     };
     const task=load().then(data=>{
